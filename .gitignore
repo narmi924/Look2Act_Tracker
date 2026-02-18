@@ -38,6 +38,9 @@ calibration.json
 Thumbs.db
 .DS_Store
 
+# 本地文件
+bin/
+
 # pytest
 .pytest_cache/
 

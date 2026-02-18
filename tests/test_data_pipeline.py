@@ -265,3 +265,90 @@ def test_load_session_all_invalid(tmp_path):
     session = pipeline.load_session(session_dir)
     assert session.valid_count == 0
     assert session.skipped_count == 3
+
+
+
+# ============ Property 5：Session 级别数据集划分不变量 ============
+# Feature: look2act-tracker, Property 5: Session 级别数据集划分不变量
+#
+# 对于任意 Session 列表和划分比例，划分后的 train/val/test 三个集合中，
+# 同一 session_id 不跨集出现，三个集合的 session_id 互不相交。
+#
+# **Validates: Requirements 1.6**
+
+
+@st.composite
+def session_list_strategy(draw):
+    """生成模拟的 SessionData 列表（只需 meta.session_id）。"""
+    n = draw(st.integers(min_value=3, max_value=20))
+    sessions = []
+    for i in range(n):
+        # 创建最小 SessionData mock
+        from data.pipeline import SessionMeta, SessionData
+        import pandas as pd
+        from pathlib import Path
+
+        meta = SessionMeta(
+            user_id=str(i),
+            session_id=f"S_TEST_{i}",
+            glass_id="glass",
+            device_id="DEV",
+            camera_name="CAM",
+            screen_w=1536,
+            screen_h=864,
+            frame_w=1920,
+            frame_h=1080,
+            eye_crop_size=128,
+            distance_init_proxy=13.0,
+            grid_rows=5,
+            grid_cols=5,
+        )
+        session = SessionData(
+            meta=meta,
+            labels=pd.DataFrame(),
+            session_dir=Path(f"/tmp/session_{i}"),
+            valid_count=10,
+            skipped_count=0,
+        )
+        sessions.append(session)
+    return sessions
+
+
+@given(sessions=session_list_strategy())
+@settings(max_examples=100)
+def test_property5_session_split_invariant(sessions):
+    """Property 5：Session 级别数据集划分不变量。
+
+    验证划分后三个集合的 session_id 互不相交。
+    """
+    pipeline = DataPipeline()
+    train_ids, val_ids, test_ids = pipeline.split_dataset(sessions)
+
+    # 转为集合
+    train_set = set(train_ids)
+    val_set = set(val_ids)
+    test_set = set(test_ids)
+
+    # 三个集合互不相交
+    assert train_set.isdisjoint(val_set), (
+        f"train 和 val 有交集: {train_set & val_set}"
+    )
+    assert train_set.isdisjoint(test_set), (
+        f"train 和 test 有交集: {train_set & test_set}"
+    )
+    assert val_set.isdisjoint(test_set), (
+        f"val 和 test 有交集: {val_set & test_set}"
+    )
+
+    # 所有 session_id 都被分配到某个集合
+    all_ids = set(s.meta.session_id for s in sessions)
+    assigned = train_set | val_set | test_set
+    assert assigned == all_ids, (
+        f"未分配的 session: {all_ids - assigned}"
+    )
+
+    # 每个 session_id 只出现一次
+    total = len(train_ids) + len(val_ids) + len(test_ids)
+    assert total == len(sessions), (
+        f"session 数量不匹配: 分配了 {total}，总共 {len(sessions)}"
+    )
