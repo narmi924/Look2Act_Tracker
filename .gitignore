@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+
+# 虚拟环境
+.venv/
+env/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 数据集（体积大，不入库）
+dataset_raw/
+dataset_processed/
+
+# 模型权重
+checkpoints/*.pth
+checkpoints/*.onnx
+checkpoints/*.pt
+
+# 训练日志
+logs/*.csv
+logs/*.log
+
+# 校准文件
+calibration.json
+
+# 系统文件
+Thumbs.db
+.DS_Store
+
+# pytest
+.pytest_cache/
+
+# hypothesis
+.hypothesis/

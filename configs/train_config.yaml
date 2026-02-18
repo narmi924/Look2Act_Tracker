@@ -1,0 +1,40 @@
+# Look2Act Tracker 训练配置
+# 工作目录：Look2Act_Tracker_Project/
+# 使用方式：conda run -n gaze-env python scripts/train.py --config configs/train_config.yaml
+
+model:
+  name: "GazeNet"
+  channels: [32, 64, 128, 256]
+  input_size: 128
+  output_dim: 3
+
+training:
+  batch_size: 64
+  learning_rate: 0.001
+  epochs: 100
+  optimizer: "Adam"
+  scheduler: "CosineAnnealingLR"
+  weight_decay: 0.0001
+
+data:
+  dataset_raw_dir: "dataset_raw"
+  dataset_processed_dir: "dataset_processed"
+  train_split: 0.7
+  val_split: 0.15
+  test_split: 0.15
+  augmentation: true
+  num_workers: 4
+
+evaluation:
+  metrics:
+    - "mean_angle_error"
+    - "median_angle_error"
+    - "mean_pixel_error"
+
+checkpoint:
+  save_dir: "checkpoints"
+  save_best_only: true
+
+logging:
+  log_dir: "logs"
+  log_interval: 1  # 每 N 个 epoch 记录一次
