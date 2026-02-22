@@ -178,9 +178,29 @@ def main():
     ckpt_cfg = config.get("checkpoint", {})
     log_cfg = config.get("logging", {})
 
-    # 设备
-    device = torch.device("cpu")
-    logger.info(f"使用设备: {device}")
+    # 设备配置
+    device_name = train_cfg.get("device", "cpu")
+    use_ipex = train_cfg.get("use_ipex", False)
+    
+    # 初始化设备
+    if device_name == "xpu":
+        try:
+            import intel_extension_for_pytorch as ipex
+            if torch.xpu.is_available():
+                device = torch.device("xpu")
+                logger.info(f"使用设备: XPU (Intel Arc GPU)")
+                logger.info(f"IPEX 版本: {ipex.__version__}")
+            else:
+                logger.warning("XPU 不可用，回退到 CPU")
+                device = torch.device("cpu")
+                use_ipex = False
+        except ImportError:
+            logger.warning("IPEX 未安装，回退到 CPU")
+            device = torch.device("cpu")
+            use_ipex = False
+    else:
+        device = torch.device("cpu")
+        logger.info(f"使用设备: CPU")
 
     # 构建模型
     model = build_model(config)
@@ -189,6 +209,15 @@ def main():
     # 构建优化器和调度器
     optimizer = build_optimizer(model, config)
     scheduler = build_scheduler(optimizer, config)
+    
+    # IPEX 优化（训练加速）
+    if use_ipex and device.type == "xpu":
+        try:
+            import intel_extension_for_pytorch as ipex
+            model, optimizer = ipex.optimize(model, optimizer=optimizer)
+            logger.info("✓ IPEX 训练优化已启用")
+        except Exception as e:
+            logger.warning(f"IPEX 优化失败，继续使用标准训练: {e}")
 
     # 恢复训练
     start_epoch = 0

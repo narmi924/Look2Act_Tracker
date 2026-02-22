@@ -74,7 +74,8 @@ conda run -n gaze-env python scripts/demo_tracker.py
 | `camera_backend` | str | "dshow" | Windows 推荐使用 DirectShow |
 | `eye_crop_size` | int | 128 | 眼部裁剪尺寸 |
 | `checkpoint_path` | str | - | 模型权重路径 |
-| `use_ipex` | bool | False | 是否启用 IPEX 优化 |
+| `use_ipex` | bool | False | 推理是否启用 IPEX（默认 False，使用 ONNX） |
+| `use_onnx` | bool | True | 是否使用 ONNX Runtime 推理 |
 | `screen_w_mm` | float | 344.0 | 屏幕物理宽度（毫米） |
 | `screen_h_mm` | float | 194.0 | 屏幕物理高度（毫米） |
 | `smoother_alpha` | float | 0.3 | EMA 平滑系数（越小越平滑） |
@@ -90,7 +91,8 @@ camera:
 
 model:
   checkpoint_path: "checkpoints/best_model.pth"
-  use_ipex: true
+  use_ipex: false  # 推理使用 ONNX，不使用 IPEX
+  use_onnx: true   # 使用 ONNX Runtime 加速
 
 smoother:
   alpha: 0.3
@@ -189,13 +191,15 @@ if pipeline.is_running():
 
 ## 性能优化
 
-### 1. 启用 IPEX 优化
+### 1. 使用 ONNX Runtime（推荐）
 
 ```python
-config = SystemConfig(use_ipex=True)
+config = SystemConfig(use_onnx=True)  # 默认配置
 ```
 
-需要安装 `intel-extension-for-pytorch`。
+ONNX Runtime 提供最佳的跨平台兼容性和推理性能。
+
+**注意**：训练阶段默认使用 IPEX 加速（配置在 `train_config.yaml`），推理阶段使用 ONNX Runtime。
 
 ### 2. 调整平滑参数
 

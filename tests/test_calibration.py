@@ -41,9 +41,18 @@ def raw_points(n: int = 9):
 
 def _points_have_spread(pts: list[tuple[float, float]]) -> bool:
     """检查点集是否有足够的分散度（非退化）。"""
+    if len(pts) < 2:
+        return False
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
-    return (max(xs) - min(xs)) > 10.0 and (max(ys) - min(ys)) > 10.0
+    # 确保点集在 X 和 Y 方向都有足够的分散度
+    # 并且至少有 3 个不同的点
+    unique_pts = set(pts)
+    return (
+        len(unique_pts) >= 3 and
+        (max(xs) - min(xs)) > 50.0 and 
+        (max(ys) - min(ys)) > 50.0
+    )
 
 
 class TestAffineCalibrationFit:
