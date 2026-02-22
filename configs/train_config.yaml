@@ -15,6 +15,9 @@ training:
   optimizer: "Adam"
   scheduler: "CosineAnnealingLR"
   weight_decay: 0.0001
+  # 设备配置
+  device: "xpu"  # 可选: "cpu", "xpu" (Intel Arc GPU)
+  use_ipex: true  # 启用 Intel Extension for PyTorch 加速
 
 data:
   dataset_raw_dir: "dataset_raw"

@@ -6,7 +6,9 @@
 
 - conda 环境：`gaze-env`
 - Python 3.11+
-- Intel CPU（已适配 IPEX）
+- 硬件：Intel Ultra 5 125H + Arc GPU
+- 训练：默认使用 XPU + IPEX 加速
+- 推理：CPU + ONNX Runtime（跨平台兼容）
 
 ## 快速开始
 
