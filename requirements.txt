@@ -16,8 +16,8 @@ dlib==19.24.2
 imutils==0.5.4
 
 # ============ 数值计算与数据处理 ============
-numpy
-pandas
+numpy==1.26.4
+pandas==3.0.1
 scipy==1.16.2
 scikit-learn==1.7.2
 
@@ -29,12 +29,13 @@ matplotlib==3.10.6
 pillow==11.0.0
 
 # ============ 测试框架 ============
-pytest
-hypothesis
+pytest==9.0.2
+hypothesis==6.151.9
 
 # ============ GUI 界面 ============
-PyQt6
-pyqt6-fluent-widgets
+PyQt6==6.10.2
+pyqt6-fluent-widgets==1.11.1
 
-# ============ ONNX 推理（CPU 优化备选） ============
-onnxruntime
+# ============ ONNX 推理（跨平台 CPU 优化） ============
+onnxruntime==1.24.1
+onnx==1.20.1

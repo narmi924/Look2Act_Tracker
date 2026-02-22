@@ -15,8 +15,8 @@ face_detection:
 
 model:
   checkpoint_path: "checkpoints/best_model.pth"
-  use_ipex: true
-  use_onnx: false
+  use_ipex: false  # 推理系统不使用 IPEX，确保兼容性
+  use_onnx: true   # 使用 ONNX Runtime 加速推理
   onnx_path: "checkpoints/gaze_net.onnx"
 
 geometry:
