@@ -26,12 +26,12 @@ import numpy as np
 import torch
 import yaml
 
-from geometry.coordinate import transform_gaze_to_camera
-from geometry.screen_geometry import ScreenGeometry
-from models.gaze_net import GazeNet
-from tracker.smoother import GazeSmoother
-from vision.face_detector import FaceDetector
-from vision.head_pose import HeadPoseEstimator
+from src.geometry.coordinate import transform_gaze_to_camera
+from src.geometry.screen_geometry import ScreenGeometry
+from src.models.gaze_net import GazeNet
+from src.tracker.smoother import GazeSmoother
+from src.vision.face_detector import FaceDetector
+from src.vision.head_pose import HeadPoseEstimator
 
 
 # 配置 logger

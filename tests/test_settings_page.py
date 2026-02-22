@@ -1,0 +1,207 @@
+"""测试设置页面的配置管理功能。
+
+不涉及 GUI 交互，仅测试配置的加载、保存和转换逻辑。
+"""
+import tempfile
+from pathlib import Path
+
+import pytest
+import yaml
+
+from src.tracker.pipeline import SystemConfig
+
+
+def test_system_config_default_values():
+    """测试 SystemConfig 的默认值。"""
+    config = SystemConfig()
+    
+    assert config.camera_index == 0
+    assert config.camera_width == 640
+    assert config.camera_height == 480
+    assert config.camera_backend == "dshow"
+    assert config.eye_crop_size == 128
+    assert config.checkpoint_path == "checkpoints/best_model.pth"
+    assert config.use_ipex is False
+    assert config.use_onnx is False
+    assert config.screen_w_mm == 344.0
+    assert config.screen_h_mm == 194.0
+    assert config.smoother_alpha == 0.3
+    assert config.target_fps == 30
+
+
+def test_system_config_from_yaml():
+    """测试从 YAML 文件加载配置。"""
+    # 创建临时 YAML 文件
+    config_data = {
+        'camera': {
+            'index': 1,
+            'width': 1280,
+            'height': 720,
+            'backend': 'auto',
+        },
+        'face_detection': {
+            'eye_crop_size': 128,
+            'min_detection_confidence': 0.6,
+            'min_tracking_confidence': 0.6,
+        },
+        'model': {
+            'checkpoint_path': 'models/custom.pth',
+            'use_ipex': True,
+            'use_onnx': True,
+            'onnx_path': 'models/custom.onnx',
+        },
+        'geometry': {
+            'screen_w_mm': 400.0,
+            'screen_h_mm': 250.0,
+        },
+        'smoother': {
+            'alpha': 0.5,
+        },
+        'tracker': {
+            'target_fps': 60,
+        },
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, encoding='utf-8') as f:
+        yaml.dump(config_data, f)
+        temp_path = f.name
+    
+    try:
+        # 加载配置
+        config = SystemConfig.from_yaml(temp_path)
+        
+        # 验证摄像头配置
+        assert config.camera_index == 1
+        assert config.camera_width == 1280
+        assert config.camera_height == 720
+        assert config.camera_backend == 'auto'
+        
+        # 验证模型配置
+        assert config.checkpoint_path == 'models/custom.pth'
+        assert config.use_ipex is True
+        assert config.use_onnx is True
+        assert config.onnx_path == 'models/custom.onnx'
+        
+        # 验证几何配置
+        assert config.screen_w_mm == 400.0
+        assert config.screen_h_mm == 250.0
+        
+        # 验证平滑配置
+        assert config.smoother_alpha == 0.5
+        
+        # 验证追踪配置
+        assert config.target_fps == 60
+        
+    finally:
+        # 清理临时文件
+        Path(temp_path).unlink()
+
+
+def test_system_config_yaml_round_trip():
+    """测试配置的保存和加载往返一致性。"""
+    # 创建自定义配置
+    original_config = SystemConfig(
+        camera_index=2,
+        camera_width=1920,
+        camera_height=1080,
+        camera_backend='auto',
+        checkpoint_path='test_model.pth',
+        use_ipex=True,
+        use_onnx=False,
+        screen_w_mm=500.0,
+        screen_h_mm=300.0,
+        smoother_alpha=0.7,
+        target_fps=45,
+    )
+    
+    # 构建 YAML 数据（模拟 SettingsPage._handle_save 的逻辑）
+    config_data = {
+        'camera': {
+            'index': original_config.camera_index,
+            'width': original_config.camera_width,
+            'height': original_config.camera_height,
+            'backend': original_config.camera_backend,
+        },
+        'face_detection': {
+            'eye_crop_size': original_config.eye_crop_size,
+            'min_detection_confidence': original_config.min_detection_confidence,
+            'min_tracking_confidence': original_config.min_tracking_confidence,
+        },
+        'model': {
+            'checkpoint_path': original_config.checkpoint_path,
+            'use_ipex': original_config.use_ipex,
+            'use_onnx': original_config.use_onnx,
+            'onnx_path': original_config.onnx_path,
+        },
+        'geometry': {
+            'screen_w_mm': original_config.screen_w_mm,
+            'screen_h_mm': original_config.screen_h_mm,
+        },
+        'smoother': {
+            'alpha': original_config.smoother_alpha,
+        },
+        'tracker': {
+            'target_fps': original_config.target_fps,
+            'timer_interval_ms': int(1000 / original_config.target_fps),
+        },
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, encoding='utf-8') as f:
+        yaml.dump(config_data, f, allow_unicode=True)
+        temp_path = f.name
+    
+    try:
+        # 加载配置
+        loaded_config = SystemConfig.from_yaml(temp_path)
+        
+        # 验证关键字段一致
+        assert loaded_config.camera_index == original_config.camera_index
+        assert loaded_config.camera_width == original_config.camera_width
+        assert loaded_config.camera_height == original_config.camera_height
+        assert loaded_config.camera_backend == original_config.camera_backend
+        assert loaded_config.checkpoint_path == original_config.checkpoint_path
+        assert loaded_config.use_ipex == original_config.use_ipex
+        assert loaded_config.use_onnx == original_config.use_onnx
+        assert loaded_config.screen_w_mm == original_config.screen_w_mm
+        assert loaded_config.screen_h_mm == original_config.screen_h_mm
+        assert loaded_config.smoother_alpha == original_config.smoother_alpha
+        assert loaded_config.target_fps == original_config.target_fps
+        
+    finally:
+        # 清理临时文件
+        Path(temp_path).unlink()
+
+
+def test_system_config_partial_yaml():
+    """测试部分字段的 YAML 配置（其余使用默认值）。"""
+    config_data = {
+        'camera': {
+            'index': 3,
+        },
+        'model': {
+            'use_onnx': True,
+        },
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, encoding='utf-8') as f:
+        yaml.dump(config_data, f)
+        temp_path = f.name
+    
+    try:
+        config = SystemConfig.from_yaml(temp_path)
+        
+        # 验证指定的字段
+        assert config.camera_index == 3
+        assert config.use_onnx is True
+        
+        # 验证未指定的字段使用默认值
+        assert config.camera_width == 640  # 默认值
+        assert config.camera_height == 480  # 默认值
+        assert config.use_ipex is False  # 默认值
+        
+    finally:
+        Path(temp_path).unlink()
+
+
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])
