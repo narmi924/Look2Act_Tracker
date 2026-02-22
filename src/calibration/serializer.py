@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from calibration.calibrator import CalibrationModule
+from src.calibration.calibrator import CalibrationModule
 
 
 def save_calibration(

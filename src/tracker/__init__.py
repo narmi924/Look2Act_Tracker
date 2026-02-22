@@ -1,7 +1,7 @@
 """实时追踪管道模块。"""
 
-from tracker.pipeline import SystemConfig, TrackerPipeline, TrackerResult
-from tracker.smoother import GazeSmoother
+from src.tracker.pipeline import SystemConfig, TrackerPipeline, TrackerResult
+from src.tracker.smoother import GazeSmoother
 
 __all__ = [
     'TrackerPipeline',

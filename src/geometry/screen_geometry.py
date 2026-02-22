@@ -9,7 +9,7 @@ from typing import Optional
 
 import numpy as np
 
-from geometry.ray_plane import ray_plane_intersect
+from src.geometry.ray_plane import ray_plane_intersect
 
 
 class ScreenGeometry:
