@@ -39,7 +39,7 @@ def export_to_onnx(
     
     # 加载模型
     model = GazeNet()
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
     
     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -73,7 +73,7 @@ def export_to_onnx(
         },
     )
     
-    print(f"✓ ONNX 模型已导出")
+    print(f"[Success] ONNX 模型已导出")
     
     # 验证导出的模型
     if verify:
@@ -106,9 +106,9 @@ def export_to_onnx(
         print(f"  - Mean difference: {mean_diff:.6e}")
         
         if max_diff < 1e-4:
-            print("✓ 验证通过：ONNX 模型输出与 PyTorch 一致")
+            print("[Pass] 验证通过：ONNX 模型输出与 PyTorch 一致")
         else:
-            print(f"⚠ 警告：输出差异较大 (max_diff={max_diff:.6e})")
+            print(f"[Warning] 警告：输出差异较大 (max_diff={max_diff:.6e})")
 
 
 def main():

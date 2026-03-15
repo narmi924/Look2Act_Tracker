@@ -19,6 +19,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
 
+from qfluentwidgets import setTheme, Theme, setThemeColor
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -42,6 +44,10 @@ def setup_application() -> QApplication:
     app.setApplicationName("Look2Act Tracker")
     app.setOrganizationName("Look2Act")
     app.setApplicationVersion("1.0.0")
+    
+    # 应用 Gaze_Dataset_Collector 中的品牌色和自定义样式表
+    from src.ui.fluent_theme import apply_fluent_theme
+    apply_fluent_theme(app)
     
     return app
 

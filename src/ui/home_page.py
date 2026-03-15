@@ -25,8 +25,8 @@ from qfluentwidgets import (
     BodyLabel,
     CardWidget,
     PrimaryPushButton,
-    PushButton,
     TitleLabel,
+    SmoothScrollArea,
 )
 
 
@@ -188,17 +188,31 @@ class HomePage(QWidget):
         info_layout.addWidget(info_title)
         info_layout.addWidget(info_content)
         
+        # 创建可滚动区域
+        self.scroll_area = SmoothScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        
+        self.scroll_widget = QWidget()
+        self.scroll_widget.setStyleSheet("QWidget { background: transparent; }")
+        
+        scroll_layout = QVBoxLayout(self.scroll_widget)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(24)
+        scroll_layout.addWidget(title)
+        scroll_layout.addWidget(subtitle)
+        scroll_layout.addSpacing(10)
+        scroll_layout.addWidget(welcome)
+        scroll_layout.addSpacing(20)
+        scroll_layout.addLayout(cards_layout)
+        scroll_layout.addSpacing(10)
+        scroll_layout.addWidget(info_card)
+        scroll_layout.addStretch(1)
+        
+        self.scroll_area.setWidget(self.scroll_widget)
+        
         # 主布局
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(60, 40, 60, 40)
-        main_layout.setSpacing(24)
-        main_layout.addWidget(title)
-        main_layout.addWidget(subtitle)
-        main_layout.addSpacing(10)
-        main_layout.addWidget(welcome)
-        main_layout.addSpacing(20)
-        main_layout.addLayout(cards_layout)
-        main_layout.addSpacing(10)
-        main_layout.addWidget(info_card)
-        main_layout.addStretch(1)
+        main_layout.addWidget(self.scroll_area)
 

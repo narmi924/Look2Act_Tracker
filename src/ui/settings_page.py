@@ -43,6 +43,8 @@ from qfluentwidgets import (
     LineEdit,
     SwitchButton,
     Slider,
+    RadioButton,
+    SmoothScrollArea,
 )
 
 from src.tracker.pipeline import SystemConfig
@@ -118,19 +120,12 @@ class SettingsPage(QWidget):
         top_bar.addSpacing(10)
         top_bar.addWidget(self.save_btn)
         
-        # 摄像头设置卡片
+        # 各种设置卡片
+        window_card = self._create_window_settings_card()
         camera_card = self._create_camera_settings_card()
-        
-        # 模型设置卡片
         model_card = self._create_model_settings_card()
-        
-        # 几何设置卡片
         geometry_card = self._create_geometry_settings_card()
-        
-        # 平滑设置卡片
         smoother_card = self._create_smoother_settings_card()
-        
-        # 追踪设置卡片
         tracker_card = self._create_tracker_settings_card()
         
         # 状态信息
@@ -138,18 +133,62 @@ class SettingsPage(QWidget):
         self.status_label.setStyleSheet("color: #4CAF50; font-weight: 600; margin-top: 10px;")
         self.status_label.setWordWrap(True)
         
+        # 创建可滚动区域
+        self.scroll_area = SmoothScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        
+        self.scroll_widget = QWidget()
+        self.scroll_widget.setStyleSheet("QWidget { background: transparent; }")
+        
+        scroll_layout = QVBoxLayout(self.scroll_widget)
+        scroll_layout.setContentsMargins(10, 0, 10, 0)
+        scroll_layout.setSpacing(16)
+        
+        scroll_layout.addWidget(window_card)
+        scroll_layout.addWidget(camera_card)
+        scroll_layout.addWidget(model_card)
+        scroll_layout.addWidget(geometry_card)
+        scroll_layout.addWidget(smoother_card)
+        scroll_layout.addWidget(tracker_card)
+        scroll_layout.addWidget(self.status_label)
+        scroll_layout.addStretch(1)
+        
+        self.scroll_area.setWidget(self.scroll_widget)
+        
         # 主布局
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(40, 30, 40, 30)
         main_layout.setSpacing(16)
         main_layout.addLayout(top_bar)
-        main_layout.addWidget(camera_card)
-        main_layout.addWidget(model_card)
-        main_layout.addWidget(geometry_card)
-        main_layout.addWidget(smoother_card)
-        main_layout.addWidget(tracker_card)
-        main_layout.addWidget(self.status_label)
-        main_layout.addStretch(1)
+        main_layout.addWidget(self.scroll_area)
+    
+    def _create_window_settings_card(self) -> CardWidget:
+        """创建窗口显示设置卡片。"""
+        card = CardWidget()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        
+        # 标题
+        title = BodyLabel("窗口显示设置 / Window Settings")
+        title.setStyleSheet("font-size: 18px; font-weight: 600;")
+        layout.addWidget(title)
+        
+        # 提示信息
+        hint = BodyLabel("💡 自适应模式：保留系统任务栏可见\n💡 全屏模式：覆盖任务栏（相当于独立应用形态）\n注意：设置将在下次启动时生效。")
+        hint.setStyleSheet("color: #888; font-size: 13px; margin-bottom: 8px;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        
+        # 模式单选框
+        self.adaptive_radio = RadioButton("自适应模式（保留任务栏） / Adaptive Mode")
+        self.fullscreen_radio = RadioButton("全屏模式（覆盖任务栏） / Fullscreen Mode")
+        
+        layout.addWidget(self.adaptive_radio)
+        layout.addWidget(self.fullscreen_radio)
+        
+        return card
     
     def _create_camera_settings_card(self) -> CardWidget:
         """创建摄像头设置卡片。"""
@@ -456,6 +495,13 @@ class SettingsPage(QWidget):
     
     def _update_ui_from_config(self) -> None:
         """根据配置对象更新 UI 控件。"""
+        # 窗口设置
+        if hasattr(self, 'fullscreen_radio'):
+            if self.config.main_window_fullscreen:
+                self.fullscreen_radio.setChecked(True)
+            else:
+                self.adaptive_radio.setChecked(True)
+                
         # 摄像头设置
         if self.camera_index_spin is not None:
             self.camera_index_spin.setValue(self.config.camera_index)
@@ -495,6 +541,10 @@ class SettingsPage(QWidget):
     
     def _update_config_from_ui(self) -> None:
         """根据 UI 控件更新配置对象。"""
+        # 窗口设置
+        if hasattr(self, 'fullscreen_radio'):
+            self.config.main_window_fullscreen = self.fullscreen_radio.isChecked()
+            
         # 摄像头设置
         if self.camera_index_spin is not None:
             self.config.camera_index = self.camera_index_spin.value()
@@ -540,6 +590,9 @@ class SettingsPage(QWidget):
             
             # 构建 YAML 数据
             config_data = {
+                'ui': {
+                    'main_window_fullscreen': self.config.main_window_fullscreen,
+                },
                 'camera': {
                     'index': self.config.camera_index,
                     'width': self.config.camera_width,

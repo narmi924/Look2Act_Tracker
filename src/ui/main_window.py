@@ -19,7 +19,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeyEvent, QCloseEvent
 from PyQt6.QtWidgets import QMainWindow, QStackedWidget, QMessageBox
 
-from qfluentwidgets import NavigationInterface, NavigationItemPosition, FluentIcon
+from qfluentwidgets import NavigationInterface, NavigationItemPosition, FluentIcon as FIF, FluentWindow
 
 from src.ui.home_page import HomePage
 from src.ui.camera_page import CameraPage
@@ -29,20 +29,15 @@ from src.ui.settings_page import SettingsPage
 from src.tracker.pipeline import TrackerPipeline, SystemConfig
 
 
-class MainWindow(QMainWindow):
+class MainWindow(FluentWindow):
     """主窗口类。
     
     负责管理所有页面和页面间的导航。
-    使用 QStackedWidget 实现页面切换，每次只显示一个页面。
+    使用 FluentWindow 实现左侧滑动测边导航。
     
     页面导航流程：
     - 主页 ↔ 各功能页面
     - 按 Esc 键返回主页（或退出）
-    
-    窗口特性：
-    - 最大化窗口模式
-    - 按 Esc 键返回主页或退出
-    - 统一管理 TrackerPipeline 单例
     """
     
     def __init__(self) -> None:
@@ -53,23 +48,26 @@ class MainWindow(QMainWindow):
         self.tracker: Optional[TrackerPipeline] = None
         self.tracker_config: Optional[SystemConfig] = None
         
-        # 创建中央堆叠窗口
-        self._stack = QStackedWidget(self)
-        self.setCentralWidget(self._stack)
-        
         # 创建所有页面
         self.page_home = HomePage()
         self.page_camera = CameraPage()
         self.page_calibration = CalibrationPage()
         self.page_tracking = TrackingPage()
         self.page_settings = SettingsPage()
+
+        # 设置 objectName 供 FluentWindow 路由标识
+        self.page_home.setObjectName("HomePage")
+        self.page_camera.setObjectName("CameraPage")
+        self.page_calibration.setObjectName("CalibrationPage")
+        self.page_tracking.setObjectName("TrackingPage")
+        self.page_settings.setObjectName("SettingsPage")
         
-        # 添加页面到堆叠窗口
-        self._stack.addWidget(self.page_home)
-        self._stack.addWidget(self.page_camera)
-        self._stack.addWidget(self.page_calibration)
-        self._stack.addWidget(self.page_tracking)
-        self._stack.addWidget(self.page_settings)
+        # 添加页面到侧边导航栏
+        self.addSubInterface(self.page_home, FIF.HOME, '主页')
+        self.addSubInterface(self.page_camera, FIF.PHOTO, '预览')
+        self.addSubInterface(self.page_calibration, FIF.EDIT, '校准')
+        self.addSubInterface(self.page_tracking, FIF.VIEW, '追踪')
+        self.addSubInterface(self.page_settings, FIF.SETTING, '设置')
         
         # 连接主页导航信号
         self.page_home.navigate_to_camera.connect(self.go_camera)
@@ -80,14 +78,80 @@ class MainWindow(QMainWindow):
         # 连接设置页面配置变更信号
         self.page_settings.config_changed.connect(self._on_config_changed)
         
-        # 设置窗口尺寸和位置
-        self.resize(1280, 800)
-        self._center_window()
+        # 获取屏幕尺寸以便像 Eye_Touch 一样进行自适应全屏布局
+        from PyQt6.QtWidgets import QApplication
+        import yaml
         
-        # 显示主页
-        self.go_home()
+        screen = QApplication.primaryScreen()
         
-        print("[MAIN_WINDOW] 主窗口已初始化")
+        # 读取配置判断是否是真正的全屏（盖住任务栏）
+        is_fullscreen = False
+        try:
+            with open("configs/system_config.yaml", 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+                is_fullscreen = data.get('ui', {}).get('main_window_fullscreen', False)
+        except Exception:
+            pass
+            
+        if is_fullscreen:
+            # 真正的全屏模式
+            available_geometry = screen.geometry()
+        else:
+            # 自适应模式，保留任务栏
+            available_geometry = screen.availableGeometry()
+            
+        # 类似 Eye_Touch，自适应模式（保留任务栏或全屏），并严格禁止调整大小和全屏最大化按钮
+        self.setFixedSize(available_geometry.size())
+        self.move(available_geometry.x(), available_geometry.y())
+        self.setWindowFlags(
+            Qt.WindowType.Window | 
+            Qt.WindowType.CustomizeWindowHint | 
+            Qt.WindowType.WindowTitleHint | 
+            Qt.WindowType.WindowSystemMenuHint | 
+            Qt.WindowType.WindowMinimizeButtonHint | 
+            Qt.WindowType.WindowCloseButtonHint
+        )
+        
+        # 禁用 QFluentWidgets 自定义标题栏的最大化/还原功能
+        if hasattr(self, 'titleBar'):
+            if hasattr(self.titleBar, 'maxBtn'):
+                self.titleBar.maxBtn.hide()
+                self.titleBar.maxBtn.setDisabled(True)
+            if hasattr(self.titleBar, 'setDoubleClickEnabled'):
+                self.titleBar.setDoubleClickEnabled(False)
+        
+        # 导航栏行为设定 (参考 Eye_Touch 的紧凑折叠实现)
+        self.navigationInterface.setExpandWidth(130)
+        try:
+            if hasattr(self.navigationInterface, 'setCollapsible'):
+                self.navigationInterface.setCollapsible(True)
+            if hasattr(self.navigationInterface, 'setMenuButtonMinimumWidth'):
+                self.navigationInterface.setMenuButtonMinimumWidth(80)
+            if hasattr(self.navigationInterface, 'setCollapseWidth'):
+                self.navigationInterface.setCollapseWidth(32)
+        except Exception:
+            pass
+        
+        # 隐藏原本的窗口白色背景影响，强制套用深褐色主题中的透明特性
+        self.setStyleSheet("""
+            FluentWindow {
+                background: transparent;
+            }
+            NavigationInterface, NavigationPanel {
+                background: transparent !important;
+                background-color: transparent !important;
+                border: none;
+            }
+            /* 适配折叠栏对齐问题 */
+            StackedWidget {
+                margin-left: 32px !important;
+            }
+        """)
+
+        # 默认选中第一项
+        self.navigationInterface.setCurrentItem(self.page_home.objectName())
+        
+        print("[MAIN_WINDOW] 主窗口已初始化，窗口大小已自适应屏幕")
     
     def _center_window(self) -> None:
         """将窗口居中显示。"""
@@ -170,7 +234,7 @@ class MainWindow(QMainWindow):
         """按键事件处理：按 Esc 键返回主页或退出。"""
         if event.key() == Qt.Key.Key_Escape:
             # 如果在主页，则退出应用
-            if self._stack.currentWidget() == self.page_home:
+            if self.stackedWidget.currentWidget() == self.page_home:
                 self.close()
             else:
                 # 否则返回主页
@@ -200,12 +264,12 @@ class MainWindow(QMainWindow):
     
     def go_home(self) -> None:
         """导航到主页。"""
-        self._stack.setCurrentWidget(self.page_home)
+        self.switchTo(self.page_home)
         print("[MAIN_WINDOW] 导航到主页")
     
     def go_camera(self) -> None:
         """导航到摄像头预览页面。"""
-        self._stack.setCurrentWidget(self.page_camera)
+        self.switchTo(self.page_camera)
         print("[MAIN_WINDOW] 导航到摄像头预览页面")
     
     def go_calibration(self) -> None:
@@ -229,7 +293,7 @@ class MainWindow(QMainWindow):
         # 将 TrackerPipeline 传递给校准页面
         self.page_calibration.set_tracker(self.tracker)
         
-        self._stack.setCurrentWidget(self.page_calibration)
+        self.switchTo(self.page_calibration)
         print("[MAIN_WINDOW] 导航到校准页面")
     
     def go_tracking(self) -> None:
@@ -243,11 +307,11 @@ class MainWindow(QMainWindow):
             self.page_tracking.tracker = self.tracker
             self.page_tracking.tracker_config = self.tracker_config
         
-        self._stack.setCurrentWidget(self.page_tracking)
+        self.switchTo(self.page_tracking)
         print("[MAIN_WINDOW] 导航到实时追踪页面")
     
     def go_settings(self) -> None:
         """导航到设置页面。"""
-        self._stack.setCurrentWidget(self.page_settings)
+        self.switchTo(self.page_settings)
         print("[MAIN_WINDOW] 导航到设置页面")
 

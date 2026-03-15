@@ -49,7 +49,7 @@ def load_model(checkpoint_path: str, config: dict) -> GazeNet:
     channels = model_cfg.get("channels", [32, 64, 128, 256])
     model = GazeNet(num_channels=channels)
 
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
 

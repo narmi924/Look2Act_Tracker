@@ -316,11 +316,9 @@ class TrackingPage(QWidget):
         load_path = Path("calibration.json")
         
         if not load_path.exists():
-            QMessageBox.warning(
-                self,
-                "文件不存在",
-                f"校准文件不存在：{load_path.absolute()}\n\n请先在校准页面进行校准并保存。"
-            )
+            self.calib_status.setText("未加载 / Not Loaded (使用原始预测)")
+            self.calib_status.setStyleSheet("color: #FF9800; font-weight: 600;")
+            print(f"[TRACKING_PAGE] 校准文件不存在：{load_path.absolute()}，将使用原始预测")
             return
         
         try:
