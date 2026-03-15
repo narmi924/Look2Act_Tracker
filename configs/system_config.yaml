@@ -1,7 +1,7 @@
 camera:
   index: 0
-  width: 640
-  height: 480
+  width: 1280
+  height: 720
   backend: dshow
 face_detection:
   eye_crop_size: 128

@@ -78,6 +78,9 @@ class SystemConfig:
     screen_w_mm: float = 344.0
     screen_h_mm: float = 194.0
     
+    # 界面配置
+    main_window_fullscreen: bool = False
+    
     # 平滑配置
     smoother_alpha: float = 0.3
     
@@ -106,6 +109,7 @@ class SystemConfig:
             screen_h_mm=data.get('geometry', {}).get('screen_h_mm', 194.0),
             smoother_alpha=data.get('smoother', {}).get('alpha', 0.3),
             target_fps=data.get('tracker', {}).get('target_fps', 30),
+            main_window_fullscreen=data.get('ui', {}).get('main_window_fullscreen', False),
         )
 
 
