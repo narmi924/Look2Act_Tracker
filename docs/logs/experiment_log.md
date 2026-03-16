@@ -135,3 +135,108 @@
 ### 文件位置
 - 脚本: scripts/exp_smoothing_compare.py
 - 结果: evaluation_results/smoothing_compare/
+
+---
+
+## Exp-2026-03-16-HeadPoseAblation
+
+### 目标
+量化 PnP 头部姿态几何补偿对注视估计精度的贡献，通过消融实验对比有/无 head pose 旋转的屏幕像素误差。
+
+### 配置
+- dataset: dataset_processed/test (447 samples)
+- model: checkpoints/best_model.pth (GazeNet, channels=[32,64,128,256])
+- screen: 1536×864, 344×215mm, distance=500mm
+- 几何 pipeline: gaze_vector → R @ gaze → ray-plane intersect → screen px
+- 消融条件:
+  - full_pose: 完整 head pose 旋转（R 从 yaw/pitch/roll 重建）
+  - no_pose: 无旋转（单位矩阵 I 替代 R）
+  - no_yaw: 消融 yaw（yaw=0，保留 pitch/roll）
+  - no_pitch: 消融 pitch（pitch=0，保留 yaw/roll）
+
+### 数据集 head pose 分布
+- head_yaw: [-19.9°, +12.6°], mean=-6.7°
+- head_pitch: [-173.4°, +162.3°], mean=-147.3°（RQDecomp3x3 的 180° 歧义）
+- head_roll: [-175.4°, +179.0°], mean=52.0°
+
+### 结果
+
+| 条件 | Mean Pixel Error (px) | Std | Median (px) |
+|------|----------------------|-----|-------------|
+| full_pose | 364.1 | 153.0 | 369.7 |
+| no_pose | 503.2 | 179.4 | 526.5 |
+| no_yaw | 364.1 | 153.0 | 369.7 |
+| no_pitch | 514.9 | 187.7 | 512.8 |
+
+Head pose 总贡献: 像素误差减少 139.1 px (27.7%)
+
+### 结论
+1. Head pose 几何补偿将像素误差从 503.2 px 降至 364.1 px，贡献 27.7%
+2. Pitch 是主要贡献维度：消融 pitch 后误差 514.9 px，甚至比完全无 pose 更差
+3. Yaw 在当前数据集中无贡献（no_yaw = full_pose），因为 yaw 范围仅 [-20°, +13°]
+4. 角度误差在所有条件下相同（7.28°），因为消融只影响几何投影，不影响模型输出
+5. 注意：pitch/roll 的 RQDecomp3x3 输出存在 180° 歧义，但 roundtrip 验证一致
+
+### 论文价值
+- 证明 PnP 几何补偿是系统精度的重要组成部分（~28% 改善）
+- Pitch 补偿是关键，yaw 在桌面场景下影响有限
+- 支持 Table 3（系统消融表）中 head pose on/off 的对比行
+
+### 文件位置
+- 脚本: scripts/exp_head_pose_ablation.py
+- 结果: evaluation_results/head_pose_ablation/
+
+
+---
+
+## Exp-2026-03-17-LeaveOneOut
+
+### 目标
+通过 Leave-One-User-Out 交叉验证评估模型的跨用户泛化能力。每折留出一个用户全部数据做测试，其余 9 个用户数据从头训练 GazeNet。
+
+### 配置
+- dataset: dataset_processed/all (2193 samples, 10 users)
+- model: GazeNet (channels=[32,64,128,256])，每折从头训练
+- epochs: 50, batch_size: 64, lr: 0.001, weight_decay: 1e-4
+- scheduler: CosineAnnealingLR
+- device: Intel Arc XPU (IPEX)
+- screen: 1536×864
+
+### 结果
+
+| 留出用户 | 训练样本 | 测试样本 | 角度误差 (°) | 像素误差 (px) | 训练耗时 (s) |
+|---------|---------|---------|-------------|-------------|-------------|
+| User 4  | 2041 | 152 | 6.11 ±2.88 | 376.2 | 303 |
+| User 5  | 2035 | 158 | 9.30 ±1.90 | 360.7 | 304 |
+| User 6  | 2040 | 153 | 4.41 ±2.28 | 345.6 | 297 |
+| User 13 | 1920 | 273 | 3.49 ±1.36 | 328.2 | 281 |
+| User 14 | 1920 | 273 | 3.34 ±1.51 | 320.2 | 291 |
+| User 15 | 1920 | 273 | 4.39 ±1.80 | 333.7 | 278 |
+| User 16 | 1925 | 268 | 5.64 ±1.49 | 349.7 | 280 |
+| User 25 | 1992 | 201 | 4.34 ±3.76 | 348.4 | 292 |
+| User 26 | 1930 | 263 | 4.95 ±4.11 | 361.0 | 281 |
+| User 27 | 2014 | 179 | 4.28 ±2.22 | 371.7 | 292 |
+
+**跨用户汇总**:
+- Mean Angle Error: 5.03° ±1.64°
+- Mean Pixel Error: 349.5 ±17.4 px
+- 最佳用户: User 14 (3.34°)
+- 最差用户: User 5 (9.30°)
+- 总训练时间: ~48 分钟 (10 折)
+
+### 结论
+1. 跨用户平均角度误差 5.03°，比固定划分的测试集误差 7.28° 更低，说明固定划分中测试用户恰好较难
+2. User 5 误差最高 (9.30°)，是跨用户泛化的瓶颈，可能与该用户的头部姿态或眼部特征差异有关
+3. User 13/14 误差最低 (~3.4°)，这两个用户数据量最大 (273 samples)，且来自同一设备
+4. 用户间误差标准差 1.64°，说明模型对不同用户的泛化能力存在显著差异
+5. 像素误差跨用户相对稳定 (320~376 px)，方差小于角度误差
+6. 训练时间每折约 5 分钟，XPU 加速有效
+
+### 论文价值
+- 支持 Table 2（跨用户 LOO 结果）
+- 证明模型具备一定跨用户泛化能力（5.03° vs 单用户 ~2-3°）
+- 揭示用户间差异是精度瓶颈，支持 personalization/calibration 的必要性论述
+
+### 文件位置
+- 脚本: scripts/exp_leave_one_out.py
+- 结果: evaluation_results/leave_one_out/

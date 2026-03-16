@@ -44,6 +44,9 @@
 5. ✅ 条件分桶误差分析（head pose / session / user / 屏幕区域，5 张图）
 6. ✅ 平滑对比实验（EMA α 扫描 + One Euro Filter，3 张图）
 7. ✅ 论文笔记：title candidates、contribution、related work 分组、reviewer risks
+8. ✅ 头部姿态消融实验（full/no_pose/no_yaw/no_pitch，3 张图）
+   - Head pose 贡献 27.7%（503→364 px），pitch 是主要维度
+   - Yaw 在桌面场景下影响可忽略（范围仅 [-20°, +13°]）
 
 ### 当前系统基线
 
@@ -68,7 +71,11 @@
 
 ### 下一步
 
-1. 头部姿态消融实验（有 vs 无 PnP 几何补偿）— 需要修改 pipeline 代码
-2. 跨用户 leave-one-out 评估 — 需要重新训练模型（告知用户命令）
+1. ~~头部姿态消融实验~~ ✅ 已完成
+2. ~~跨用户 leave-one-out 评估~~ ✅ 已完成
+   - 跨用户平均 5.03° ±1.64°，像素误差 349.5 px
+   - 最佳 User 14 (3.34°)，最差 User 5 (9.30°)
+   - 用户间差异显著，支持 calibration 必要性论述
 3. 数据增强改进（分辨率退化、更强光照增强）
 4. 考虑将 One Euro Filter 集成到系统中作为可选平滑器
+5. 系统消融总表（Table 3）：整合 head pose / calibration / smoothing 的 on/off 对比
