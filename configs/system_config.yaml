@@ -9,6 +9,7 @@ face_detection:
   min_tracking_confidence: 0.5
 model:
   checkpoint_path: checkpoints/best_model.pth
+  model_version: auto  # auto 从 checkpoint 自动检测, v1, v2
   use_ipex: false
   use_onnx: true
   onnx_path: checkpoints/gaze_net.onnx

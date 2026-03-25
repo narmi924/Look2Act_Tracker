@@ -26,9 +26,10 @@ REQUIRED_COLUMNS = [
     "screen_w", "screen_h", "frame_w", "frame_h",
 ]
 
-# 标准化输出 CSV 的字段
+# 标准化输出 CSV 的字段（V2 新增 right_eye_img_path）
 PROCESSED_COLUMNS = [
-    "eye_img_path", "gaze_x", "gaze_y", "gaze_z",
+    "eye_img_path", "right_eye_img_path",
+    "gaze_x", "gaze_y", "gaze_z",
     "head_yaw", "head_pitch", "head_roll",
     "norm_target_x", "norm_target_y",
     "session_id", "user_id",

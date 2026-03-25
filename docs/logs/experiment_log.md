@@ -240,3 +240,72 @@ Head pose 总贡献: 像素误差减少 139.1 px (27.7%)
 ### 文件位置
 - 脚本: scripts/exp_leave_one_out.py
 - 结果: evaluation_results/leave_one_out/
+
+
+---
+
+## Exp-2026-03-24-GazeNetV2
+
+### 目标
+将模型从 GazeNet V1（单眼输入）升级为 GazeNetV2（双眼共享 CNN + head pose 融合），验证双眼信息和头部姿态特征对视线估计精度的提升效果。
+
+### 动机
+- V1 仅使用单眼图像，丢失了双眼协同信息
+- 头部姿态消融实验（Exp-2026-03-16）证明 head pose 几何补偿贡献 27.7%，但仅在后处理阶段使用
+- 将 head pose 直接融入模型特征空间，让网络学习姿态-视线的非线性映射关系
+- 新增 12 个用户数据（88~99），训练数据量翻倍，支撑更复杂模型
+
+### V2 架构设计
+
+```
+左眼 (B,3,128,128) ──→ 共享 CNN backbone ──→ left_feat (B,256)  ─┐
+                         (4层 Conv+BN+ReLU+Pool)                   │
+右眼 (B,3,128,128) ──→ 共享 CNN backbone ──→ right_feat (B,256) ─┤── concat ──→ (B,515)
+                         (权重共享)                                 │
+head_pose (B,3) ─────────────────────────────────────────────────┘
+                                                                    │
+                                                              FC(515→128)
+                                                              ReLU + Dropout(0.3)
+                                                              FC(128→3)
+                                                              L2 normalize
+                                                                    │
+                                                              gaze_vector (B,3)
+```
+
+**关键设计决策**：
+- 共享 backbone：左右眼使用同一组 CNN 权重，减少参数量，利用眼部结构对称性
+- 融合维度 515 = 256(左) + 256(右) + 3(pose)
+- Dropout 0.3 缓解过拟合（V1 训练中观察到 train/val gap）
+- 参数量 < 2.5M，保持轻量级
+
+### 配置
+- model: GazeNetV2, channels=[32,64,128,256], fusion_dim=128, dropout=0.3
+- dataset: 22 用户 (原 10 + 新增 88~99), ~4800 samples
+- data split: train=3350, val=604, test=868
+- training: 100 epochs, batch_size=64, lr=0.001, Adam, CosineAnnealingLR
+- device: Intel Arc XPU (IPEX)
+- 预处理：同时保存左右眼裁剪图像
+
+### 代码变更
+- `src/models/gaze_net.py`: 新增 GazeNetV2 类
+- `src/data/dataset.py`: 支持 V1/V2 双模式，V2 输出 left_eye + right_eye + head_pose
+- `scripts/train.py`: 支持 V1/V2 训练，自动检测模型版本
+- `scripts/preprocess.py`: 同时保存左右眼图像
+- `scripts/export_onnx.py`: V2 导出 3 输入 ONNX
+- `src/tracker/pipeline.py`: 实时推理适配 V2（PyTorch + ONNX 双路径）
+- `configs/train_config.yaml`: 新增 V2 参数（head_pose_dim, fusion_dim, dropout）
+- `configs/system_config.yaml`: 新增 model_version 配置
+
+### 结果
+（待训练完成后填写）
+
+| 指标 | V1 (10用户) | V2 (22用户) | 变化 |
+|------|------------|------------|------|
+| Best val_angle | 4.38° | — | — |
+| Test angle error | 7.28° | — | — |
+| 训练数据量 | 1545 | 3350 | +117% |
+
+### 预期
+- 双眼输入提供立体视觉线索，预期角度误差降低 10~20%
+- Head pose 融合让模型直接学习姿态补偿，减少对后处理几何校正的依赖
+- 更大数据集 + Dropout 应缓解 V1 的过拟合问题

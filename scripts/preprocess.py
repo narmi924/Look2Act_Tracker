@@ -82,16 +82,23 @@ def preprocess_session(
             skipped += 1
             continue
 
-        # 提取左眼
+        # 提取左右眼
         left_eye, right_eye = extract_eyes_from_mosaic(mosaic)
         if left_eye is None:
             skipped += 1
             continue
 
         # 保存左眼图像
-        eye_filename = f"{meta.session_id}_{int(row['frame_idx']):06d}_L.jpg"
-        eye_path = images_dir / eye_filename
-        cv2.imwrite(str(eye_path), left_eye)
+        left_filename = f"{meta.session_id}_{int(row['frame_idx']):06d}_L.jpg"
+        cv2.imwrite(str(images_dir / left_filename), left_eye)
+
+        # 保存右眼图像（V2 双眼输入需要）
+        right_filename = f"{meta.session_id}_{int(row['frame_idx']):06d}_R.jpg"
+        if right_eye is not None:
+            cv2.imwrite(str(images_dir / right_filename), right_eye)
+        else:
+            # 右眼不可用时复制左眼（水平翻转作为近似）
+            cv2.imwrite(str(images_dir / right_filename), cv2.flip(left_eye, 1))
 
         # 计算视线标签
         labels = compute_gaze_labels_for_row(
@@ -106,7 +113,8 @@ def preprocess_session(
         )
 
         processed_rows.append({
-            "eye_img_path": f"images/{eye_filename}",
+            "eye_img_path": f"images/{left_filename}",
+            "right_eye_img_path": f"images/{right_filename}",
             "gaze_x": labels["gaze_x"],
             "gaze_y": labels["gaze_y"],
             "gaze_z": labels["gaze_z"],

@@ -28,7 +28,7 @@ import yaml
 
 from src.geometry.coordinate import transform_gaze_to_camera
 from src.geometry.screen_geometry import ScreenGeometry
-from src.models.gaze_net import GazeNet
+from src.models.gaze_net import GazeNet, GazeNetV2
 from src.tracker.smoother import GazeSmoother
 from src.vision.face_detector import FaceDetector
 from src.vision.head_pose import HeadPoseEstimator
@@ -73,6 +73,7 @@ class SystemConfig:
     use_ipex: bool = False
     use_onnx: bool = False
     onnx_path: str = "checkpoints/gaze_net.onnx"
+    model_version: str = "auto"  # "auto" 从 checkpoint 自动检测, "v1", "v2"
     
     # 几何配置
     screen_w_mm: float = 344.0
@@ -105,6 +106,7 @@ class SystemConfig:
             use_ipex=data.get('model', {}).get('use_ipex', False),
             use_onnx=data.get('model', {}).get('use_onnx', False),
             onnx_path=data.get('model', {}).get('onnx_path', 'checkpoints/gaze_net.onnx'),
+            model_version=data.get('model', {}).get('model_version', 'auto'),
             screen_w_mm=data.get('geometry', {}).get('screen_w_mm', 344.0),
             screen_h_mm=data.get('geometry', {}).get('screen_h_mm', 194.0),
             smoother_alpha=data.get('smoother', {}).get('alpha', 0.3),
@@ -136,9 +138,10 @@ class TrackerPipeline:
         self.cap: Optional[cv2.VideoCapture] = None
         self.face_detector: Optional[FaceDetector] = None
         self.head_pose_estimator: Optional[HeadPoseEstimator] = None
-        self.gaze_model: Optional[GazeNet] = None
+        self.gaze_model = None  # GazeNet 或 GazeNetV2
+        self.model_version: str = "v1"  # 实际检测到的模型版本
         self.onnx_session = None  # ONNX Runtime session
-        self.onnx_input_name: Optional[str] = None
+        self.onnx_input_names: list[str] = []  # ONNX 输入名列表
         self.onnx_output_name: Optional[str] = None
         self.screen_geometry: Optional[ScreenGeometry] = None
         self.smoother: Optional[GazeSmoother] = None
@@ -230,23 +233,64 @@ class TrackerPipeline:
                     onnx_path,
                     providers=['CPUExecutionProvider']
                 )
-                self.onnx_input_name = self.onnx_session.get_inputs()[0].name
+                # 检测 ONNX 模型版本：V2 有 3 个输入，V1 有 1 个
+                inputs = self.onnx_session.get_inputs()
+                self.onnx_input_names = [inp.name for inp in inputs]
                 self.onnx_output_name = self.onnx_session.get_outputs()[0].name
-                print(f"ONNX 模型已加载：{onnx_path}")
+                
+                if len(inputs) == 3 and 'left_eye' in self.onnx_input_names:
+                    self.model_version = "v2"
+                    print(f"ONNX V2 模型已加载：{onnx_path}（双眼 + head pose）")
+                else:
+                    self.model_version = "v1"
+                    print(f"ONNX V1 模型已加载：{onnx_path}（单眼）")
                 
             else:
                 # 使用 PyTorch
-                self.gaze_model = GazeNet()
+                # 先加载 checkpoint 检测版本
+                detected_version = self.config.model_version
+                config_from_ckpt = {}
+                state_dict = None
                 
                 if Path(self.model_path).exists():
-                    checkpoint = torch.load(self.model_path, map_location='cpu')
-                    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                        self.gaze_model.load_state_dict(checkpoint['model_state_dict'])
+                    checkpoint = torch.load(self.model_path, map_location='cpu', weights_only=False)
+                    if isinstance(checkpoint, dict):
+                        if detected_version == "auto":
+                            detected_version = checkpoint.get("model_version", "v1")
+                        config_from_ckpt = checkpoint.get("config", {})
+                        state_dict = checkpoint.get("model_state_dict", checkpoint)
                     else:
-                        self.gaze_model.load_state_dict(checkpoint)
-                    print(f"视线模型已加载：{self.model_path}")
+                        if detected_version == "auto":
+                            detected_version = "v1"
+                        state_dict = checkpoint
                 else:
+                    if detected_version == "auto":
+                        detected_version = "v1"
                     print(f"警告：模型文件不存在 {self.model_path}，使用随机初始化权重")
+                
+                self.model_version = detected_version
+                model_cfg = config_from_ckpt.get("model", {})
+                channels = model_cfg.get("channels", [32, 64, 128, 256])
+                
+                if self.model_version == "v2":
+                    self.gaze_model = GazeNetV2(
+                        num_channels=channels,
+                        head_pose_dim=model_cfg.get("head_pose_dim", 3),
+                        fusion_dim=model_cfg.get("fusion_dim", 128),
+                        dropout=model_cfg.get("dropout", 0.3),
+                    )
+                    print(f"使用 GazeNetV2（双眼 + head pose 融合）")
+                else:
+                    self.gaze_model = GazeNet(num_channels=channels)
+                    print(f"使用 GazeNet V1（单眼）")
+                
+                if state_dict is not None and isinstance(state_dict, dict):
+                    # 如果 state_dict 还包含其他 key（非纯 state_dict），尝试提取
+                    if 'model_state_dict' in state_dict:
+                        self.gaze_model.load_state_dict(state_dict['model_state_dict'])
+                    else:
+                        self.gaze_model.load_state_dict(state_dict)
+                    print(f"视线模型已加载：{self.model_path}")
                 
                 self.gaze_model.eval()
                 
@@ -417,21 +461,46 @@ class TrackerPipeline:
             # 转换为张量并归一化
             left_tensor = torch.from_numpy(left_eye).permute(2, 0, 1).float() / 255.0
             right_tensor = torch.from_numpy(right_eye).permute(2, 0, 1).float() / 255.0
-            batch = torch.stack([left_tensor, right_tensor], dim=0)  # (2, 3, 128, 128)
             
-            if self.config.use_onnx:
-                # ONNX Runtime 推理
-                batch_np = batch.numpy()
-                gaze_vectors = self.onnx_session.run(
-                    [self.onnx_output_name],
-                    {self.onnx_input_name: batch_np}
-                )[0]
-                gaze_vector = gaze_vectors.mean(axis=0)  # (3,)
+            # 构建 head pose 向量 (yaw, pitch, roll)，单位：度
+            head_pose_vec = np.array([
+                head_pose.yaw, head_pose.pitch, head_pose.roll
+            ], dtype=np.float32)
+            
+            if self.model_version == "v2":
+                # V2：双眼 + head pose 融合
+                left_batch = left_tensor.unsqueeze(0)    # (1, 3, 128, 128)
+                right_batch = right_tensor.unsqueeze(0)   # (1, 3, 128, 128)
+                pose_batch = torch.from_numpy(head_pose_vec).unsqueeze(0)  # (1, 3)
+                
+                if self.config.use_onnx:
+                    gaze_vector = self.onnx_session.run(
+                        [self.onnx_output_name],
+                        {
+                            'left_eye': left_batch.numpy(),
+                            'right_eye': right_batch.numpy(),
+                            'head_pose': pose_batch.numpy(),
+                        }
+                    )[0][0]  # (3,)
+                else:
+                    with torch.no_grad():
+                        gaze_out = self.gaze_model(left_batch, right_batch, pose_batch)
+                    gaze_vector = gaze_out[0].cpu().numpy()  # (3,)
             else:
-                # PyTorch 推理
-                with torch.no_grad():
-                    gaze_vectors = self.gaze_model(batch)  # (2, 3)
-                gaze_vector = gaze_vectors.mean(dim=0).cpu().numpy()  # (3,)
+                # V1：左右眼批处理取均值
+                batch = torch.stack([left_tensor, right_tensor], dim=0)  # (2, 3, 128, 128)
+                
+                if self.config.use_onnx:
+                    batch_np = batch.numpy()
+                    gaze_vectors = self.onnx_session.run(
+                        [self.onnx_output_name],
+                        {self.onnx_input_names[0]: batch_np}
+                    )[0]
+                    gaze_vector = gaze_vectors.mean(axis=0)  # (3,)
+                else:
+                    with torch.no_grad():
+                        gaze_vectors = self.gaze_model(batch)  # (2, 3)
+                    gaze_vector = gaze_vectors.mean(dim=0).cpu().numpy()  # (3,)
             
             timings['gaze_regression'] = (time.perf_counter() - t0) * 1000
             
