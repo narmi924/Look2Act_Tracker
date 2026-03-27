@@ -3,10 +3,14 @@
 # 使用方式：conda run -n gaze-env python scripts/train.py --config configs/train_config.yaml
 
 model:
-  name: "GazeNet"
+  name: "GazeNetV2"
+  version: "v2"  # "v1" = 单眼 GazeNet, "v2" = 双眼 + head pose 融合
   channels: [32, 64, 128, 256]
   input_size: 128
   output_dim: 3
+  head_pose_dim: 3  # yaw, pitch, roll
+  fusion_dim: 128   # 融合层隐藏维度
+  dropout: 0.3      # Dropout 概率（缓解过拟合）
 
 training:
   batch_size: 64

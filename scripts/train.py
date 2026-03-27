@@ -1,5 +1,5 @@
 """
-训练入口脚本：从标准化数据集训练 GazeNet 模型。
+训练入口脚本：从标准化数据集训练 GazeNet / GazeNetV2 模型。
 
 工作目录：Look2Act_Tracker_Project/
 conda 环境：gaze-env
@@ -25,7 +25,7 @@ import yaml
 # 将 src 加入路径
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from models.gaze_net import GazeNet
+from models.gaze_net import GazeNet, GazeNetV2
 from models.losses import angular_loss
 from data.dataset import GazeDataset
 
@@ -42,11 +42,23 @@ def load_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def build_model(config: dict) -> GazeNet:
-    """根据配置构建 GazeNet 模型。"""
+def build_model(config: dict) -> nn.Module:
+    """根据配置构建模型（V1 或 V2）。"""
     model_cfg = config.get("model", {})
     channels = model_cfg.get("channels", [32, 64, 128, 256])
-    model = GazeNet(num_channels=channels)
+    version = model_cfg.get("version", "v1")
+
+    if version == "v2":
+        model = GazeNetV2(
+            num_channels=channels,
+            head_pose_dim=model_cfg.get("head_pose_dim", 3),
+            fusion_dim=model_cfg.get("fusion_dim", 128),
+            dropout=model_cfg.get("dropout", 0.3),
+        )
+        logger.info("模型: GazeNetV2 (双眼 + head pose 融合)")
+    else:
+        model = GazeNet(num_channels=channels)
+        logger.info("模型: GazeNet V1 (单眼)")
 
     total_params = sum(p.numel() for p in model.parameters())
     logger.info(f"模型参数量: {total_params:,}")
@@ -85,7 +97,8 @@ def build_scheduler(optimizer: torch.optim.Optimizer, config: dict):
 
 
 def load_split_data(
-    processed_dir: Path, split: str, augment: bool = False
+    processed_dir: Path, split: str, augment: bool = False,
+    model_version: str = "v2",
 ) -> GazeDataset | None:
     """加载指定划分的数据集。"""
     split_dir = processed_dir / split
@@ -97,7 +110,10 @@ def load_split_data(
 
     df = pd.read_csv(labels_path)
     logger.info(f"{split} 数据: {len(df)} 样本")
-    return GazeDataset(df, image_root=split_dir, augment=augment)
+    return GazeDataset(
+        df, image_root=split_dir, augment=augment,
+        model_version=model_version,
+    )
 
 
 def train_one_epoch(
@@ -105,6 +121,7 @@ def train_one_epoch(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    model_version: str = "v2",
 ) -> float:
     """训练一个 epoch，返回平均损失。"""
     model.train()
@@ -112,11 +129,19 @@ def train_one_epoch(
     num_batches = 0
 
     for batch in loader:
-        eye_imgs = batch["eye_img"].to(device)
         gaze_targets = batch["gaze"].to(device)
 
         optimizer.zero_grad()
-        preds = model(eye_imgs)
+
+        if model_version == "v2":
+            left_eye = batch["left_eye"].to(device)
+            right_eye = batch["right_eye"].to(device)
+            head_pose = batch["head_pose"].to(device)
+            preds = model(left_eye, right_eye, head_pose)
+        else:
+            eye_imgs = batch["eye_img"].to(device)
+            preds = model(eye_imgs)
+
         loss = angular_loss(preds, gaze_targets)
         loss.backward()
         optimizer.step()
@@ -132,6 +157,7 @@ def validate(
     model: nn.Module,
     loader: DataLoader,
     device: torch.device,
+    model_version: str = "v2",
 ) -> tuple[float, float]:
     """在验证集上评估，返回 (平均损失, 平均角度误差/度)。"""
     model.eval()
@@ -140,15 +166,19 @@ def validate(
     num_batches = 0
 
     for batch in loader:
-        eye_imgs = batch["eye_img"].to(device)
         gaze_targets = batch["gaze"].to(device)
 
-        preds = model(eye_imgs)
-        loss = angular_loss(preds, gaze_targets)
+        if model_version == "v2":
+            left_eye = batch["left_eye"].to(device)
+            right_eye = batch["right_eye"].to(device)
+            head_pose = batch["head_pose"].to(device)
+            preds = model(left_eye, right_eye, head_pose)
+        else:
+            eye_imgs = batch["eye_img"].to(device)
+            preds = model(eye_imgs)
 
-        # 角度误差转换为度
-        angle_rad = loss.item()
-        angle_deg = np.degrees(angle_rad)
+        loss = angular_loss(preds, gaze_targets)
+        angle_deg = np.degrees(loss.item())
 
         total_loss += loss.item()
         total_angle_deg += angle_deg
@@ -175,20 +205,23 @@ def main():
     config = load_config(args.config)
     train_cfg = config.get("training", {})
     data_cfg = config.get("data", {})
+    model_cfg = config.get("model", {})
     ckpt_cfg = config.get("checkpoint", {})
     log_cfg = config.get("logging", {})
+
+    model_version = model_cfg.get("version", "v1")
 
     # 设备配置
     device_name = train_cfg.get("device", "cpu")
     use_ipex = train_cfg.get("use_ipex", False)
-    
+
     # 初始化设备
     if device_name == "xpu":
         try:
             import intel_extension_for_pytorch as ipex
             if torch.xpu.is_available():
                 device = torch.device("xpu")
-                logger.info(f"使用设备: XPU (Intel Arc GPU)")
+                logger.info("使用设备: XPU (Intel Arc GPU)")
                 logger.info(f"IPEX 版本: {ipex.__version__}")
             else:
                 logger.warning("XPU 不可用，回退到 CPU")
@@ -200,7 +233,7 @@ def main():
             use_ipex = False
     else:
         device = torch.device("cpu")
-        logger.info(f"使用设备: CPU")
+        logger.info("使用设备: CPU")
 
     # 构建模型
     model = build_model(config)
@@ -209,7 +242,7 @@ def main():
     # 构建优化器和调度器
     optimizer = build_optimizer(model, config)
     scheduler = build_scheduler(optimizer, config)
-    
+
     # IPEX 优化（训练加速）
     if use_ipex and device.type == "xpu":
         try:
@@ -223,12 +256,15 @@ def main():
     start_epoch = 0
     best_val_angle = float("inf")
     if args.resume and Path(args.resume).exists():
-        ckpt = torch.load(args.resume, map_location=device)
+        ckpt = torch.load(args.resume, map_location=device, weights_only=False)
         model.load_state_dict(ckpt["model_state_dict"])
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         start_epoch = ckpt.get("epoch", 0) + 1
         best_val_angle = ckpt.get("best_val_angle", float("inf"))
-        logger.info(f"从 epoch {start_epoch} 恢复训练，最佳验证角度误差: {best_val_angle:.2f}°")
+        logger.info(
+            f"从 epoch {start_epoch} 恢复训练，"
+            f"最佳验证角度误差: {best_val_angle:.2f}°"
+        )
 
     # 加载数据
     processed_dir = Path(data_cfg.get("dataset_processed_dir", "dataset_processed"))
@@ -236,8 +272,12 @@ def main():
     batch_size = train_cfg.get("batch_size", 64)
     num_workers = data_cfg.get("num_workers", 0)
 
-    train_ds = load_split_data(processed_dir, "train", augment=augment)
-    val_ds = load_split_data(processed_dir, "val", augment=False)
+    train_ds = load_split_data(
+        processed_dir, "train", augment=augment, model_version=model_version,
+    )
+    val_ds = load_split_data(
+        processed_dir, "val", augment=False, model_version=model_version,
+    )
 
     if train_ds is None:
         logger.error("训练数据不存在，请先运行 scripts/preprocess.py")
@@ -276,13 +316,17 @@ def main():
     for epoch in range(start_epoch, epochs):
         t0 = time.time()
 
-        train_loss = train_one_epoch(model, train_loader, optimizer, device)
+        train_loss = train_one_epoch(
+            model, train_loader, optimizer, device, model_version,
+        )
 
         # 验证
         val_loss = 0.0
         val_angle = 0.0
         if val_loader is not None:
-            val_loss, val_angle = validate(model, val_loader, device)
+            val_loss, val_angle = validate(
+                model, val_loader, device, model_version,
+            )
 
         # 学习率调度
         if scheduler is not None:
@@ -321,8 +365,12 @@ def main():
                 "optimizer_state_dict": optimizer.state_dict(),
                 "best_val_angle": best_val_angle,
                 "config": config,
+                "model_version": model_version,
             }, best_path)
-            logger.info(f"保存最优模型: {best_path} (val_angle={best_val_angle:.2f}°)")
+            logger.info(
+                f"保存最优模型: {best_path} "
+                f"(val_angle={best_val_angle:.2f}°)"
+            )
 
     csv_file.close()
 
@@ -334,6 +382,7 @@ def main():
         "optimizer_state_dict": optimizer.state_dict(),
         "best_val_angle": best_val_angle,
         "config": config,
+        "model_version": model_version,
     }, final_path)
 
     logger.info(f"训练完成。最佳验证角度误差: {best_val_angle:.2f}°")

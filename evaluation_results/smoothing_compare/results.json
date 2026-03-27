@@ -1,0 +1,104 @@
+[
+  {
+    "name": "EMA α=0.1",
+    "type": "ema",
+    "alpha": 0.1,
+    "jitter": 5.566177095733362,
+    "fixation_jitter": 1.7849874923031155,
+    "rmse": 62.35844973693434,
+    "latency_proxy": 166.42579757568373
+  },
+  {
+    "name": "EMA α=0.2",
+    "type": "ema",
+    "alpha": 0.2,
+    "jitter": 6.901982338274383,
+    "fixation_jitter": 3.624387942017799,
+    "rmse": 33.61551845116044,
+    "latency_proxy": 91.17042706373836
+  },
+  {
+    "name": "EMA α=0.3",
+    "type": "ema",
+    "alpha": 0.3,
+    "jitter": 8.182857834733513,
+    "fixation_jitter": 5.47668883914349,
+    "rmse": 24.7286087059841,
+    "latency_proxy": 56.864085912442896
+  },
+  {
+    "name": "EMA α=0.5",
+    "type": "ema",
+    "alpha": 0.5,
+    "jitter": 11.766411439250593,
+    "fixation_jitter": 9.311421316421171,
+    "rmse": 24.324989031257175,
+    "latency_proxy": 32.67768851718676
+  },
+  {
+    "name": "EMA α=0.7",
+    "type": "ema",
+    "alpha": 0.7,
+    "jitter": 16.58346920693329,
+    "fixation_jitter": 13.909736238027515,
+    "rmse": 30.024146095217713,
+    "latency_proxy": 31.536267438318824
+  },
+  {
+    "name": "EMA α=1.0",
+    "type": "ema",
+    "alpha": 1.0,
+    "jitter": 26.035888723110606,
+    "fixation_jitter": 23.238846888832782,
+    "rmse": 41.21619590042238,
+    "latency_proxy": 40.10078394059183
+  },
+  {
+    "name": "1Euro mc=0.5 β=0.005",
+    "type": "one_euro",
+    "min_cutoff": 0.5,
+    "beta": 0.005,
+    "jitter": 12.894710370467994,
+    "fixation_jitter": 6.829053644882648,
+    "rmse": 20.463713060745764,
+    "latency_proxy": 31.414212436149953
+  },
+  {
+    "name": "1Euro mc=1.0 β=0.007",
+    "type": "one_euro",
+    "min_cutoff": 1.0,
+    "beta": 0.007,
+    "jitter": 14.001692004970876,
+    "fixation_jitter": 8.403927589463162,
+    "rmse": 22.584963343001057,
+    "latency_proxy": 30.990170551447836
+  },
+  {
+    "name": "1Euro mc=2.0 β=0.01",
+    "type": "one_euro",
+    "min_cutoff": 2.0,
+    "beta": 0.01,
+    "jitter": 15.331889363633282,
+    "fixation_jitter": 10.295033663838389,
+    "rmse": 25.370925078641708,
+    "latency_proxy": 31.545173088176384
+  },
+  {
+    "name": "1Euro mc=5.0 β=0.02",
+    "type": "one_euro",
+    "min_cutoff": 5.0,
+    "beta": 0.02,
+    "jitter": 18.23507204628214,
+    "fixation_jitter": 13.953632019918299,
+    "rmse": 30.471746791468785,
+    "latency_proxy": 33.76610137932308
+  },
+  {
+    "name": "No smoothing",
+    "type": "none",
+    "jitter": 26.035888723110606,
+    "fixation_jitter": 23.238846888832782,
+    "rmse": 41.21619590042238,
+    "latency_proxy": 40.10078394059183
+  }
+]

@@ -26,7 +26,7 @@ import yaml
 # 将 src 加入路径
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from models.gaze_net import GazeNet
+from models.gaze_net import GazeNet, GazeNetV2
 from models.losses import angular_loss
 from data.dataset import GazeDataset
 
@@ -43,24 +43,51 @@ def load_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def load_model(checkpoint_path: str, config: dict) -> GazeNet:
-    """从 checkpoint 加载模型。"""
-    model_cfg = config.get("model", {})
-    channels = model_cfg.get("channels", [32, 64, 128, 256])
-    model = GazeNet(num_channels=channels)
+def load_model(checkpoint_path: str, config: dict) -> tuple:
+    """从 checkpoint 加载模型，自动检测 v1/v2 版本。
 
+    返回:
+        (model, model_version) 元组
+    """
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    model.load_state_dict(ckpt["model_state_dict"])
+
+    # 检测模型版本
+    model_version = "v1"
+    ckpt_config = {}
+    if isinstance(ckpt, dict):
+        model_version = ckpt.get("model_version", "v1")
+        ckpt_config = ckpt.get("config", {})
+
+    # 合并配置：checkpoint 中的配置优先
+    model_cfg = ckpt_config.get("model", config.get("model", {}))
+    channels = model_cfg.get("channels", [32, 64, 128, 256])
+
+    if model_version == "v2":
+        model = GazeNetV2(
+            num_channels=channels,
+            head_pose_dim=model_cfg.get("head_pose_dim", 3),
+            fusion_dim=model_cfg.get("fusion_dim", 128),
+            dropout=model_cfg.get("dropout", 0.3),
+        )
+    else:
+        model = GazeNet(num_channels=channels)
+
+    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        model.load_state_dict(ckpt["model_state_dict"])
+    else:
+        model.load_state_dict(ckpt)
+
     model.eval()
 
-    logger.info(f"已加载模型: {checkpoint_path}")
-    return model
+    logger.info(f"已加载模型: {checkpoint_path} (版本: {model_version})")
+    return model, model_version
 
 
 @torch.no_grad()
 def evaluate_on_test(
-    model: GazeNet,
+    model,
     test_loader: DataLoader,
+    model_version: str = "v1",
     screen_w: int = 1536,
     screen_h: int = 864,
 ) -> dict:
@@ -78,11 +105,18 @@ def evaluate_on_test(
     all_true_ny = []
 
     for batch in test_loader:
-        eye_imgs = batch["eye_img"]
         gaze_targets = batch["gaze"]
         meta = batch["meta"]
 
-        preds = model(eye_imgs)
+        # 根据模型版本选择输入
+        if model_version == "v2":
+            left_eye = batch["left_eye"]
+            right_eye = batch["right_eye"]
+            head_pose = batch["head_pose"]
+            preds = model(left_eye, right_eye, head_pose)
+        else:
+            eye_imgs = batch["eye_img"]
+            preds = model(eye_imgs)
 
         # 逐样本计算角度误差
         for i in range(preds.shape[0]):
@@ -233,7 +267,7 @@ def main():
     data_cfg = config.get("data", {})
 
     # 加载模型
-    model = load_model(args.checkpoint, config)
+    model, model_version = load_model(args.checkpoint, config)
 
     # 加载测试数据
     processed_dir = Path(data_cfg.get("dataset_processed_dir", "dataset_processed"))
@@ -247,11 +281,11 @@ def main():
     df = pd.read_csv(labels_path)
     logger.info(f"测试集: {len(df)} 样本")
 
-    test_ds = GazeDataset(df, image_root=test_dir, augment=False)
+    test_ds = GazeDataset(df, image_root=test_dir, augment=False, model_version=model_version)
     test_loader = DataLoader(test_ds, batch_size=64, shuffle=False, num_workers=0)
 
     # 评估
-    results = evaluate_on_test(model, test_loader)
+    results = evaluate_on_test(model, test_loader, model_version=model_version)
     metrics = results["metrics"]
 
     logger.info("=== 评估结果 ===")
