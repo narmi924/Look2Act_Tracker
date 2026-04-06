@@ -152,3 +152,74 @@
 3. 对比 V1 vs V2 性能
 4. 如果 V2 显著优于 V1，重新跑 leave-one-user-out 评估
 5. 更新 evaluation_results/ 下的图表
+
+
+## 2026-03-29
+
+### V2 训练完成
+
+GazeNetV2（双眼 + head pose 融合）100 epochs 训练完成。
+
+**关键结果**：
+- Best val_angle: 2.02°（epoch 75），V1 为 4.38°，提升 54%
+- Test angle error: 3.46°，V1 为 7.28°，提升 52%
+- Test pixel error: 337.4 px，V1 为 369.4 px，提升 8.7%
+- train/val gap: 0.012（V1 为 0.071），过拟合显著缓解
+- 训练数据: 5018 train / 987 val / 868 test（22 用户）
+- 参数量: 455,811
+
+### 当前系统基线（V2）
+
+| 指标 | V1 (10用户) | V2 (22用户) | 变化 |
+|------|------------|------------|------|
+| Mean Angular Error | 7.28° | 3.46° | -52% |
+| Median Angular Error | 7.90° | 2.76° | — |
+| Mean Pixel Error | 369.4 px | 337.4 px | -8.7% |
+| Std Angular Error | 2.73° | 2.44° | — |
+| Test Samples | 447 | 868 | +94% |
+| 训练数据 | 1545 | 5018 | +225% |
+| 用户数 | 10 | 22 | +120% |
+
+### 下一步
+
+1. ~~V2 训练~~ ✅ 已完成
+2. ~~用 V2 模型重新跑评估实验~~ ✅ 已完成（error_analysis + head_pose_ablation + calibration_compare + 基础评估 + ONNX 导出）
+3. 用 V2 重新跑 leave-one-user-out 评估（22 折）
+4. ~~导出 V2 ONNX 模型~~ ✅ 已完成
+5. 数据增强改进（分辨率退化、更强光照增强）
+6. One Euro Filter 集成到系统作为可选平滑器
+7. 系统消融总表（Table 3）：整合 head pose / calibration / smoothing 的 on/off 对比
+
+
+## 2026-04-06
+
+### 今日进展
+
+完成扩展数据集上的 Leave-One-User-Out 收尾分析，并同步整理项目推进与论文写作口径。
+
+**LOO 最终结果（2026-04-05 23:59:57 完成）**：
+- 跨用户平均角度误差: 2.48° ±1.35°
+- 跨用户平均像素误差: 321.4 ±19.9 px
+- 最佳用户: User 81（0.93°）
+- 最差用户: User 5（6.96°）
+- 数据规模: 31 users / 7395 samples
+
+### 阶段性判断
+
+1. 跨用户 LOO 已经从早期 10 用户的 5.03° 提升到 31 用户的 2.48°，这说明当前系统的主问题不再是“是否泛化”，而是“长尾用户为何仍差”。
+2. 论文主结果现在具备更强说服力：更大用户规模、完整 LOO、结果更优，足以替换现有文档和论文草稿中的旧版 10/22 用户口径。
+3. 当前系统瓶颈从模型主体进一步转移到几何链路与个性化补偿，因为角度误差下降明显，而像素误差下降相对有限。
+
+### 需要立即同步到论文的点
+
+1. 数据集规模统一改成 31 users / 7395 samples。
+2. Abstract、Introduction、Experiments、Conclusion 中的 LOO 主数字统一改成 2.48° ±1.35° / 321.4 ±19.9 px。
+3. Table 2 改成 31-user LOO 汇总表，正文展示 overall + representative best/worst users，完整 per-user 表放附录或补充材料。
+4. Discussion 中强调“23/31 用户 ≤ 3°，仅 5/31 用户 ≥ 4°”，突出多数用户可用、少数长尾用户待个性化处理。
+
+### 下一步
+
+1. 更新论文正文 `paper-acm/main.tex` 中所有旧版 LOO 和数据规模表述。
+2. 针对 User 5 / 16 / 26 做误差归因，形成一段长尾用户分析，补到 Discussion 或 Failure Case。
+3. 汇总 head pose / calibration / smoothing 的系统级总表，形成 Table 3 定稿版本。
+4. 设计一个最小可发表的交互验证实验，至少补充命中率、停留选择或 Fitts' Law 风格任务。

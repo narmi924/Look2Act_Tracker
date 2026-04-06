@@ -144,6 +144,10 @@ class CalibrationFullscreenWidget(QWidget):
         self.current_point_index = 0
         self.calibrator.clear_points()
         
+        # 启用校准模式（禁用坐标 clamp）
+        if self.tracker is not None:
+            self.tracker.set_calibration_mode(True)
+        
         # 显示全屏
         self.showFullScreen()
         
@@ -227,21 +231,22 @@ class CalibrationFullscreenWidget(QWidget):
     
     def _perform_calibration(self) -> None:
         """执行校准拟合。"""
+        # 关闭校准模式（恢复坐标 clamp）
+        if self.tracker is not None:
+            self.tracker.set_calibration_mode(False)
+        
+        success = False
+        residual = 0.0
         try:
             residual = self.calibrator.calibrate()
             success = not self.calibrator.needs_recalibration()
-            
             print(f"[CALIBRATION] 校准完成：残差={residual:.2f} px, 成功={success}")
-            
-            # 发送完成信号
-            self.calibration_finished.emit(success, residual)
-            
         except Exception as e:
             print(f"[CALIBRATION] 校准失败：{e}")
-            self.calibration_finished.emit(False, 0.0)
         
-        # 退出全屏
+        # 先退出全屏，再发送信号（避免模态 MessageBox 被全屏窗口遮挡）
         self.close()
+        self.calibration_finished.emit(success, residual)
     
     def paintEvent(self, event) -> None:
         """绘制校准界面。"""
@@ -293,9 +298,11 @@ class CalibrationFullscreenWidget(QWidget):
     def keyPressEvent(self, event) -> None:
         """处理键盘事件。"""
         if event.key() == Qt.Key.Key_Escape:
-            # 用户取消校准
+            # 用户取消校准，关闭校准模式
             self.countdown_timer.stop()
             self.sampling_timer.stop()
+            if self.tracker is not None:
+                self.tracker.set_calibration_mode(False)
             self.calibration_cancelled.emit()
             self.close()
 
@@ -313,8 +320,8 @@ class CalibrationPage(QWidget):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         
-        # 校准模块
-        self.calibrator = CalibrationModule(num_points=9, max_residual_px=50.0)
+        # 校准模块（使用二次多项式拟合，更好地处理非线性畸变）
+        self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="polynomial")
         
         # TrackerPipeline（需要外部传入或初始化）
         self.tracker: Optional[TrackerPipeline] = None
@@ -419,11 +426,10 @@ class CalibrationPage(QWidget):
             )
             return
         
-        # 创建全屏校准窗口
+        # 创建全屏校准窗口（不传 parent，使其作为独立顶层窗口以正确全屏）
         self.fullscreen_widget = CalibrationFullscreenWidget(
             tracker=self.tracker,
             calibrator=self.calibrator,
-            parent=self
         )
         
         # 连接信号

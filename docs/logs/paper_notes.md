@@ -97,3 +97,38 @@
 | p^cal | 校准后屏幕点 |
 | f_θ | gaze regression network |
 | h_φ | calibration mapping function |
+
+
+## 论文当前口径（2026-04-06）
+
+### 建议作为正文主结果的数字
+
+- 数据规模: 31 users / 7395 samples
+- LOO 平均角度误差: 2.48° ±1.35°
+- LOO 平均像素误差: 321.4 ±19.9 px
+- 最佳用户: User 81（0.93°）
+- 最差用户: User 5（6.96°）
+- 23/31 用户 ≤ 3.0°
+- 头部姿态补偿贡献: 27.3% pixel error reduction
+- 9-point affine calibration: 221.2 ±28.6 px（测试集 hold-out，最稳定）
+
+### 对论文叙事的直接影响
+
+1. Abstract 不应再写 22 participants / 5.03°，应改为 31 users / 2.48°，否则主结果明显过时。
+2. Contribution 里的“cross-user generalization”可以从“具备一定能力”升级为“在 31-user LOO 下实现 2.48° 平均误差，并呈现有限长尾问题”。
+3. Table 2 建议只在正文放 overall、best case、worst case、分布统计（≤2°、≤3°、≥4°），完整 31-user 明细放附录，避免主文表格过长。
+4. Discussion 要把重点从“模型是否有效”切换到“为何像素误差仍高于角度误差改善幅度所暗示的水平”，把几何与校准链路明确列为剩余瓶颈。
+
+### Reviewer 风险更新
+
+- 数据规模风险已明显下降：从早期 10/22 用户推进到 31 用户，`small-scale dataset` 不再是最强攻击点。
+- 主要风险转向缺少在线交互实验：如果不补用户任务验证，审稿人仍可能认为系统只停留在离线指标。
+- 仍需准备长尾用户解释：User 5 / 16 / 26 的误差明显偏高，需要给出 failure case 或合理归因。
+- 需要明确 321.4 px 的使用边界：适合粗粒度 gaze interaction、区域选择和 dwell-based control，不宜过度宣称高精度点选。
+
+### 论文改稿清单
+
+1. 全文替换旧数字：22 users、5.03°、349.5 px、旧 best/worst user。
+2. 在 Experiments 中新增一句：LOO on 31 held-out users completed on 2026-04-05，all 31 folds finished successfully。
+3. 在 Conclusion 中加入“多数用户达到 ≤3°，长尾用户仍需 personalization”的落点。
+4. 如果篇幅允许，新增一个 failure-case figure 或附录表格，展示 worst-user 与 typical-user 的对比。

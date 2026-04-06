@@ -2,41 +2,41 @@
   "conditions": {
     "full_pose": {
       "description": "完整 head pose 旋转",
-      "mean_pixel_error": 364.08646243498487,
-      "median_pixel_error": 369.7188120720935,
-      "std_pixel_error": 153.04241172842111,
-      "mean_angle_error": 7.2767350773100965,
-      "num_samples": 447
+      "mean_pixel_error": 364.9972558133836,
+      "median_pixel_error": 369.63446111590355,
+      "std_pixel_error": 153.83152837079447,
+      "mean_angle_error": 2.8206289344076447,
+      "num_samples": 1390
     },
     "no_pose": {
       "description": "无旋转（单位矩阵）",
-      "mean_pixel_error": 503.2309614851618,
-      "median_pixel_error": 526.4989048395419,
-      "std_pixel_error": 179.37409736586991,
-      "mean_angle_error": 7.2767350773100965,
-      "num_samples": 447
+      "mean_pixel_error": 501.8720566285411,
+      "median_pixel_error": 515.6789546840268,
+      "std_pixel_error": 166.52804435607746,
+      "mean_angle_error": 2.8206289344076447,
+      "num_samples": 1390
     },
     "no_yaw": {
       "description": "消融 yaw（yaw=0）",
-      "mean_pixel_error": 364.08646243498487,
-      "median_pixel_error": 369.7188120720935,
-      "std_pixel_error": 153.04241172842111,
-      "mean_angle_error": 7.2767350773100965,
-      "num_samples": 447
+      "mean_pixel_error": 364.9972558133836,
+      "median_pixel_error": 369.63446111590355,
+      "std_pixel_error": 153.83152837079447,
+      "mean_angle_error": 2.8206289344076447,
+      "num_samples": 1390
     },
     "no_pitch": {
       "description": "消融 pitch（pitch=0）",
-      "mean_pixel_error": 514.9013992098736,
-      "median_pixel_error": 512.7767511548743,
-      "std_pixel_error": 187.71929359020282,
-      "mean_angle_error": 7.2767350773100965,
-      "num_samples": 447
+      "mean_pixel_error": 496.7332494057673,
+      "median_pixel_error": 504.5988735725606,
+      "std_pixel_error": 174.35366151931981,
+      "mean_angle_error": 2.8206289344076447,
+      "num_samples": 1390
     }
   },
   "head_pose_contribution": {
-    "pixel_error_reduction": 139.14449905017693,
-    "pixel_error_reduction_pct": 27.650226178358807,
-    "full_pose_px": 364.08646243498487,
-    "no_pose_px": 503.2309614851618
+    "pixel_error_reduction": 136.87480081515747,
+    "pixel_error_reduction_pct": 27.272847533024713,
+    "full_pose_px": 364.9972558133836,
+    "no_pose_px": 501.8720566285411
   }
 }

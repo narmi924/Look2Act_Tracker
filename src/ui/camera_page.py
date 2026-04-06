@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 from qfluentwidgets import BodyLabel, CardWidget, PrimaryPushButton, PushButton
 
 from src.ui.camera_stream import CameraStream, Resolution
+from src.ui.fluent_theme import PALETTE
 from src.vision.face_detector import FaceDetector
 
 
@@ -125,7 +126,7 @@ class CameraPage(QWidget):
         fps_label = BodyLabel("FPS:")
         fps_label.setStyleSheet("font-weight: 600;")
         self.fps_value = BodyLabel("0.0")
-        self.fps_value.setStyleSheet("font-weight: 900; color: #0078D4;")
+        self.fps_value.setStyleSheet(f"font-weight: 900; color: {PALETTE['accent']};")
         
         # 检测状态
         detect_label = BodyLabel("人脸检测 / Face Detection:")

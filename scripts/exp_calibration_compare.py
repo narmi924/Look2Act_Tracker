@@ -96,55 +96,35 @@ def generate_grid_points(
         raise ValueError(f"不支持的校准点数: {num_points}")
 
 
-def simulate_calibration_from_data(
+def _precompute_predictions(
     df: pd.DataFrame,
     model,
-    calib_indices: list[int],
-    test_indices: list[int],
-    method: str = "affine",
     screen_w: int = 1536,
     screen_h: int = 864,
-) -> dict:
-    """用数据集中的样本模拟校准过程。
-
-    从数据集中选取 calib_indices 作为校准点，test_indices 作为测试点。
-    用模型预测 raw gaze，再用校准映射修正，计算 hold-out 误差。
-
-    参数:
-        df: 数据集 DataFrame（含 gaze_x/y/z, norm_target_x/y）
-        model: GazeNet 模型
-        calib_indices: 用于校准的样本索引
-        test_indices: 用于测试的样本索引
-        method: "affine" 或 "polynomial"
-        screen_w, screen_h: 屏幕分辨率
-
-    返回:
-        包含 fit_error, holdout_error, raw_error 等指标的字典
-    """
+    model_version: str = "v1",
+) -> tuple[np.ndarray, np.ndarray]:
+    """预计算所有样本的 raw 屏幕像素坐标和真实坐标（只跑一次推理）。"""
     import torch
     from data.dataset import GazeDataset
-    from torch.utils.data import DataLoader, Subset
+    from torch.utils.data import DataLoader
 
-    # 构建数据集
     processed_dir = Path("dataset_processed/test")
-    full_ds = GazeDataset(df, image_root=processed_dir, augment=False)
-
-    # 获取所有样本的 raw prediction
-    all_raw_px = []  # 未校准的屏幕像素坐标
-    all_true_px = []  # 真实屏幕像素坐标
-
+    full_ds = GazeDataset(df, image_root=processed_dir, augment=False, model_version=model_version)
     loader = DataLoader(full_ds, batch_size=64, shuffle=False, num_workers=0)
-    idx = 0
+
+    all_raw_px = []
+    all_true_px = []
     with torch.no_grad():
         for batch in loader:
-            preds = model(batch["eye_img"])
+            if model_version == "v2":
+                preds = model(batch["left_eye"], batch["right_eye"], batch["head_pose"])
+            else:
+                preds = model(batch["eye_img"])
             meta = batch["meta"]
             for i in range(preds.shape[0]):
                 pred_vec = preds[i].numpy()
                 true_nx = float(meta["norm_target_x"][i])
                 true_ny = float(meta["norm_target_y"][i])
-
-                # 从 3D gaze 向量近似推算归一化屏幕坐标
                 if abs(pred_vec[2]) > 1e-6:
                     pred_nx = 0.5 + pred_vec[0] / pred_vec[2] * 0.5
                     pred_ny = 0.5 + pred_vec[1] / pred_vec[2] * 0.5
@@ -152,19 +132,21 @@ def simulate_calibration_from_data(
                     pred_nx, pred_ny = 0.5, 0.5
                 pred_nx = np.clip(pred_nx, 0, 1)
                 pred_ny = np.clip(pred_ny, 0, 1)
+                all_raw_px.append((pred_nx * screen_w, pred_ny * screen_h))
+                all_true_px.append((true_nx * screen_w, true_ny * screen_h))
 
-                raw_px = (pred_nx * screen_w, pred_ny * screen_h)
-                true_px = (true_nx * screen_w, true_ny * screen_h)
-                all_raw_px.append(raw_px)
-                all_true_px.append(true_px)
-                idx += 1
+    return np.array(all_raw_px), np.array(all_true_px)
 
-    all_raw_px = np.array(all_raw_px)
-    all_true_px = np.array(all_true_px)
 
-    # 无校准时的误差
+def simulate_calibration_cached(
+    all_raw_px: np.ndarray,
+    all_true_px: np.ndarray,
+    calib_indices: list[int],
+    test_indices: list[int],
+    method: str = "affine",
+) -> dict | None:
+    """用预计算的预测结果模拟校准（纯数学，无推理）。"""
     if len(calib_indices) == 0:
-        # 不做校准，直接计算 raw 误差
         test_raw = all_raw_px[test_indices]
         test_true = all_true_px[test_indices]
         errors = np.sqrt(np.sum((test_raw - test_true) ** 2, axis=1))
@@ -179,31 +161,24 @@ def simulate_calibration_from_data(
             "num_test_points": len(test_indices),
         }
 
-    # 用校准点拟合
-    calibrator = CalibrationModule(
-        num_points=len(calib_indices),
-        method=method,
-    )
+    calibrator = CalibrationModule(num_points=len(calib_indices), method=method)
     for ci in calib_indices:
         calibrator.add_calibration_point(
             raw_gaze=tuple(all_raw_px[ci]),
             screen_target=tuple(all_true_px[ci]),
         )
-
     try:
         fit_residual = calibrator.calibrate()
     except ValueError as e:
         logger.warning(f"校准失败: {e}")
         return None
 
-    # 在测试点上计算 hold-out 误差
     holdout_errors = []
     for ti in test_indices:
         calibrated = calibrator.apply(tuple(all_raw_px[ti]))
         true = all_true_px[ti]
         err = np.sqrt((calibrated[0] - true[0]) ** 2 + (calibrated[1] - true[1]) ** 2)
         holdout_errors.append(err)
-
     holdout_errors = np.array(holdout_errors)
 
     return {
@@ -224,21 +199,29 @@ def run_calibration_experiment(
     screen_w: int = 1536,
     screen_h: int = 864,
     n_repeats: int = 20,
+    model_version: str = "v1",
 ) -> list[dict]:
     """运行完整的校准对比实验。
 
-    对每种校准配置（点数 × 方法），随机采样校准点和测试点，
-    重复 n_repeats 次取平均。
+    先预计算一次推理结果，然后对每种校准配置只做纯数学校准。
 
     参数:
         df: 测试集 DataFrame
-        model: GazeNet 模型
+        model: GazeNet/GazeNetV2 模型
         screen_w, screen_h: 屏幕分辨率
         n_repeats: 每种配置的重复次数
+        model_version: "v1" 或 "v2"
 
     返回:
         所有实验结果列表
     """
+    # 预计算所有预测（只跑一次推理）
+    logger.info("预计算模型推理结果...")
+    all_raw_px, all_true_px = _precompute_predictions(
+        df, model, screen_w, screen_h, model_version,
+    )
+    logger.info(f"推理完成，{len(all_raw_px)} 样本")
+
     n_samples = len(df)
     all_indices = list(range(n_samples))
     rng = np.random.RandomState(42)
@@ -270,10 +253,9 @@ def run_calibration_experiment(
                 calib_idx = shuffled[:num_points].tolist()
                 test_idx = shuffled[num_points:].tolist()
 
-            result = simulate_calibration_from_data(
-                df, model, calib_idx, test_idx,
+            result = simulate_calibration_cached(
+                all_raw_px, all_true_px, calib_idx, test_idx,
                 method=method if method != "none" else "affine",
-                screen_w=screen_w, screen_h=screen_h,
             )
             if result is not None:
                 result["repeat"] = rep
@@ -415,15 +397,31 @@ def main():
     with open(args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # 加载模型
-    from models.gaze_net import GazeNet
-    model_cfg = config.get("model", {})
-    channels = model_cfg.get("channels", [32, 64, 128, 256])
-    model = GazeNet(num_channels=channels)
+    # 加载模型（自动检测 V1/V2）
+    from models.gaze_net import GazeNet, GazeNetV2
     ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    model.load_state_dict(ckpt["model_state_dict"])
+    model_version = "v1"
+    ckpt_config = {}
+    if isinstance(ckpt, dict):
+        model_version = ckpt.get("model_version", "v1")
+        ckpt_config = ckpt.get("config", {})
+    model_cfg = ckpt_config.get("model", config.get("model", {}))
+    channels = model_cfg.get("channels", [32, 64, 128, 256])
+    if model_version == "v2":
+        model = GazeNetV2(
+            num_channels=channels,
+            head_pose_dim=model_cfg.get("head_pose_dim", 3),
+            fusion_dim=model_cfg.get("fusion_dim", 128),
+            dropout=model_cfg.get("dropout", 0.3),
+        )
+    else:
+        model = GazeNet(num_channels=channels)
+    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        model.load_state_dict(ckpt["model_state_dict"])
+    else:
+        model.load_state_dict(ckpt)
     model.eval()
-    logger.info(f"已加载模型: {args.checkpoint}")
+    logger.info(f"已加载模型: {args.checkpoint} (版本: {model_version})")
 
     # 加载测试数据
     test_labels = Path("dataset_processed/test/labels.csv")
@@ -435,7 +433,7 @@ def main():
 
     # 运行实验
     results = run_calibration_experiment(
-        df, model, n_repeats=args.repeats,
+        df, model, n_repeats=args.repeats, model_version=model_version,
     )
 
     # 保存结果

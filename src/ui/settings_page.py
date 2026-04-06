@@ -48,6 +48,7 @@ from qfluentwidgets import (
 )
 
 from src.tracker.pipeline import SystemConfig
+from src.ui.fluent_theme import PALETTE
 
 
 class SettingsPage(QWidget):
@@ -406,7 +407,7 @@ class SettingsPage(QWidget):
         self.alpha_slider.setFixedWidth(300)
         self.alpha_slider.valueChanged.connect(self._on_alpha_changed)
         self.alpha_value_label = BodyLabel("0.30")
-        self.alpha_value_label.setStyleSheet("font-weight: 600; color: #0078D4; font-size: 16px;")
+        self.alpha_value_label.setStyleSheet(f"font-weight: 600; color: {PALETTE['accent']}; font-size: 16px;")
         self.alpha_value_label.setFixedWidth(60)
         alpha_row.addWidget(alpha_label)
         alpha_row.addWidget(self.alpha_slider)
@@ -497,7 +498,7 @@ class SettingsPage(QWidget):
         """根据配置对象更新 UI 控件。"""
         # 窗口设置
         if hasattr(self, 'fullscreen_radio'):
-            if self.config.main_window_fullscreen:
+            if self.config.window_mode == 'fullscreen':
                 self.fullscreen_radio.setChecked(True)
             else:
                 self.adaptive_radio.setChecked(True)
@@ -543,7 +544,7 @@ class SettingsPage(QWidget):
         """根据 UI 控件更新配置对象。"""
         # 窗口设置
         if hasattr(self, 'fullscreen_radio'):
-            self.config.main_window_fullscreen = self.fullscreen_radio.isChecked()
+            self.config.window_mode = 'fullscreen' if self.fullscreen_radio.isChecked() else 'adaptive'
             
         # 摄像头设置
         if self.camera_index_spin is not None:
@@ -591,7 +592,7 @@ class SettingsPage(QWidget):
             # 构建 YAML 数据
             config_data = {
                 'ui': {
-                    'main_window_fullscreen': self.config.main_window_fullscreen,
+                    'window_mode': self.config.window_mode,
                 },
                 'camera': {
                     'index': self.config.camera_index,

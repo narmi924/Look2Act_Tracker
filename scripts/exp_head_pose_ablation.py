@@ -35,7 +35,7 @@ _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
 sys.path.insert(0, str(_project_root / "src"))
 
-from models.gaze_net import GazeNet
+from models.gaze_net import GazeNet, GazeNetV2
 from data.dataset import GazeDataset
 from src.geometry.coordinate import transform_gaze_to_camera
 from src.geometry.screen_geometry import ScreenGeometry
@@ -148,20 +148,21 @@ def get_rotation_for_condition(
 # ---------------------------------------------------------------------------
 
 def evaluate_ablation(
-    model: GazeNet,
+    model,
     df: pd.DataFrame,
     image_root: Path,
     screen_geom: ScreenGeometry,
     screen_w_px: int = 1536,
     screen_h_px: int = 864,
     screen_distance_mm: float = 500.0,
+    model_version: str = "v1",
 ) -> dict[str, pd.DataFrame]:
     """对所有消融条件进行评估。
 
     返回:
         {condition_name: DataFrame}，每个 DataFrame 包含逐样本误差
     """
-    ds = GazeDataset(df, image_root=image_root, augment=False)
+    ds = GazeDataset(df, image_root=image_root, augment=False, model_version=model_version)
     loader = DataLoader(ds, batch_size=64, shuffle=False, num_workers=0)
 
     # 先收集所有模型预测
@@ -170,7 +171,10 @@ def evaluate_ablation(
     all_meta = []
     with torch.no_grad():
         for batch in loader:
-            preds = model(batch["eye_img"])
+            if model_version == "v2":
+                preds = model(batch["left_eye"], batch["right_eye"], batch["head_pose"])
+            else:
+                preds = model(batch["eye_img"])
             all_preds.append(preds.numpy())
             all_targets.append(batch["gaze"].numpy())
             # meta 是 dict of lists
@@ -385,14 +389,30 @@ def main():
     with open(args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # 加载模型
-    model_cfg = config.get("model", {})
-    channels = model_cfg.get("channels", [32, 64, 128, 256])
-    model = GazeNet(num_channels=channels)
+    # 加载模型（自动检测 V1/V2）
     ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    model.load_state_dict(ckpt["model_state_dict"])
+    model_version = "v1"
+    ckpt_config = {}
+    if isinstance(ckpt, dict):
+        model_version = ckpt.get("model_version", "v1")
+        ckpt_config = ckpt.get("config", {})
+    model_cfg = ckpt_config.get("model", config.get("model", {}))
+    channels = model_cfg.get("channels", [32, 64, 128, 256])
+    if model_version == "v2":
+        model = GazeNetV2(
+            num_channels=channels,
+            head_pose_dim=model_cfg.get("head_pose_dim", 3),
+            fusion_dim=model_cfg.get("fusion_dim", 128),
+            dropout=model_cfg.get("dropout", 0.3),
+        )
+    else:
+        model = GazeNet(num_channels=channels)
+    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        model.load_state_dict(ckpt["model_state_dict"])
+    else:
+        model.load_state_dict(ckpt)
     model.eval()
-    logger.info(f"已加载模型: {args.checkpoint}")
+    logger.info(f"已加载模型: {args.checkpoint} (版本: {model_version})")
 
     # 构建屏幕几何
     screen_geom = build_screen_geometry(
@@ -447,6 +467,7 @@ def main():
         screen_w_px=args.screen_w_px,
         screen_h_px=args.screen_h_px,
         screen_distance_mm=args.screen_distance_mm,
+        model_version=model_version,
     )
 
     # 保存结果

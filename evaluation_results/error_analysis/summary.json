@@ -1,110 +1,278 @@
 {
-  "total_samples": 2193,
+  "total_samples": 7395,
   "overall": {
-    "mean_angle_error": 4.09593161037158,
-    "median_angle_error": 3.098635778375367,
-    "std_angle_error": 3.109493470657235,
-    "mean_pixel_error": 342.5719823427237
+    "mean_angle_error": 1.5952242953277667,
+    "median_angle_error": 1.0296462182277708,
+    "std_angle_error": 1.7779304546853154,
+    "mean_pixel_error": 312.44327333305785
   },
   "per_split": {
     "train": {
-      "n": 1545,
-      "mean_angle_error": 3.0234866827020928,
-      "median_angle_error": 2.4485657130979397
+      "n": 5018,
+      "mean_angle_error": 1.1651266182874684,
+      "median_angle_error": 0.8303944450886759
     },
     "val": {
-      "n": 201,
-      "mean_angle_error": 5.265624463743932,
-      "median_angle_error": 4.493049559139155
+      "n": 987,
+      "mean_angle_error": 2.0561338141395056,
+      "median_angle_error": 1.6098542418172124
     },
     "test": {
-      "n": 447,
-      "mean_angle_error": 7.2767350773100965,
-      "median_angle_error": 7.900055030935687
+      "n": 1390,
+      "mean_angle_error": 2.8206289344076447,
+      "median_angle_error": 1.9811957868209897
     }
   },
   "per_user": {
     "13": {
       "n": 273,
-      "mean_angle_error": 1.8891752640713473
+      "mean_angle_error": 0.8113883730966013
     },
     "14": {
       "n": 273,
-      "mean_angle_error": 2.4319519687322217
+      "mean_angle_error": 0.973110207904251
     },
     "15": {
       "n": 273,
-      "mean_angle_error": 2.300600750947734
-    },
-    "26": {
-      "n": 263,
-      "mean_angle_error": 4.98513351588438
-    },
-    "4": {
-      "n": 152,
-      "mean_angle_error": 4.601221184021506
-    },
-    "5": {
-      "n": 158,
-      "mean_angle_error": 2.6695318767330907
-    },
-    "6": {
-      "n": 153,
-      "mean_angle_error": 2.8189112028623398
-    },
-    "25": {
-      "n": 201,
-      "mean_angle_error": 5.265624463743932
+      "mean_angle_error": 1.1273479176363204
     },
     "16": {
       "n": 268,
-      "mean_angle_error": 9.009445563522585
+      "mean_angle_error": 1.0211680209978806
+    },
+    "25": {
+      "n": 201,
+      "mean_angle_error": 3.13956957188638
+    },
+    "26": {
+      "n": 263,
+      "mean_angle_error": 3.2424867110699087
+    },
+    "6": {
+      "n": 153,
+      "mean_angle_error": 1.23699536946436
+    },
+    "78": {
+      "n": 276,
+      "mean_angle_error": 1.1452579004468824
+    },
+    "80": {
+      "n": 278,
+      "mean_angle_error": 1.2804250358915528
+    },
+    "81": {
+      "n": 265,
+      "mean_angle_error": 0.7887133827008123
+    },
+    "82": {
+      "n": 276,
+      "mean_angle_error": 0.7389148357528761
+    },
+    "84": {
+      "n": 194,
+      "mean_angle_error": 0.7574440489685291
+    },
+    "85": {
+      "n": 195,
+      "mean_angle_error": 0.7560021043693245
+    },
+    "86": {
+      "n": 264,
+      "mean_angle_error": 0.7388231869518073
+    },
+    "90": {
+      "n": 242,
+      "mean_angle_error": 0.8818874582121847
+    },
+    "91": {
+      "n": 245,
+      "mean_angle_error": 1.02924363622209
+    },
+    "92": {
+      "n": 194,
+      "mean_angle_error": 0.8291225232467974
+    },
+    "93": {
+      "n": 195,
+      "mean_angle_error": 0.758817927043256
+    },
+    "94": {
+      "n": 194,
+      "mean_angle_error": 0.8567014661006248
+    },
+    "96": {
+      "n": 258,
+      "mean_angle_error": 1.1368426579735709
+    },
+    "98": {
+      "n": 238,
+      "mean_angle_error": 1.2461827575835003
+    },
+    "87": {
+      "n": 278,
+      "mean_angle_error": 2.1277013758477525
+    },
+    "89": {
+      "n": 256,
+      "mean_angle_error": 2.5771819892214927
+    },
+    "95": {
+      "n": 195,
+      "mean_angle_error": 2.2549651593918822
+    },
+    "99": {
+      "n": 258,
+      "mean_angle_error": 1.3117298323561926
     },
     "27": {
       "n": 179,
-      "mean_angle_error": 4.68250932141654
+      "mean_angle_error": 4.22792801337802
+    },
+    "5": {
+      "n": 158,
+      "mean_angle_error": 7.722094660857753
+    },
+    "79": {
+      "n": 271,
+      "mean_angle_error": 1.1693013266923655
+    },
+    "83": {
+      "n": 276,
+      "mean_angle_error": 1.8481947652369934
+    },
+    "88": {
+      "n": 251,
+      "mean_angle_error": 2.058457399364729
+    },
+    "97": {
+      "n": 255,
+      "mean_angle_error": 2.3534467687719482
     }
   },
   "per_session": {
     "S20251223_195223_DEVZjesur_CAM0_Gno_glass": {
       "n": 273,
-      "mean_angle_error": 1.8891752640713473
+      "mean_angle_error": 0.8113883730966013
     },
     "S20251223_195652_DEVZjesur_CAM0_Gglass": {
       "n": 273,
-      "mean_angle_error": 2.4319519687322217
+      "mean_angle_error": 0.973110207904251
     },
     "S20251223_195858_DEVZjesur_CAM0_Gglass": {
       "n": 273,
-      "mean_angle_error": 2.300600750947734
-    },
-    "S20260109_211306_DEVLAPTOP-KM5G621T_CAM0_Gno_glass": {
-      "n": 263,
-      "mean_angle_error": 4.98513351588438
-    },
-    "S20251217_171323_DEVDESKTOP-0LN71BS_CAM0_Gglass": {
-      "n": 152,
-      "mean_angle_error": 4.601221184021506
-    },
-    "S20251217_172044_DEVDESKTOP-0LN71BS_CAM0_Gno_glass": {
-      "n": 158,
-      "mean_angle_error": 2.6695318767330907
-    },
-    "S20251217_172554_DEVDESKTOP-0LN71BS_CAM0_Gno_glass": {
-      "n": 153,
-      "mean_angle_error": 2.8189112028623398
-    },
-    "S20260109_211120_DEVLAPTOP-KM5G621T_CAM0_Gglass": {
-      "n": 201,
-      "mean_angle_error": 5.265624463743932
+      "mean_angle_error": 1.1273479176363204
     },
     "S20251223_194306_DEVDESKTOP-69KFPLC_CAM0_Gno_glass": {
       "n": 268,
-      "mean_angle_error": 9.009445563522585
+      "mean_angle_error": 1.0211680209978806
+    },
+    "S20260109_211120_DEVLAPTOP-KM5G621T_CAM0_Gglass": {
+      "n": 201,
+      "mean_angle_error": 3.13956957188638
+    },
+    "S20260109_211306_DEVLAPTOP-KM5G621T_CAM0_Gno_glass": {
+      "n": 263,
+      "mean_angle_error": 3.2424867110699087
+    },
+    "S20251217_172554_DEVDESKTOP-0LN71BS_CAM0_Gno_glass": {
+      "n": 153,
+      "mean_angle_error": 1.23699536946436
+    },
+    "S20260329_213607_DEVLAPTOP-DHE14D8H_CAM0_Gglass": {
+      "n": 276,
+      "mean_angle_error": 1.1452579004468824
+    },
+    "S20260329_213312_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 278,
+      "mean_angle_error": 1.2804250358915528
+    },
+    "S20260329_211736_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 265,
+      "mean_angle_error": 0.7887133827008123
+    },
+    "S20260329_211613_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 276,
+      "mean_angle_error": 0.7389148357528761
+    },
+    "S20260329_211257_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 194,
+      "mean_angle_error": 0.7574440489685291
+    },
+    "S20260329_211139_DEVLAPTOP-DHE14D8H_CAM0_Gglass": {
+      "n": 195,
+      "mean_angle_error": 0.7560021043693245
+    },
+    "S20260329_211025_DEVLAPTOP-DHE14D8H_CAM0_Gglass": {
+      "n": 264,
+      "mean_angle_error": 0.7388231869518073
+    },
+    "S20260318_221433_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 242,
+      "mean_angle_error": 0.8818874582121847
+    },
+    "S20260318_221108_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 245,
+      "mean_angle_error": 1.02924363622209
+    },
+    "S20260318_220942_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 194,
+      "mean_angle_error": 0.8291225232467974
+    },
+    "S20260318_220827_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 195,
+      "mean_angle_error": 0.758817927043256
+    },
+    "S20260318_220638_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 194,
+      "mean_angle_error": 0.8567014661006248
+    },
+    "S20260317_220441_DEVLAPTOP-DHE14D8H_CAM0_Gglass": {
+      "n": 258,
+      "mean_angle_error": 1.1368426579735709
+    },
+    "S20260317_220038_DEVLAPTOP-DHE14D8H_CAM0_Gglass": {
+      "n": 238,
+      "mean_angle_error": 1.2461827575835003
+    },
+    "S20260329_210907_DEVLAPTOP-DHE14D8H_CAM0_Gglass": {
+      "n": 278,
+      "mean_angle_error": 2.1277013758477525
+    },
+    "S20260318_221800_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 256,
+      "mean_angle_error": 2.5771819892214927
+    },
+    "S20260317_221613_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 195,
+      "mean_angle_error": 2.2549651593918822
+    },
+    "S20260317_215843_DEVLAPTOP-DHE14D8H_CAM0_Gglass": {
+      "n": 258,
+      "mean_angle_error": 1.3117298323561926
     },
     "S20260109_211438_DEVLAPTOP-KM5G621T_CAM0_Gglass": {
       "n": 179,
-      "mean_angle_error": 4.68250932141654
+      "mean_angle_error": 4.22792801337802
+    },
+    "S20251217_172044_DEVDESKTOP-0LN71BS_CAM0_Gno_glass": {
+      "n": 158,
+      "mean_angle_error": 7.722094660857753
+    },
+    "S20260329_213437_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 271,
+      "mean_angle_error": 1.1693013266923655
+    },
+    "S20260329_211418_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 276,
+      "mean_angle_error": 1.8481947652369934
+    },
+    "S20260318_221921_DEVLAPTOP-DHE14D8H_CAM0_Gno_glass": {
+      "n": 251,
+      "mean_angle_error": 2.058457399364729
+    },
+    "S20260317_220156_DEVLAPTOP-DHE14D8H_CAM0_Gglass": {
+      "n": 255,
+      "mean_angle_error": 2.3534467687719482
     }
   }
 }

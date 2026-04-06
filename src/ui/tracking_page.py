@@ -40,6 +40,7 @@ from qfluentwidgets import (
     PushButton,
 )
 
+from src.ui.fluent_theme import PALETTE
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
 from src.tracker.pipeline import TrackerPipeline, SystemConfig
@@ -208,7 +209,7 @@ class TrackingPage(QWidget):
         fps_label = BodyLabel("FPS:")
         fps_label.setStyleSheet("font-weight: 600; font-size: 16px;")
         self.fps_value = BodyLabel("0.0")
-        self.fps_value.setStyleSheet("font-weight: 900; color: #0078D4; font-size: 24px;")
+        self.fps_value.setStyleSheet(f"font-weight: 900; color: {PALETTE['accent']}; font-size: 24px;")
         fps_row.addWidget(fps_label)
         fps_row.addSpacing(10)
         fps_row.addWidget(self.fps_value)
@@ -465,6 +466,22 @@ class TrackingPage(QWidget):
             gaze_x, gaze_y = result.gaze_point
             if self.calibrator is not None and self.calibrator.is_calibrated:
                 gaze_x, gaze_y = self.calibrator.apply((gaze_x, gaze_y))
+            
+            # Clamp 到屏幕范围
+            from PyQt6.QtWidgets import QApplication
+            screen = QApplication.primaryScreen()
+            if screen is not None:
+                geo = screen.geometry()
+                sw, sh = float(geo.width()), float(geo.height())
+                gaze_x = max(0.0, min(gaze_x, sw - 1.0))
+                gaze_y = max(0.0, min(gaze_y, sh - 1.0))
+            
+            # 调试输出：每 30 帧打印一次
+            if not hasattr(self, '_debug_frame_count'):
+                self._debug_frame_count = 0
+            self._debug_frame_count += 1
+            if self._debug_frame_count % 30 == 0:
+                print(f"[TRACKING] gaze=({gaze_x:.1f}, {gaze_y:.1f})")
             
             # 更新注视点光标位置
             if self.cursor_overlay is not None:

@@ -27,7 +27,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from models.gaze_net import GazeNet
+from models.gaze_net import GazeNet, GazeNetV2
 from data.dataset import GazeDataset
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -35,25 +35,29 @@ logger = logging.getLogger(__name__)
 
 
 def compute_per_sample_errors(
-    model: GazeNet,
+    model,
     df: pd.DataFrame,
     image_root: Path,
     screen_w: int = 1536,
     screen_h: int = 864,
+    model_version: str = "v1",
 ) -> pd.DataFrame:
     """计算每个样本的角度误差和像素误差，附带元数据。
 
     注意：head_yaw/pitch/roll 直接从 DataFrame 读取，
     因为 GazeDataset 的 meta 不包含这些字段。
     """
-    ds = GazeDataset(df, image_root=image_root, augment=False)
+    ds = GazeDataset(df, image_root=image_root, augment=False, model_version=model_version)
     loader = DataLoader(ds, batch_size=64, shuffle=False, num_workers=0)
 
     records = []
     sample_idx = 0
     with torch.no_grad():
         for batch in loader:
-            preds = model(batch["eye_img"])
+            if model_version == "v2":
+                preds = model(batch["left_eye"], batch["right_eye"], batch["head_pose"])
+            else:
+                preds = model(batch["eye_img"])
             gaze_targets = batch["gaze"]
             meta = batch["meta"]
             batch_size = preds.shape[0]
@@ -330,14 +334,30 @@ def main():
     with open(args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # 加载模型
-    model_cfg = config.get("model", {})
-    channels = model_cfg.get("channels", [32, 64, 128, 256])
-    model = GazeNet(num_channels=channels)
+    # 加载模型（自动检测 V1/V2）
     ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    model.load_state_dict(ckpt["model_state_dict"])
+    model_version = "v1"
+    ckpt_config = {}
+    if isinstance(ckpt, dict):
+        model_version = ckpt.get("model_version", "v1")
+        ckpt_config = ckpt.get("config", {})
+    model_cfg = ckpt_config.get("model", config.get("model", {}))
+    channels = model_cfg.get("channels", [32, 64, 128, 256])
+    if model_version == "v2":
+        model = GazeNetV2(
+            num_channels=channels,
+            head_pose_dim=model_cfg.get("head_pose_dim", 3),
+            fusion_dim=model_cfg.get("fusion_dim", 128),
+            dropout=model_cfg.get("dropout", 0.3),
+        )
+    else:
+        model = GazeNet(num_channels=channels)
+    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        model.load_state_dict(ckpt["model_state_dict"])
+    else:
+        model.load_state_dict(ckpt)
     model.eval()
-    logger.info(f"已加载模型: {args.checkpoint}")
+    logger.info(f"已加载模型: {args.checkpoint} (版本: {model_version})")
 
     # 加载数据
     processed_dir = Path("dataset_processed")
@@ -356,7 +376,7 @@ def main():
     all_results = []
     for split, df, img_root in all_dfs:
         logger.info(f"计算 {split} 集误差...")
-        result_df = compute_per_sample_errors(model, df, img_root)
+        result_df = compute_per_sample_errors(model, df, img_root, model_version=model_version)
         result_df["split"] = split
         all_results.append(result_df)
 
