@@ -1,7 +1,7 @@
 {
-  "mean_angle_error": 3.463950785085156,
-  "median_angle_error": 2.76194119507275,
-  "mean_pixel_error": 337.4198672454531,
-  "std_angle_error": 2.4382783625337847,
-  "num_samples": 868
+  "mean_angle_error": 2.8206289344076447,
+  "median_angle_error": 1.9811957868209897,
+  "mean_pixel_error": 314.54133065677274,
+  "std_angle_error": 2.4306316162465422,
+  "num_samples": 1390
 }

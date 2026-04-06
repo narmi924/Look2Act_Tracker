@@ -84,25 +84,26 @@ class MainWindow(FluentWindow):
         
         screen = QApplication.primaryScreen()
         
-        # 读取配置判断是否是真正的全屏（盖住任务栏）
-        is_fullscreen = False
+        # 读取窗口模式配置（参照 Eye_Touch 的 setup_fullscreen_window）
+        window_mode = 'adaptive'  # 默认自适应模式
         try:
             with open("configs/system_config.yaml", 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)
-                is_fullscreen = data.get('ui', {}).get('main_window_fullscreen', False)
+                window_mode = data.get('ui', {}).get('window_mode', 'adaptive')
         except Exception:
             pass
             
-        if is_fullscreen:
-            # 真正的全屏模式
-            available_geometry = screen.geometry()
+        if window_mode == 'fullscreen':
+            # 全屏模式（覆盖任务栏）
+            screen_geometry = screen.geometry()
+            self.setFixedSize(screen_geometry.size())
+            self.move(0, 0)
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
         else:
-            # 自适应模式，保留任务栏
+            # 自适应模式（保留任务栏）
             available_geometry = screen.availableGeometry()
-            
-        # 类似 Eye_Touch，自适应模式（保留任务栏或全屏），并严格禁止调整大小和全屏最大化按钮
-        self.setFixedSize(available_geometry.size())
-        self.move(available_geometry.x(), available_geometry.y())
+            self.setFixedSize(available_geometry.size())
+            self.move(available_geometry.x(), available_geometry.y())
         self.setWindowFlags(
             Qt.WindowType.Window | 
             Qt.WindowType.CustomizeWindowHint | 
@@ -132,22 +133,6 @@ class MainWindow(FluentWindow):
         except Exception:
             pass
         
-        # 隐藏原本的窗口白色背景影响，强制套用深褐色主题中的透明特性
-        self.setStyleSheet("""
-            FluentWindow {
-                background: transparent;
-            }
-            NavigationInterface, NavigationPanel {
-                background: transparent !important;
-                background-color: transparent !important;
-                border: none;
-            }
-            /* 适配折叠栏对齐问题 */
-            StackedWidget {
-                margin-left: 32px !important;
-            }
-        """)
-
         # 默认选中第一项
         self.navigationInterface.setCurrentItem(self.page_home.objectName())
         

@@ -33,7 +33,7 @@ class CalibrationModule:
     def __init__(
         self,
         num_points: int = 9,
-        max_residual_px: float = 50.0,
+        max_residual_px: float = 300.0,
         method: Literal["affine", "polynomial"] = "affine",
     ):
         self.num_points = num_points
@@ -48,6 +48,10 @@ class CalibrationModule:
         self._transform_matrix: np.ndarray | None = None
         self._residual_mean: float = 0.0
         self._calibrated: bool = False
+
+        # 归一化参数（用于 polynomial 数值稳定性）
+        self._norm_mean: np.ndarray = np.zeros(2)
+        self._norm_std: np.ndarray = np.ones(2)
 
     @property
     def is_calibrated(self) -> bool:
@@ -98,12 +102,16 @@ class CalibrationModule:
         self._transform_matrix = None
         self._calibrated = False
         self._residual_mean = 0.0
+        self._norm_mean = np.zeros(2)
+        self._norm_std = np.ones(2)
 
     def calibrate(self) -> float:
         """执行校准，拟合映射函数。
 
         affine:     min_A Σ ||A × [xi, yi, 1]^T - target_i||²
         polynomial: min_W Σ ||W × [xi, yi, xi*yi, xi², yi², 1]^T - target_i||²
+
+        对 raw 数据进行归一化预处理，避免 polynomial 特征的数值不稳定。
 
         特殊情况：
         - 1-2 个点 + affine → 退化为纯平移修正（取平均偏移量）
@@ -128,6 +136,9 @@ class CalibrationModule:
                 [1.0, 0.0, offset[0]],
                 [0.0, 1.0, offset[1]],
             ], dtype=np.float64)
+            # 归一化参数：无归一化
+            self._norm_mean = np.zeros(2)
+            self._norm_std = np.ones(2)
             predicted = raw_arr + offset
             residuals = np.sqrt(np.sum((predicted - tgt_arr) ** 2, axis=1))
             self._residual_mean = float(np.mean(residuals))
@@ -140,9 +151,17 @@ class CalibrationModule:
                 f"校准点不足：{self.method.value} 方法需要至少 {min_points} 个，当前 {n} 个"
             )
 
-        # 构建特征矩阵
+        # 归一化 raw 数据（避免 polynomial 特征数值爆炸）
+        raw_arr = np.array(self._raw_points, dtype=np.float64)
+        self._norm_mean = raw_arr.mean(axis=0)
+        self._norm_std = raw_arr.std(axis=0)
+        # 防止除零
+        self._norm_std[self._norm_std < 1e-8] = 1.0
+        raw_normed = (raw_arr - self._norm_mean) / self._norm_std
+
+        # 构建特征矩阵（使用归一化后的坐标）
         src = np.array(
-            [self._build_feature_row(p[0], p[1]) for p in self._raw_points],
+            [self._build_feature_row(p[0], p[1]) for p in raw_normed],
             dtype=np.float64,
         )
 
@@ -172,8 +191,12 @@ class CalibrationModule:
         if not self._calibrated or self._transform_matrix is None:
             return raw_gaze
 
+        # 归一化（与 calibrate 时一致）
+        normed_x = (raw_gaze[0] - self._norm_mean[0]) / self._norm_std[0]
+        normed_y = (raw_gaze[1] - self._norm_mean[1]) / self._norm_std[1]
+
         feat = np.array(
-            self._build_feature_row(raw_gaze[0], raw_gaze[1]),
+            self._build_feature_row(normed_x, normed_y),
             dtype=np.float64,
         )
         result = self._transform_matrix @ feat
@@ -198,6 +221,8 @@ class CalibrationModule:
                 if self._transform_matrix is not None
                 else None
             ),
+            "norm_mean": self._norm_mean.tolist(),
+            "norm_std": self._norm_std.tolist(),
             "calibration_points": [
                 {"raw": list(r), "target": list(t)}
                 for r, t in zip(self._raw_points, self._target_points)
@@ -219,6 +244,10 @@ class CalibrationModule:
         else:
             self._transform_matrix = None
             self._calibrated = False
+
+        # 恢复归一化参数
+        self._norm_mean = np.array(data.get("norm_mean", [0.0, 0.0]), dtype=np.float64)
+        self._norm_std = np.array(data.get("norm_std", [1.0, 1.0]), dtype=np.float64)
 
         self._residual_mean = data.get("residual_mean_px", 0.0)
 

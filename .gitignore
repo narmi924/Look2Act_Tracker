@@ -46,3 +46,9 @@ bin/
 
 # hypothesis
 .hypothesis/
+
+# local paper workspace
+paper-acm/
+
+# local commit note
+cm.txt

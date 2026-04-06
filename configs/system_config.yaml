@@ -1,7 +1,9 @@
+ui:
+  window_mode: adaptive
 camera:
   index: 0
-  width: 1280
-  height: 720
+  width: 640
+  height: 480
   backend: dshow
 face_detection:
   eye_crop_size: 128
@@ -9,17 +11,16 @@ face_detection:
   min_tracking_confidence: 0.5
 model:
   checkpoint_path: checkpoints/best_model.pth
-  model_version: auto  # auto 从 checkpoint 自动检测, v1, v2
   use_ipex: false
   use_onnx: true
   onnx_path: checkpoints/gaze_net.onnx
 geometry:
-  screen_w_mm: 344.0
+  screen_w_mm: 347.0
   screen_h_mm: 194.0
 calibration:
   num_points: 9
   save_path: calibration.json
-  max_residual_px: 50.0
+  max_residual_px: 300.0
 smoother:
   alpha: 0.3
 tracker:

@@ -30,6 +30,11 @@ class FaceDetectionResult:
     left_eye_crop: Optional[np.ndarray]  # (128, 128, 3) BGR
     right_eye_crop: Optional[np.ndarray]  # (128, 128, 3) BGR
     pnp_points_2d: dict[str, tuple[float, float]]  # 6 个 PnP 关键点
+    # 虹膜特征（用于校准）
+    left_iris_center: Optional[tuple[float, float]] = None   # 左虹膜中心像素坐标
+    right_iris_center: Optional[tuple[float, float]] = None  # 右虹膜中心像素坐标
+    left_eye_center: Optional[tuple[float, float]] = None    # 左眼眶中心像素坐标
+    right_eye_center: Optional[tuple[float, float]] = None   # 右眼眶中心像素坐标
 
 
 # MediaPipe 468 点中对应传统 68 点的近似映射索引
@@ -69,6 +74,18 @@ _PNP_INDICES = {
 _LEFT_EYE_INDICES = [33, 133, 160, 159, 158, 157, 173, 246, 161, 163, 144, 145, 153, 154, 155]
 _RIGHT_EYE_INDICES = [263, 362, 387, 386, 385, 384, 398, 466, 388, 390, 373, 374, 380, 381, 382]
 
+# 虹膜关键点索引（refine_landmarks=True 时可用，共 10 个点）
+# 左虹膜：468（中心），469-472（周围 4 点）
+# 右虹膜：473（中心），474-477（周围 4 点）
+_LEFT_IRIS_CENTER_IDX = 468
+_RIGHT_IRIS_CENTER_IDX = 473
+
+# 眼眶角点索引（用于计算眼眶中心，作为虹膜偏移的参考）
+_LEFT_EYE_INNER_IDX = 133   # 左眼内眼角
+_LEFT_EYE_OUTER_IDX = 33    # 左眼外眼角
+_RIGHT_EYE_INNER_IDX = 362  # 右眼内眼角
+_RIGHT_EYE_OUTER_IDX = 263  # 右眼外眼角
+
 
 def _empty_result() -> FaceDetectionResult:
     """返回未检测到人脸的空结果。"""
@@ -80,6 +97,10 @@ def _empty_result() -> FaceDetectionResult:
         left_eye_crop=None,
         right_eye_crop=None,
         pnp_points_2d={},
+        left_iris_center=None,
+        right_iris_center=None,
+        left_eye_center=None,
+        right_eye_center=None,
     )
 
 
@@ -96,15 +117,16 @@ class FaceDetector:
     def __init__(
         self,
         eye_crop_size: int = 128,
-        max_num_faces: int = 3,
+        max_num_faces: int = 1,
         min_detection_confidence: float = 0.5,
         min_tracking_confidence: float = 0.5,
+        refine_landmarks: bool = False,
     ):
         self.eye_crop_size = eye_crop_size
         self._mesh = mp_face_mesh.FaceMesh(
             static_image_mode=False,
             max_num_faces=max_num_faces,
-            refine_landmarks=True,
+            refine_landmarks=refine_landmarks,
             min_detection_confidence=min_detection_confidence,
             min_tracking_confidence=min_tracking_confidence,
         )
@@ -173,6 +195,32 @@ class FaceDetector:
         left_crop = self._crop_eye(frame_bgr, best_lms, _LEFT_EYE_INDICES, w, h)
         right_crop = self._crop_eye(frame_bgr, best_lms, _RIGHT_EYE_INDICES, w, h)
 
+        # 提取虹膜和眼眶中心（refine_landmarks=True 时有 478 个点）
+        left_iris_center = None
+        right_iris_center = None
+        left_eye_center = None
+        right_eye_center = None
+
+        if len(best_lms) > _RIGHT_IRIS_CENTER_IDX:
+            # 虹膜中心
+            left_iris_center = (
+                float(best_lms[_LEFT_IRIS_CENTER_IDX].x * w),
+                float(best_lms[_LEFT_IRIS_CENTER_IDX].y * h),
+            )
+            right_iris_center = (
+                float(best_lms[_RIGHT_IRIS_CENTER_IDX].x * w),
+                float(best_lms[_RIGHT_IRIS_CENTER_IDX].y * h),
+            )
+            # 眼眶中心（内外眼角中点）
+            left_eye_center = (
+                float((best_lms[_LEFT_EYE_INNER_IDX].x + best_lms[_LEFT_EYE_OUTER_IDX].x) / 2.0 * w),
+                float((best_lms[_LEFT_EYE_INNER_IDX].y + best_lms[_LEFT_EYE_OUTER_IDX].y) / 2.0 * h),
+            )
+            right_eye_center = (
+                float((best_lms[_RIGHT_EYE_INNER_IDX].x + best_lms[_RIGHT_EYE_OUTER_IDX].x) / 2.0 * w),
+                float((best_lms[_RIGHT_EYE_INNER_IDX].y + best_lms[_RIGHT_EYE_OUTER_IDX].y) / 2.0 * h),
+            )
+
         return FaceDetectionResult(
             detected=True,
             confidence=confidence,
@@ -181,6 +229,10 @@ class FaceDetector:
             left_eye_crop=left_crop,
             right_eye_crop=right_crop,
             pnp_points_2d=pnp_points,
+            left_iris_center=left_iris_center,
+            right_iris_center=right_iris_center,
+            left_eye_center=left_eye_center,
+            right_eye_center=right_eye_center,
         )
 
     def _extract_landmarks_68(self, lms, w: int, h: int) -> np.ndarray:
