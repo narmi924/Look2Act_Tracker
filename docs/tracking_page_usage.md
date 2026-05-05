@@ -32,7 +32,7 @@
 1. **启动追踪**
    - 点击"启动追踪"按钮
    - 系统会自动初始化 TrackerPipeline
-   - 注视点光标覆盖层会显示在屏幕上
+   - 默认使用独立验证/交互窗口；系统级注视点覆盖层需要手动开启
 
 2. **查看性能信息**
    - FPS：实时帧率
@@ -52,7 +52,8 @@
 
 1. **加载校准参数**
    - 点击"加载校准"按钮
-   - 系统会从 `calibration.json` 加载校准参数
+   - classic 后端会从 `calibration_classic.json` 加载校准参数
+   - deep 后端会从 `calibration_deep.json` 加载校准参数
    - 校准状态会显示残差信息
 
 2. **校准效果**
@@ -86,6 +87,7 @@ smoother:
   alpha: 0.3                  # 平滑系数（0-1，越小越平滑）
 
 tracker:
+  backend: "classic"          # classic 体验模式；deep 研究模型
   target_fps: 30              # 目标帧率
 ```
 
@@ -100,6 +102,15 @@ self.cursor_border_width = 2                 # 边框宽度
 ```
 
 ## 性能监控
+
+### 诊断模式
+
+- 追踪页点击"诊断"可查看 backend、模型版本、ONNX 输入、raw/calibrated/pre-clamp/clamped 坐标、校准方法、校准点数量和各阶段耗时。
+- 不打开完整 GUI 时，可运行：
+
+```powershell
+conda run --no-capture-output -n gaze-env python scripts/diagnose_tracker.py --backend classic --frames 300
+```
 
 ### FPS 显示
 
@@ -135,7 +146,7 @@ self.cursor_border_width = 2                 # 边框宽度
 
 4. **校准文件不存在**
    - 先在校准页面进行校准并保存
-   - 确保 `calibration.json` 文件存在
+   - 确保当前后端对应的 `calibration_classic.json` 或 `calibration_deep.json` 文件存在
 
 ## 集成示例
 

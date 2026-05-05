@@ -35,6 +35,8 @@ class FaceDetectionResult:
     right_iris_center: Optional[tuple[float, float]] = None  # 右虹膜中心像素坐标
     left_eye_center: Optional[tuple[float, float]] = None    # 左眼眶中心像素坐标
     right_eye_center: Optional[tuple[float, float]] = None   # 右眼眶中心像素坐标
+    left_eye_width: Optional[float] = None
+    right_eye_width: Optional[float] = None
 
 
 # MediaPipe 468 点中对应传统 68 点的近似映射索引
@@ -101,6 +103,8 @@ def _empty_result() -> FaceDetectionResult:
         right_iris_center=None,
         left_eye_center=None,
         right_eye_center=None,
+        left_eye_width=None,
+        right_eye_width=None,
     )
 
 
@@ -200,8 +204,26 @@ class FaceDetector:
         right_iris_center = None
         left_eye_center = None
         right_eye_center = None
+        left_eye_width = None
+        right_eye_width = None
 
         if len(best_lms) > _RIGHT_IRIS_CENTER_IDX:
+            left_inner = np.array([
+                best_lms[_LEFT_EYE_INNER_IDX].x * w,
+                best_lms[_LEFT_EYE_INNER_IDX].y * h,
+            ], dtype=np.float64)
+            left_outer = np.array([
+                best_lms[_LEFT_EYE_OUTER_IDX].x * w,
+                best_lms[_LEFT_EYE_OUTER_IDX].y * h,
+            ], dtype=np.float64)
+            right_inner = np.array([
+                best_lms[_RIGHT_EYE_INNER_IDX].x * w,
+                best_lms[_RIGHT_EYE_INNER_IDX].y * h,
+            ], dtype=np.float64)
+            right_outer = np.array([
+                best_lms[_RIGHT_EYE_OUTER_IDX].x * w,
+                best_lms[_RIGHT_EYE_OUTER_IDX].y * h,
+            ], dtype=np.float64)
             # 虹膜中心
             left_iris_center = (
                 float(best_lms[_LEFT_IRIS_CENTER_IDX].x * w),
@@ -212,14 +234,18 @@ class FaceDetector:
                 float(best_lms[_RIGHT_IRIS_CENTER_IDX].y * h),
             )
             # 眼眶中心（内外眼角中点）
+            left_mid = (left_inner + left_outer) / 2.0
+            right_mid = (right_inner + right_outer) / 2.0
             left_eye_center = (
-                float((best_lms[_LEFT_EYE_INNER_IDX].x + best_lms[_LEFT_EYE_OUTER_IDX].x) / 2.0 * w),
-                float((best_lms[_LEFT_EYE_INNER_IDX].y + best_lms[_LEFT_EYE_OUTER_IDX].y) / 2.0 * h),
+                float(left_mid[0]),
+                float(left_mid[1]),
             )
             right_eye_center = (
-                float((best_lms[_RIGHT_EYE_INNER_IDX].x + best_lms[_RIGHT_EYE_OUTER_IDX].x) / 2.0 * w),
-                float((best_lms[_RIGHT_EYE_INNER_IDX].y + best_lms[_RIGHT_EYE_OUTER_IDX].y) / 2.0 * h),
+                float(right_mid[0]),
+                float(right_mid[1]),
             )
+            left_eye_width = float(np.linalg.norm(left_inner - left_outer))
+            right_eye_width = float(np.linalg.norm(right_inner - right_outer))
 
         return FaceDetectionResult(
             detected=True,
@@ -233,6 +259,8 @@ class FaceDetector:
             right_iris_center=right_iris_center,
             left_eye_center=left_eye_center,
             right_eye_center=right_eye_center,
+            left_eye_width=left_eye_width,
+            right_eye_width=right_eye_width,
         )
 
     def _extract_landmarks_68(self, lms, w: int, h: int) -> np.ndarray:

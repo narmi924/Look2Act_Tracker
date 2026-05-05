@@ -51,6 +51,22 @@ from src.calibration.serializer import save_calibration, load_calibration
 from src.tracker.pipeline import TrackerPipeline, SystemConfig
 
 
+def calibration_path_for_backend(backend: str) -> Path:
+    return Path("calibration_deep.json" if backend == "deep" else "calibration_classic.json")
+
+
+def min_valid_points_for_calibration(num_points: int, method: str) -> int:
+    """Return the minimum usable point count before fitting calibration."""
+    if method == "polynomial":
+        return 12 if num_points >= 25 else 6
+    return 3
+
+
+def min_samples_per_calibration_point(sampling_frames: int) -> int:
+    """Return the minimum successful samples needed to accept one target."""
+    return max(6, sampling_frames // 3)
+
+
 @dataclass
 class CalibrationPoint:
     """校准点数据结构。"""
@@ -82,15 +98,18 @@ class CalibrationFullscreenWidget(QWidget):
         self.tracker = tracker
         self.calibrator = calibrator
         
-        # 校准点配置（3x3 网格）
+        # 校准点配置（3x3 或 5x5 网格）
         self.calibration_points: list[CalibrationPoint] = []
         self._generate_calibration_points()
         
         # 校准状态
         self.current_point_index = 0
         self.countdown = 3  # 倒计时秒数
-        self.sampling_frames = 30  # 每个点采样帧数
+        self.sampling_frames = 45 if calibrator.num_points >= 25 else 30
+        self.max_sampling_ticks = self.sampling_frames * 3
+        self.min_samples_per_point = min_samples_per_calibration_point(self.sampling_frames)
         self.current_samples: list[tuple[float, float]] = []  # 当前点的采样数据
+        self.sampling_ticks = 0
         
         # 定时器
         self.countdown_timer = QTimer()
@@ -129,12 +148,15 @@ class CalibrationFullscreenWidget(QWidget):
         effective_w = screen_w - 2 * margin_x
         effective_h = screen_h - 2 * margin_y
         
-        # 生成 3x3 网格
+        grid_size = 5 if self.calibrator.num_points >= 25 else 3
+
+        # 生成网格
         index = 0
-        for row in range(3):
-            for col in range(3):
-                x = margin_x + col * effective_w / 2
-                y = margin_y + row * effective_h / 2
+        for row in range(grid_size):
+            for col in range(grid_size):
+                denom = max(grid_size - 1, 1)
+                x = margin_x + col * effective_w / denom
+                y = margin_y + row * effective_h / denom
                 self.calibration_points.append(CalibrationPoint(x=x, y=y, index=index))
                 index += 1
     
@@ -174,18 +196,23 @@ class CalibrationFullscreenWidget(QWidget):
     def _start_sampling(self) -> None:
         """开始采样当前校准点的视线数据。"""
         self.current_samples.clear()
+        self.sampling_ticks = 0
         self.sampling_timer.start(33)  # 约 30 FPS
     
     def _on_sampling_tick(self) -> None:
         """采样定时器回调。"""
         # 从 TrackerPipeline 获取最新的视线数据
         result = self.tracker.get_latest_result()
+        self.sampling_ticks += 1
         
         if result is not None and result.valid and result.gaze_point is not None:
             self.current_samples.append(result.gaze_point)
         
         # 检查是否采样完成
-        if len(self.current_samples) >= self.sampling_frames:
+        if (
+            len(self.current_samples) >= self.sampling_frames
+            or self.sampling_ticks >= self.max_sampling_ticks
+        ):
             self.sampling_timer.stop()
             self._finish_current_point()
         
@@ -193,9 +220,13 @@ class CalibrationFullscreenWidget(QWidget):
     
     def _finish_current_point(self) -> None:
         """完成当前校准点的采集。"""
-        if len(self.current_samples) == 0:
+        if len(self.current_samples) < self.min_samples_per_point:
             # 采样失败，跳过该点
-            print(f"[CALIBRATION] 警告：校准点 {self.current_point_index} 采样失败，跳过")
+            print(
+                "[CALIBRATION] 警告：校准点 "
+                f"{self.current_point_index} 有效样本不足 "
+                f"({len(self.current_samples)}/{self.min_samples_per_point})，跳过"
+            )
             self._move_to_next_point()
             return
         
@@ -238,6 +269,13 @@ class CalibrationFullscreenWidget(QWidget):
         success = False
         residual = 0.0
         try:
+            point_count = len(self.calibrator._raw_points)
+            min_points = min_valid_points_for_calibration(
+                self.calibrator.num_points,
+                self.calibrator.method.value,
+            )
+            if point_count < min_points:
+                raise ValueError(f"有效校准点不足：需要至少 {min_points} 个，当前 {point_count} 个")
             residual = self.calibrator.calibrate()
             success = not self.calibrator.needs_recalibration()
             print(f"[CALIBRATION] 校准完成：残差={residual:.2f} px, 成功={success}")
@@ -278,14 +316,18 @@ class CalibrationFullscreenWidget(QWidget):
             elif self.sampling_timer.isActive():
                 # 显示采样进度
                 progress = len(self.current_samples)
-                text = f"{progress}/{self.sampling_frames}"
+                text = f"{progress}/{self.sampling_frames} ({self.sampling_ticks}/{self.max_sampling_ticks})"
                 painter.drawText(int(point.x - 40), int(point.y + 60), text)
         
         # 绘制进度信息（顶部中央）
         painter.setPen(QColor(200, 200, 200))
         font = QFont("Arial", 18)
         painter.setFont(font)
-        progress_text = f"校准进度：{self.current_point_index + 1} / {len(self.calibration_points)}"
+        valid_points = len(getattr(self.calibrator, "_raw_points", []))
+        progress_text = (
+            f"校准进度：{self.current_point_index + 1} / {len(self.calibration_points)}"
+            f"  有效点：{valid_points}"
+        )
         painter.drawText(self.width() // 2 - 100, 50, progress_text)
         
         # 绘制提示信息（底部中央）
@@ -321,9 +363,9 @@ class CalibrationPage(QWidget):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         
-        # Use 9-point affine calibration by default. This is the most stable
-        # option in the current cross-user evaluation.
-        self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
+        self.backend = "classic"
+        self.calibration_path = calibration_path_for_backend(self.backend)
+        self.calibrator = CalibrationModule(num_points=25, max_residual_px=300.0, method="polynomial")
         
         # TrackerPipeline（需要外部传入或初始化）
         self.tracker: Optional[TrackerPipeline] = None
@@ -409,6 +451,26 @@ class CalibrationPage(QWidget):
             tracker: TrackerPipeline 实例（必须已启动）
         """
         self.tracker = tracker
+        self._configure_for_backend(tracker.config.normalized_backend)
+
+    def _configure_for_backend(self, backend: str) -> None:
+        """Switch calibration strategy for the active tracker backend."""
+        backend = backend if backend in {"classic", "deep"} else "classic"
+        if backend == self.backend and self.calibrator is not None:
+            return
+
+        self.backend = backend
+        self.calibration_path = calibration_path_for_backend(backend)
+        if backend == "classic":
+            self.calibrator = CalibrationModule(num_points=25, max_residual_px=300.0, method="polynomial")
+            self.status_label.setText("Classic 5x5 校准 / Classic 5x5 Calibration")
+        else:
+            self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
+            self.status_label.setText("Deep 9点校准 / Deep 9-point Calibration")
+        self.calibration_success = False
+        self.calibration_residual = 0.0
+        self.residual_label.setText("残差 / Residual: N/A")
+        self.save_btn.setEnabled(False)
     
     def _handle_start_calibration(self) -> None:
         """启动校准流程。"""
@@ -482,8 +544,7 @@ class CalibrationPage(QWidget):
             QMessageBox.warning(self, "错误", "没有可保存的校准数据。")
             return
         
-        # 保存到默认路径
-        save_path = Path("calibration.json")
+        save_path = self.calibration_path
         
         try:
             save_calibration(self.calibrator, str(save_path))
@@ -500,7 +561,7 @@ class CalibrationPage(QWidget):
     
     def _handle_load_calibration(self) -> None:
         """加载校准参数。"""
-        load_path = Path("calibration.json")
+        load_path = self.calibration_path
         
         if not load_path.exists():
             QMessageBox.warning(

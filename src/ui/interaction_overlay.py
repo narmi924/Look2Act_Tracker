@@ -343,6 +343,7 @@ class LauncherRegionCard(CardWidget):
 class InteractionLauncherOverlay(FullscreenStageWindow):
     closed = pyqtSignal()
     request_toggle_dwell = pyqtSignal()
+    request_open_gomoku = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -350,9 +351,9 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
             LauncherAction(0, "Browser", "Open the default browser", launch_browser),
             LauncherAction(1, "Explorer", "Open the user home folder", launch_explorer),
             LauncherAction(2, "Notepad", "Open a lightweight editor", launch_notepad),
-            LauncherAction(3, "Keyboard", "Open the on-screen keyboard", launch_osk),
+            LauncherAction(3, "Gomoku", "Play five-in-a-row with gaze dwell", None),
             LauncherAction(5, "Magnifier", "Open the Windows magnifier", launch_magnifier),
-            LauncherAction(6, "Dwell Click", "Toggle dwell click on or off", None),
+            LauncherAction(6, "Keyboard", "Open the on-screen keyboard", launch_osk),
             LauncherAction(7, "Return", "Close the interaction stage", None),
             LauncherAction(8, "Exit", "Close the interaction stage", None),
         ]
@@ -559,8 +560,9 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
 
         self.status_label.setText(f"Triggered: {action.title}")
 
-        if region_index == 6:
-            self.request_toggle_dwell.emit()
+        if region_index == 3:
+            self.request_open_gomoku.emit()
+            self.close()
             return
 
         if region_index in {7, 8}:

@@ -14,17 +14,20 @@ model:
   use_ipex: false
   use_onnx: true
   onnx_path: checkpoints/gaze_net.onnx
+  deep_gaze_space: head
 geometry:
   screen_w_mm: 347.0
   screen_h_mm: 194.0
   screen_distance_mm: 500.0
   cam_above_screen_mm: 5.0
 calibration:
-  num_points: 9
-  save_path: calibration.json
+  num_points: 25
+  save_path: calibration_classic.json
   max_residual_px: 300.0
 smoother:
+  type: kalman
   alpha: 0.3
 tracker:
+  backend: classic
   target_fps: 30
   timer_interval_ms: 33

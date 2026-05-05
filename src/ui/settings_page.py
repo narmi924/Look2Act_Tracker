@@ -94,6 +94,10 @@ class SettingsPage(QWidget):
         self.alpha_value_label: Optional[BodyLabel] = None
         
         self.target_fps_spin: Optional[SpinBox] = None
+        self.backend_combo: Optional[ComboBox] = None
+        self.advanced_visible = False
+        self.model_card: Optional[CardWidget] = None
+        self.geometry_card: Optional[CardWidget] = None
         
         self._init_ui()
         self._load_config()
@@ -112,6 +116,10 @@ class SettingsPage(QWidget):
         self.reset_btn = PushButton("恢复默认\nReset Defaults")
         self.reset_btn.setFixedSize(160, 60)
         self.reset_btn.clicked.connect(self._handle_reset)
+
+        self.advanced_btn = PushButton("高级设置\nAdvanced")
+        self.advanced_btn.setFixedSize(140, 60)
+        self.advanced_btn.clicked.connect(self._toggle_advanced_settings)
         
         # 顶部栏
         top_bar = QHBoxLayout()
@@ -119,15 +127,19 @@ class SettingsPage(QWidget):
         top_bar.addStretch(1)
         top_bar.addWidget(self.reset_btn)
         top_bar.addSpacing(10)
+        top_bar.addWidget(self.advanced_btn)
+        top_bar.addSpacing(10)
         top_bar.addWidget(self.save_btn)
         
         # 各种设置卡片
         window_card = self._create_window_settings_card()
         camera_card = self._create_camera_settings_card()
-        model_card = self._create_model_settings_card()
-        geometry_card = self._create_geometry_settings_card()
+        self.model_card = self._create_model_settings_card()
+        self.geometry_card = self._create_geometry_settings_card()
         smoother_card = self._create_smoother_settings_card()
         tracker_card = self._create_tracker_settings_card()
+        self.model_card.hide()
+        self.geometry_card.hide()
         
         # 状态信息
         self.status_label = BodyLabel("")
@@ -148,8 +160,8 @@ class SettingsPage(QWidget):
         
         scroll_layout.addWidget(window_card)
         scroll_layout.addWidget(camera_card)
-        scroll_layout.addWidget(model_card)
-        scroll_layout.addWidget(geometry_card)
+        scroll_layout.addWidget(self.model_card)
+        scroll_layout.addWidget(self.geometry_card)
         scroll_layout.addWidget(smoother_card)
         scroll_layout.addWidget(tracker_card)
         scroll_layout.addWidget(self.status_label)
@@ -430,6 +442,22 @@ class SettingsPage(QWidget):
         layout.addWidget(title)
         
         # 目标帧率
+        backend_row = QHBoxLayout()
+        backend_label = BodyLabel("追踪模式 / Backend:")
+        backend_label.setFixedWidth(200)
+        self.backend_combo = ComboBox()
+        self.backend_combo.addItems(["classic", "deep"])
+        self.backend_combo.setCurrentText("classic")
+        self.backend_combo.setFixedWidth(150)
+        backend_hint = BodyLabel("classic 用于流畅体验，deep 用于研究模型")
+        backend_hint.setStyleSheet("color: #888; font-size: 12px;")
+        backend_row.addWidget(backend_label)
+        backend_row.addWidget(self.backend_combo)
+        backend_row.addWidget(backend_hint)
+        backend_row.addStretch(1)
+        layout.addLayout(backend_row)
+
+        # 目标帧率
         fps_row = QHBoxLayout()
         fps_label = BodyLabel("目标帧率 / Target FPS:")
         fps_label.setFixedWidth(200)
@@ -443,6 +471,14 @@ class SettingsPage(QWidget):
         layout.addLayout(fps_row)
         
         return card
+
+    def _toggle_advanced_settings(self) -> None:
+        self.advanced_visible = not self.advanced_visible
+        if self.model_card is not None:
+            self.model_card.setVisible(self.advanced_visible)
+        if self.geometry_card is not None:
+            self.geometry_card.setVisible(self.advanced_visible)
+        self.advanced_btn.setText("隐藏高级\nAdvanced" if self.advanced_visible else "高级设置\nAdvanced")
     
     def _on_alpha_changed(self, value: int) -> None:
         """平滑系数滑块变化回调。"""
@@ -522,6 +558,8 @@ class SettingsPage(QWidget):
             self.use_onnx_switch.setChecked(self.config.use_onnx)
         if self.onnx_path_edit is not None:
             self.onnx_path_edit.setText(self.config.onnx_path)
+        if self.backend_combo is not None:
+            self.backend_combo.setCurrentText(self.config.normalized_backend)
         
         # 几何设置
         if self.screen_w_mm_spin is not None:
@@ -555,6 +593,8 @@ class SettingsPage(QWidget):
             self.config.camera_height = int(self.camera_height_combo.currentText())
         if self.camera_backend_combo is not None:
             self.config.camera_backend = self.camera_backend_combo.currentText()
+        if self.backend_combo is not None:
+            self.config.tracker_backend = self.backend_combo.currentText()
         
         # 模型设置
         if self.model_path_edit is not None:
@@ -610,6 +650,7 @@ class SettingsPage(QWidget):
                     'use_ipex': self.config.use_ipex,
                     'use_onnx': self.config.use_onnx,
                     'onnx_path': self.config.onnx_path,
+                    'deep_gaze_space': self.config.deep_gaze_space,
                 },
                 'geometry': {
                     'screen_w_mm': self.config.screen_w_mm,
@@ -618,14 +659,16 @@ class SettingsPage(QWidget):
                     'cam_above_screen_mm': self.config.cam_above_screen_mm,
                 },
                 'calibration': {
-                    'num_points': 9,
-                    'save_path': 'calibration.json',
+                    'num_points': 25 if self.config.normalized_backend == 'classic' else 9,
+                    'save_path': self.config.calibration_path,
                     'max_residual_px': 300.0,
                 },
                 'smoother': {
+                    'type': self.config.smoother_type,
                     'alpha': self.config.smoother_alpha,
                 },
                 'tracker': {
+                    'backend': self.config.normalized_backend,
                     'target_fps': self.config.target_fps,
                     'timer_interval_ms': int(1000 / self.config.target_fps),
                 },

@@ -108,7 +108,7 @@ def test_tracking_page_load_calibration_no_file(qapp):
     page = TrackingPage()
     
     # 确保校准文件不存在
-    calib_path = Path("calibration.json")
+    calib_path = Path("calibration_classic.json")
     if calib_path.exists():
         pytest.skip("校准文件已存在，跳过此测试")
     

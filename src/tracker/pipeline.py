@@ -29,6 +29,12 @@ import yaml
 from src.geometry.coordinate import transform_gaze_to_camera
 from src.geometry.screen_geometry import ScreenGeometry
 from src.models.gaze_net import GazeNet, GazeNetV2
+from src.tracker.classic import (
+    ClassicKalmanSmoother,
+    detect_pupil_centroid,
+    fuse_eye_features,
+    normalize_iris_offset,
+)
 from src.tracker.smoother import GazeSmoother
 from src.vision.face_detector import FaceDetector
 from src.vision.head_pose import HeadPoseEstimator
@@ -52,6 +58,10 @@ class TrackerResult:
     timings: dict[str, float] = field(default_factory=dict)  # 各阶段耗时（毫秒）
     error_message: Optional[str] = None  # 错误信息（用于 UI 通知）
     face_detected: bool = True  # 是否检测到人脸
+    raw_point: Optional[tuple[float, float]] = None
+    calibrated_point: Optional[tuple[float, float]] = None
+    backend: str = "deep"
+    debug: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
@@ -74,6 +84,8 @@ class SystemConfig:
     use_onnx: bool = False
     onnx_path: str = "checkpoints/gaze_net.onnx"
     model_version: str = "auto"  # "auto" 从 checkpoint 自动检测, "v1", "v2"
+    tracker_backend: str = "classic"  # "classic" 体验模式, "deep" 研究模型
+    deep_gaze_space: str = "head"  # "head" 原链路, "camera" 跳过 PnP 旋转实验
     
     # 几何配置
     screen_w_mm: float = 344.0
@@ -86,6 +98,7 @@ class SystemConfig:
     
     # 平滑配置
     smoother_alpha: float = 0.3
+    smoother_type: str = "kalman"  # classic 默认 Kalman，deep 默认使用 EMA
     
     # 追踪配置
     target_fps: int = 30
@@ -109,14 +122,26 @@ class SystemConfig:
             use_onnx=data.get('model', {}).get('use_onnx', False),
             onnx_path=data.get('model', {}).get('onnx_path', 'checkpoints/gaze_net.onnx'),
             model_version=data.get('model', {}).get('model_version', 'auto'),
+            tracker_backend=data.get('tracker', {}).get('backend', 'classic'),
+            deep_gaze_space=data.get('model', {}).get('deep_gaze_space', 'head'),
             screen_w_mm=data.get('geometry', {}).get('screen_w_mm', 344.0),
             screen_h_mm=data.get('geometry', {}).get('screen_h_mm', 194.0),
             screen_distance_mm=data.get('geometry', {}).get('screen_distance_mm', 500.0),
             cam_above_screen_mm=data.get('geometry', {}).get('cam_above_screen_mm', 5.0),
             smoother_alpha=data.get('smoother', {}).get('alpha', 0.3),
+            smoother_type=data.get('smoother', {}).get('type', 'kalman'),
             target_fps=data.get('tracker', {}).get('target_fps', 30),
             window_mode=data.get('ui', {}).get('window_mode', 'adaptive'),
         )
+
+    @property
+    def normalized_backend(self) -> str:
+        backend = (self.tracker_backend or "classic").lower()
+        return backend if backend in {"classic", "deep"} else "classic"
+
+    @property
+    def calibration_path(self) -> str:
+        return "calibration_classic.json" if self.normalized_backend == "classic" else "calibration_deep.json"
 
 
 class TrackerPipeline:
@@ -149,6 +174,7 @@ class TrackerPipeline:
         self.onnx_output_name: Optional[str] = None
         self.screen_geometry: Optional[ScreenGeometry] = None
         self.smoother: Optional[GazeSmoother] = None
+        self.classic_smoother: Optional[ClassicKalmanSmoother] = None
         
         # 线程控制
         self._thread: Optional[threading.Thread] = None
@@ -216,6 +242,7 @@ class TrackerPipeline:
                 eye_crop_size=self.config.eye_crop_size,
                 min_detection_confidence=self.config.min_detection_confidence,
                 min_tracking_confidence=self.config.min_tracking_confidence,
+                refine_landmarks=self.config.normalized_backend == "classic",
             )
             _print("人脸检测器已初始化")
             
@@ -225,8 +252,11 @@ class TrackerPipeline:
             )
             _print("头部姿态估计器已初始化")
             
-            # 4. 加载视线模型
-            if self.config.use_onnx:
+            # 4. 加载视线模型（classic 后端不需要 CNN 权重）
+            if self.config.normalized_backend == "classic":
+                self.model_version = "classic"
+                print("使用 Classic Tracker（pupil/iris feature + calibration）")
+            elif self.config.use_onnx:
                 # 使用 ONNX Runtime
                 print("使用 ONNX Runtime 推理")
                 import onnxruntime as ort
@@ -360,6 +390,7 @@ class TrackerPipeline:
             
             # 6. 初始化平滑滤波器
             self.smoother = GazeSmoother(alpha=self.config.smoother_alpha)
+            self.classic_smoother = ClassicKalmanSmoother()
             print("平滑滤波器已初始化")
             
             return True
@@ -385,6 +416,7 @@ class TrackerPipeline:
             TrackerResult 包含注视点和性能指标
         """
         timings = {}
+        backend = self.config.normalized_backend
         
         # 1. 人脸检测
         t0 = time.perf_counter()
@@ -404,6 +436,7 @@ class TrackerPipeline:
                     timings=timings,
                     error_message="未检测到人脸，使用上一帧结果",
                     face_detected=False,
+                    backend=backend,
                 )
             
             # 无历史结果，返回无效
@@ -414,10 +447,14 @@ class TrackerPipeline:
                 timings=timings,
                 error_message="未检测到人脸",
                 face_detected=False,
+                backend=backend,
             )
         
         # 检测到人脸，重置计数器
         self._no_face_count = 0
+
+        if self.config.normalized_backend == "classic":
+            return self._process_classic_result(face_result, timings)
         
         # 2. 头部姿态估计
         t0 = time.perf_counter()
@@ -435,6 +472,7 @@ class TrackerPipeline:
                     timings=timings,
                     error_message="头部姿态估计失败",
                     face_detected=True,
+                    backend=backend,
                 )
             
             return TrackerResult(
@@ -444,6 +482,7 @@ class TrackerPipeline:
                 timings=timings,
                 error_message="头部姿态估计失败",
                 face_detected=True,
+                backend=backend,
             )
         
         # 3. 视线回归（CNN 模型推理）
@@ -461,6 +500,7 @@ class TrackerPipeline:
                     timings=timings,
                     error_message="眼部裁剪失败",
                     face_detected=True,
+                    backend=backend,
                 )
             return TrackerResult(
                 gaze_point=None,
@@ -469,6 +509,7 @@ class TrackerPipeline:
                 timings=timings,
                 error_message="眼部裁剪失败",
                 face_detected=True,
+                backend=backend,
             )
         
         try:
@@ -528,6 +569,7 @@ class TrackerPipeline:
                     timings=timings,
                     error_message=f"视线回归失败: {e}",
                     face_detected=True,
+                    backend=backend,
                 )
             return TrackerResult(
                 gaze_point=None,
@@ -536,6 +578,7 @@ class TrackerPipeline:
                 timings=timings,
                 error_message=f"视线回归失败: {e}",
                 face_detected=True,
+                backend=backend,
             )
         
         # 4. Convert the predicted 3D gaze vector into a raw screen-space point.
@@ -551,6 +594,7 @@ class TrackerPipeline:
                     timings=timings,
                     error_message="视线方向为零向量",
                     face_detected=True,
+                    backend=backend,
                 )
             return TrackerResult(
                 gaze_point=None,
@@ -559,14 +603,19 @@ class TrackerPipeline:
                 timings=timings,
                 error_message="视线方向为零向量",
                 face_detected=True,
+                backend=backend,
             )
         
         d = d / norm_d
-        ray_origin, ray_direction = transform_gaze_to_camera(
-            d,
-            head_pose.rotation_matrix,
-            head_pose.translation_vec,
-        )
+        if self.config.deep_gaze_space == "camera":
+            ray_origin = np.asarray(head_pose.translation_vec, dtype=np.float64).flatten()
+            ray_direction = d
+        else:
+            ray_origin, ray_direction = transform_gaze_to_camera(
+                d,
+                head_pose.rotation_matrix,
+                head_pose.translation_vec,
+            )
         timings['coordinate_transform'] = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
@@ -583,6 +632,7 @@ class TrackerPipeline:
                     timings=timings,
                     error_message="视线射线未与屏幕平面相交",
                     face_detected=True,
+                    backend=backend,
                 )
             return TrackerResult(
                 gaze_point=None,
@@ -591,6 +641,7 @@ class TrackerPipeline:
                 timings=timings,
                 error_message="视线射线未与屏幕平面相交",
                 face_detected=True,
+                backend=backend,
             )
 
         raw_point = self.screen_geometry.world_to_screen_px(intersection, clamp=clamp_to_screen)
@@ -608,9 +659,101 @@ class TrackerPipeline:
             timings=timings,
             error_message=None,
             face_detected=True,
+            raw_point=raw_point,
+            backend="deep",
+            debug={
+                "model_version": self.model_version,
+                "onnx_inputs": list(self.onnx_input_names),
+                "deep_gaze_space": self.config.deep_gaze_space,
+                "gaze_vector": d.tolist(),
+                "head_pose": {
+                    "yaw": float(head_pose.yaw),
+                    "pitch": float(head_pose.pitch),
+                    "roll": float(head_pose.roll),
+                },
+                "screen_geometry": self.get_diagnostics().get("screen_geometry", {}),
+            },
         )
         self._last_valid_result = result
         
+        return result
+
+    def _process_classic_result(
+        self,
+        face_result,
+        timings: dict[str, float],
+    ) -> TrackerResult:
+        """Process a detected face with the classic pupil feature backend."""
+        t0 = time.perf_counter()
+        left_iris = normalize_iris_offset(
+            face_result.left_iris_center,
+            face_result.left_eye_center,
+            face_result.left_eye_width,
+        )
+        right_iris = normalize_iris_offset(
+            face_result.right_iris_center,
+            face_result.right_eye_center,
+            face_result.right_eye_width,
+        )
+        left_pupil = detect_pupil_centroid(face_result.left_eye_crop)
+        right_pupil = detect_pupil_centroid(face_result.right_eye_crop)
+        left_norm = left_iris or left_pupil
+        right_norm = right_iris or right_pupil
+        feature_method = "iris_offset" if left_iris is not None or right_iris is not None else "pupil_centroid"
+        feature = fuse_eye_features(left_norm, right_norm, method=feature_method)
+        timings["classic_feature"] = (time.perf_counter() - t0) * 1000
+
+        if feature is None:
+            if self._last_valid_result is not None:
+                return TrackerResult(
+                    gaze_point=self._last_valid_result.gaze_point,
+                    valid=True,
+                    fps=self._calculate_fps(),
+                    timings=timings,
+                    error_message="classic 眼部特征提取失败",
+                    face_detected=True,
+                    backend="classic",
+                    debug={"left_pupil": left_pupil, "right_pupil": right_pupil, "left_iris": left_iris, "right_iris": right_iris},
+                )
+            return TrackerResult(
+                gaze_point=None,
+                valid=False,
+                fps=self._calculate_fps(),
+                timings=timings,
+                error_message="classic 眼部特征提取失败",
+                face_detected=True,
+                backend="classic",
+                debug={"left_pupil": left_pupil, "right_pupil": right_pupil, "left_iris": left_iris, "right_iris": right_iris},
+            )
+
+        raw_point = feature.point
+        if self._calibration_mode or self.classic_smoother is None:
+            output_point = raw_point
+        else:
+            t1 = time.perf_counter()
+            output_point = self.classic_smoother.update(raw_point)
+            timings["smoothing"] = (time.perf_counter() - t1) * 1000
+
+        result = TrackerResult(
+            gaze_point=output_point,
+            valid=True,
+            fps=self._calculate_fps(),
+            timings=timings,
+            error_message=None,
+            face_detected=True,
+            raw_point=raw_point,
+            backend="classic",
+            debug={
+                "feature_method": feature.method,
+                "feature_confidence": feature.confidence,
+                "left_pupil": left_pupil,
+                "right_pupil": right_pupil,
+                "left_iris": left_iris,
+                "right_iris": right_iris,
+                "calibration_mode": self._calibration_mode,
+            },
+        )
+        self._last_valid_result = result
         return result
     
     def _calculate_fps(self) -> float:
@@ -686,6 +829,7 @@ class TrackerPipeline:
                         timings={},
                         error_message=f"帧处理异常: {e}",
                         face_detected=False,
+                        backend=self.config.normalized_backend,
                     )
                 else:
                     result = TrackerResult(
@@ -695,6 +839,7 @@ class TrackerPipeline:
                         timings={},
                         error_message=f"帧处理异常: {e}",
                         face_detected=False,
+                        backend=self.config.normalized_backend,
                     )
             
             # 更新 FPS 计算
@@ -748,6 +893,8 @@ class TrackerPipeline:
 
         if self.smoother is not None:
             self.smoother.reset()
+        if self.classic_smoother is not None:
+            self.classic_smoother.reset()
 
         self._last_valid_result = None
         self._latest_result = None
@@ -777,3 +924,31 @@ class TrackerPipeline:
         self._calibration_mode = enabled
         if self.smoother is not None:
             self.smoother.reset()
+        if self.classic_smoother is not None:
+            self.classic_smoother.reset()
+
+    def get_diagnostics(self) -> dict[str, object]:
+        """Return runtime diagnostics for UI/debug displays."""
+        diag: dict[str, object] = {
+            "backend": self.config.normalized_backend,
+            "model_version": self.model_version,
+            "onnx_inputs": list(self.onnx_input_names),
+            "calibration_path": self.config.calibration_path,
+            "camera": {
+                "index": self.config.camera_index,
+                "width": self.config.camera_width,
+                "height": self.config.camera_height,
+                "backend": self.config.camera_backend,
+            },
+            "deep_gaze_space": self.config.deep_gaze_space,
+        }
+        if self.screen_geometry is not None:
+            diag["screen_geometry"] = {
+                "screen_w_px": self.screen_geometry.screen_w_px,
+                "screen_h_px": self.screen_geometry.screen_h_px,
+                "screen_w_mm": self.screen_geometry.screen_w_mm,
+                "screen_h_mm": self.screen_geometry.screen_h_mm,
+                "screen_distance_mm": self.config.screen_distance_mm,
+                "cam_above_screen_mm": self.config.cam_above_screen_mm,
+            }
+        return diag

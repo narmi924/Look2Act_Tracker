@@ -5,10 +5,10 @@
 设置页面（`src/ui/settings_page.py`）提供了 Look2Act Tracker 系统的配置界面，支持以下功能：
 
 1. **摄像头设置**：配置摄像头索引、分辨率、后端
-2. **模型设置**：配置模型路径、IPEX 优化、ONNX Runtime
-3. **几何设置**：配置屏幕物理尺寸
+2. **模型设置**：配置模型路径、IPEX 优化、ONNX Runtime（默认归入高级设置）
+3. **几何设置**：配置屏幕物理尺寸（默认归入高级设置）
 4. **平滑设置**：调节视线平滑系数
-5. **追踪设置**：配置目标帧率
+5. **追踪设置**：配置追踪模式和目标帧率
 
 ## 主要功能
 
@@ -52,6 +52,9 @@
 
 ### 5. 追踪设置
 
+- **追踪模式**：
+  - `classic`：默认体验模式，使用经典图像处理特征和独立交互窗口
+  - `deep`：研究模式，使用深度模型链路
 - **目标帧率**：追踪系统的目标帧率（FPS）
   - 范围：10 ~ 60
   - 推荐值：30
@@ -105,14 +108,16 @@ geometry:
   screen_h_mm: 194.0
 
 calibration:
-  num_points: 9
-  save_path: calibration.json
+  num_points: 25
+  save_path: calibration_classic.json
   max_residual_px: 50.0
 
 smoother:
+  type: kalman
   alpha: 0.3
 
 tracker:
+  backend: classic
   target_fps: 30
   timer_interval_ms: 33
 ```
