@@ -77,6 +77,7 @@ class MainWindow(FluentWindow):
         
         # 连接设置页面配置变更信号
         self.page_settings.config_changed.connect(self._on_config_changed)
+        self.page_calibration.calibration_ready.connect(self._on_calibration_ready)
         
         # 获取屏幕尺寸以便像 Eye_Touch 一样进行自适应全屏布局
         from PyQt6.QtWidgets import QApplication
@@ -214,6 +215,11 @@ class MainWindow(FluentWindow):
                 "配置已变更",
                 "系统配置已更新。\n\n部分配置需要重启追踪才能生效。"
             )
+
+    def _on_calibration_ready(self) -> None:
+        """校准成功后自动推进到追踪验证阶段。"""
+        self.go_tracking()
+        self.page_tracking.start_verification_flow()
     
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """按键事件处理：按 Esc 键返回主页或退出。"""
@@ -291,6 +297,12 @@ class MainWindow(FluentWindow):
         if self.page_tracking.tracker is None:
             self.page_tracking.tracker = self.tracker
             self.page_tracking.tracker_config = self.tracker_config
+        else:
+            self.page_tracking.tracker = self.tracker
+            self.page_tracking.tracker_config = self.tracker_config
+
+        if self.page_calibration.calibrator.is_calibrated:
+            self.page_tracking.set_calibrator(self.page_calibration.calibrator)
         
         self.switchTo(self.page_tracking)
         print("[MAIN_WINDOW] 导航到实时追踪页面")

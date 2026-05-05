@@ -316,12 +316,14 @@ class CalibrationPage(QWidget):
     - 保存/加载校准参数
     - 重新校准选项
     """
+    calibration_ready = pyqtSignal()
     
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         
-        # 校准模块（使用二次多项式拟合，更好地处理非线性畸变）
-        self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="polynomial")
+        # Use 9-point affine calibration by default. This is the most stable
+        # option in the current cross-user evaluation.
+        self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
         
         # TrackerPipeline（需要外部传入或初始化）
         self.tracker: Optional[TrackerPipeline] = None
@@ -462,6 +464,7 @@ class CalibrationPage(QWidget):
                 f"校准完成！平均残差：{residual:.2f} 像素\n\n请点击\"保存校准\"以保存校准参数。",
                 self
             ).exec()
+            self.calibration_ready.emit()
         else:
             result = MessageBox(
                 "校准失败",
