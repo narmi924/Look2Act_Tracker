@@ -1,29 +1,35 @@
-# Look2Act Recovery Status
+# Look2Act 恢复与研究状态
 
-## Branch
+## 分支状态
 
-- Working branch: `feat/look2act-diagnose-classic-flow`
-- Remote branch: `origin/feat/look2act-diagnose-classic-flow`
-- PR creation was not completed because `gh` is not authenticated locally.
-- Browser PR URL:
+- 当前工作分支：`feat/look2act-diagnose-classic-flow`
+- 远端分支：`origin/feat/look2act-diagnose-classic-flow`
+- PR 尚未由 Codex 自动创建，原因是本机 `gh` 未认证。
+- 浏览器手动开 PR 链接：
   `https://github.com/narmi924/Look2Act_Tracker/pull/new/feat/look2act-diagnose-classic-flow`
 
-## What Changed
+## 已完成改动
 
-- Default demo path is now `classic`.
-- Deep research path remains available as `deep`.
-- Calibration files are separated:
+- 默认演示路径切换为 `classic`。
+- `deep` 研究路径保留，可继续用于论文实验和坐标系对照。
+- 校准文件已经按后端分离：
   - `calibration_classic.json`
   - `calibration_deep.json`
-- Tracking diagnostics now expose backend, model version, ONNX inputs, raw/calibrated/pre-clamp/clamped points, timing, head pose where available, and calibration metadata.
-- Classic tracker uses MediaPipe iris offsets when available and pupil centroid fallback from eye crops.
-- Classic calibration uses 5x5 polynomial fitting; deep calibration uses 3x3 affine fitting.
-- Calibration no longer hangs forever if a target gets no valid gaze samples; weak targets are skipped and final fitting checks the minimum valid point count.
-- Interaction flow defaults to fullscreen verification and standalone interaction windows, with a gaze-playable Gomoku window.
+- 追踪页诊断模式现在会显示 backend、模型版本、ONNX 输入、raw/calibrated/pre-clamp/clamped 坐标、阶段耗时、可用 head pose、校准方法、校准点数量和校准路径。
+- Classic tracker 优先使用 MediaPipe iris offset；不可用时回退到眼部裁剪图的 pupil centroid。
+- Classic 校准使用 5x5 polynomial fitting；deep 校准使用 3x3 affine fitting。
+- 校准流程不会再因为某个点无有效 gaze 而无限卡住；弱采样点会跳过，最终拟合前会检查最少有效点数。
+- 默认交互流程改为全屏验证和独立交互窗口，并加入可用 gaze dwell 操作的五子棋窗口。
+- 设置页加入基础/高级分层，默认隐藏模型路径、屏幕物理尺寸等研究配置。
+- deep 研究链路新增：
+  - `deep_gaze_space=head/camera`
+  - `deep_pose_input=live/zero`
+  - `smoother=kalman/ema/none`
+- 新增有限帧数诊断脚本和 CSV 分析脚本，便于比较 classic/deep 实时输出。
 
-## Manual Smoke Test
+## 手动 Smoke Test
 
-Run in a new terminal:
+请在新终端运行：
 
 ```powershell
 cd D:\Projects\Look2Act_Tracker_Project
@@ -31,19 +37,19 @@ conda activate gaze-env
 python main.py
 ```
 
-Suggested order:
+建议顺序：
 
-1. Confirm settings show `classic` backend and `kalman` smoother.
-2. Start tracking.
-3. Run 5x5 calibration and save it.
-4. Load calibration on the tracking page.
-5. Open fullscreen verification.
-6. Open fullscreen interaction and launch Gomoku.
-7. Toggle diagnostics if tracking looks wrong.
+1. 打开设置页，确认 backend 为 `classic`，smoother 为 `kalman`。
+2. 启动追踪。
+3. 执行 5x5 校准并保存。
+4. 在追踪页加载校准。
+5. 打开全屏验证窗口。
+6. 打开全屏交互窗口，并进入五子棋。
+7. 如果追踪看起来不对，打开诊断模式查看 raw/calibrated/pre-clamp/clamped 坐标和阶段耗时。
 
-## CLI Diagnostics
+## 命令行实时诊断
 
-Classic:
+Classic：
 
 ```powershell
 conda activate gaze-env
@@ -51,7 +57,7 @@ python scripts/diagnose_tracker.py --backend classic --frames 300 --csv diagnost
 python scripts/analyze_tracker_diagnostics.py diagnostics_classic.csv
 ```
 
-Deep camera-space experiment:
+Deep camera-space 消融：
 
 ```powershell
 conda activate gaze-env
@@ -59,41 +65,44 @@ python scripts/diagnose_tracker.py --backend deep --deep-space camera --deep-pos
 python scripts/analyze_tracker_diagnostics.py diagnostics_deep.csv
 ```
 
-## Label Coordinate Audit
+## 标签坐标审计
 
-Run:
+运行：
 
 ```powershell
 conda activate gaze-env
 python scripts/audit_gaze_labels.py
 ```
 
-Current audit result on `dataset_processed`:
+当前对 `dataset_processed` 的审计结论：
 
-- Gaze labels are unit vectors across train/val/test.
-- Normalized screen targets are in bounds.
-- Target duplicate ratio is high because the dataset contains repeated frames per calibration target.
-- `head_pitch` is almost always `abs(pitch) > 90°`.
-- Treating stored labels as camera-space and converting with `R^-1 @ gaze` gives nearly all negative local z, which indicates the stored Euler angles should not be used directly for head-local label regeneration.
-- Projecting stored labels back to screen with the fixed runtime plane already has large mean error, and a runtime-style ray origin worsens it. This points to distance/screen-geometry mismatch in addition to the rotation-space question.
+- train/val/test 中的 gaze label 都是单位向量。
+- 归一化屏幕目标点都在 `[0, 1]` 范围内。
+- target duplicate ratio 很高，这是因为每个校准目标点包含多帧重复采样。
+- `head_pitch` 几乎总是 `abs(pitch) > 90°`。
+- 如果把当前 gaze label 当成 camera-space，再用 `R^-1 @ gaze` 转成 head-local，几乎全部样本会得到负的 local z。这说明当前存储的 Euler 角不能直接用于 head-local label regeneration。
+- 用固定 runtime screen plane 把现有 label 投影回屏幕时，平均误差已经很大；使用 runtime-style ray origin 会进一步放大误差。这说明问题不只是“是否乘 PnP rotation”，还包括 label generation geometry 与 runtime screen geometry 的不一致。
 
-Research implication: do not run the deep label-regeneration/retraining path until the head-pose coordinate convention and label/runtime screen geometry are fixed or explicitly modeled.
+研究含义：在 head-pose 坐标约定、label/runtime 屏幕几何关系被修正或显式建模前，不要直接跑 deep label-regeneration/retraining。
 
-## Short Tests
+## 短测试
 
-Codex-run checks used:
+Codex 已使用 `gaze-env` 跑过：
 
 ```powershell
-conda run --no-capture-output -n gaze-env python -m pytest tests\test_calibration.py tests\test_smoother.py tests\test_tracker_pipeline.py tests\test_classic_tracker.py tests\test_classic_pipeline.py tests\test_calibration_flow_helpers.py tests\test_tracking_page_unit.py tests\test_settings_page.py -q
+conda run --no-capture-output -n gaze-env python -m pytest tests\test_calibration.py tests\test_smoother.py tests\test_tracker_pipeline.py tests\test_classic_tracker.py tests\test_classic_pipeline.py tests\test_calibration_flow_helpers.py tests\test_tracking_page_unit.py tests\test_settings_page.py tests\test_audit_gaze_labels.py tests\test_analyze_tracker_diagnostics.py -q
 ```
 
-Latest result before this document was added: `32 passed, 1 warning`.
+最新结果：`40 passed, 1 warning`。警告来自第三方 `qfluentwidgets/scipy` 弃用提示。
 
-## Next Decision After Manual Testing
+## 下一步决策
 
-- If classic works smoothly enough, tune dwell timings and verification/interaction visuals.
-- If classic is unstable, inspect `diagnostics_classic.csv` for feature jumps, invalid frames, and calibration residuals.
-- If deep output is still unusable, compare `deep_gaze_space=head` against `camera`, and `deep_pose_input=live` against `zero`, before retraining labels.
-- If retraining labels is needed, first resolve the head-pose Euler convention and the fixed-plane/distance mismatch flagged by `audit_gaze_labels.py`.
-- If synthetic data is added, follow `docs/research/unityeyes_integration_plan.md`; use it for controlled pretraining/ablation, not as a direct patch for the live tracking failure.
-- Only run preprocess/train/export/evaluate manually in a separate terminal.
+- 如果 classic 手动体验已经足够顺滑，下一步调 dwell timing、验证窗口和交互窗口视觉细节。
+- 如果 classic 不稳定，先查看 `diagnostics_classic.csv`，重点看 feature jump、invalid frame、calibration residual。
+- 如果 deep 输出仍不可用，先比较：
+  - `deep_gaze_space=head` vs `camera`
+  - `deep_pose_input=live` vs `zero`
+  - `smoother=kalman/ema/none`
+- 如果需要重新训练 deep，必须先解决 `audit_gaze_labels.py` 标出的 head-pose Euler 约定和 fixed-plane/distance mismatch。
+- 如果要加入 synthetic/UnityEyes 数据，按 `docs/research/unityeyes_integration_plan.md` 执行；只把它作为预训练/消融实验，不要直接当成 live tracking 失败的补丁。
+- preprocess/train/export/evaluate 这类长命令仍由你在独立终端手动运行。
