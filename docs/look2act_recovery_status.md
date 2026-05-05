@@ -54,7 +54,7 @@ Deep camera-space experiment:
 
 ```powershell
 conda activate gaze-env
-python scripts/diagnose_tracker.py --backend deep --frames 300 --csv diagnostics_deep.csv
+python scripts/diagnose_tracker.py --backend deep --deep-space camera --smoother none --frames 300 --csv diagnostics_deep.csv
 ```
 
 ## Short Tests

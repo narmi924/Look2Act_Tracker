@@ -25,6 +25,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run finite live tracker diagnostics.")
     parser.add_argument("--config", default="configs/system_config.yaml")
     parser.add_argument("--backend", choices=["classic", "deep"], default=None)
+    parser.add_argument("--deep-space", choices=["head", "camera"], default=None)
+    parser.add_argument("--smoother", choices=["kalman", "ema", "none"], default=None)
     parser.add_argument("--frames", type=int, default=300)
     parser.add_argument("--interval", type=float, default=0.2)
     parser.add_argument("--csv", dest="csv_path", default=None, help="Optional CSV output path.")
@@ -73,6 +75,10 @@ def main() -> int:
     config = SystemConfig.from_yaml(str(config_path)) if config_path.exists() else SystemConfig()
     if args.backend is not None:
         config.tracker_backend = args.backend
+    if args.deep_space is not None:
+        config.deep_gaze_space = args.deep_space
+    if args.smoother is not None:
+        config.smoother_type = args.smoother
 
     calibrator = None if args.no_calibration else _load_calibrator(config)
 
@@ -91,6 +97,7 @@ def main() -> int:
     print(
         "[diagnose] starting "
         f"backend={config.normalized_backend} frames={args.frames} "
+        f"deep_space={config.deep_gaze_space} smoother={config.normalized_smoother_type} "
         f"calibration={config.calibration_path}"
     )
     if not pipeline.start():
