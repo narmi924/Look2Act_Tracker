@@ -35,6 +35,7 @@ Use these only for short checks unless the user asks otherwise:
 ```powershell
 conda run --no-capture-output -n gaze-env python -m pytest tests/test_calibration.py tests/test_smoother.py tests/test_tracker_pipeline.py
 conda run --no-capture-output -n gaze-env python -m pytest tests/test_classic_tracker.py
+conda run --no-capture-output -n gaze-env python scripts/audit_gaze_labels.py
 conda run --no-capture-output -n gaze-env python scripts/diagnose_tracker.py --backend classic --frames 300
 conda run --no-capture-output -n gaze-env python scripts/diagnose_tracker.py --backend deep --deep-space camera --smoother none --frames 300 --csv diagnostics_deep.csv
 ```
