@@ -118,7 +118,7 @@ geometry:
 calibration:
   num_points: 25
   save_path: calibration_classic.json
-  max_residual_px: 50.0
+  max_residual_px: 300.0
 
 smoother:
   type: kalman

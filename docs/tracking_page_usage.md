@@ -78,12 +78,19 @@ model:
   checkpoint_path: "checkpoints/best_model.pth"  # 模型权重路径
   use_ipex: false             # 是否使用 IPEX 优化
   use_onnx: false             # 是否使用 ONNX Runtime
+  deep_gaze_space: "head"     # deep 原链路；camera 为坐标系实验
 
 geometry:
   screen_w_mm: 344.0          # 屏幕物理宽度（毫米）
   screen_h_mm: 194.0          # 屏幕物理高度（毫米）
 
+calibration:
+  num_points: 25
+  save_path: "calibration_classic.json"
+  max_residual_px: 300.0
+
 smoother:
+  type: "kalman"              # kalman、ema 或 none
   alpha: 0.3                  # 平滑系数（0-1，越小越平滑）
 
 tracker:
