@@ -26,6 +26,7 @@ import numpy as np
 import torch
 import yaml
 
+from src.geometry.coordinate import transform_gaze_to_camera
 from src.geometry.screen_geometry import ScreenGeometry
 from src.models.gaze_net import GazeNet, GazeNetV2
 from src.tracker.smoother import GazeSmoother
@@ -77,6 +78,8 @@ class SystemConfig:
     # 几何配置
     screen_w_mm: float = 344.0
     screen_h_mm: float = 194.0
+    screen_distance_mm: float = 500.0
+    cam_above_screen_mm: float = 5.0
     
     # 界面配置
     window_mode: str = "adaptive"  # "fullscreen" 或 "adaptive"
@@ -108,6 +111,8 @@ class SystemConfig:
             model_version=data.get('model', {}).get('model_version', 'auto'),
             screen_w_mm=data.get('geometry', {}).get('screen_w_mm', 344.0),
             screen_h_mm=data.get('geometry', {}).get('screen_h_mm', 194.0),
+            screen_distance_mm=data.get('geometry', {}).get('screen_distance_mm', 500.0),
+            cam_above_screen_mm=data.get('geometry', {}).get('cam_above_screen_mm', 5.0),
             smoother_alpha=data.get('smoother', {}).get('alpha', 0.3),
             target_fps=data.get('tracker', {}).get('target_fps', 30),
             window_mode=data.get('ui', {}).get('window_mode', 'adaptive'),
@@ -334,13 +339,12 @@ class TrackerPipeline:
                 camera_matrix=self.head_pose_estimator.camera_matrix,
             )
             
-            # 设置默认屏幕平面参数（假设摄像头在屏幕上方中央）
-            # 这些参数应该通过校准优化，这里使用简化的默认值
-            camera_z_mm = 500.0  # 摄像头距离屏幕 50cm
+            # Keep the online screen plane aligned with the training-time
+            # camera/screen geometry used for label generation.
             screen_origin = np.array([
                 -self.config.screen_w_mm / 2.0,
-                -self.config.screen_h_mm / 2.0,
-                camera_z_mm
+                self.config.cam_above_screen_mm,
+                self.config.screen_distance_mm,
             ])
             screen_normal = np.array([0.0, 0.0, -1.0])  # 屏幕法向量指向摄像头
             screen_x_axis = np.array([1.0, 0.0, 0.0])
@@ -534,8 +538,7 @@ class TrackerPipeline:
                 face_detected=True,
             )
         
-        # 4. 提取 yaw/pitch 角度作为校准的 raw 特征
-        # 模型输出 gaze_vector 已在摄像头坐标系中（训练 label 就是摄像头坐标系）
+        # 4. Convert the predicted 3D gaze vector into a raw screen-space point.
         t0 = time.perf_counter()
         d = gaze_vector.astype(np.float64)
         norm_d = np.linalg.norm(d)
@@ -559,14 +562,42 @@ class TrackerPipeline:
             )
         
         d = d / norm_d
-        yaw_deg = float(np.degrees(np.arctan2(d[0], d[2])))
-        pitch_deg = float(np.degrees(np.arcsin(np.clip(-d[1], -1.0, 1.0))))
-        gaze_point = (yaw_deg, pitch_deg)
-        timings['gaze_angles'] = (time.perf_counter() - t0) * 1000
-        
-        # 4. 时序平滑
+        ray_origin, ray_direction = transform_gaze_to_camera(
+            d,
+            head_pose.rotation_matrix,
+            head_pose.translation_vec,
+        )
+        timings['coordinate_transform'] = (time.perf_counter() - t0) * 1000
+
         t0 = time.perf_counter()
-        smoothed_point = self.smoother.update(gaze_point)
+        clamp_to_screen = not self._calibration_mode
+        intersection = self.screen_geometry.ray_plane_intersect(ray_origin, ray_direction)
+        timings['ray_plane_intersect'] = (time.perf_counter() - t0) * 1000
+
+        if intersection is None:
+            if self._last_valid_result is not None:
+                return TrackerResult(
+                    gaze_point=self._last_valid_result.gaze_point,
+                    valid=True,
+                    fps=self._calculate_fps(),
+                    timings=timings,
+                    error_message="视线射线未与屏幕平面相交",
+                    face_detected=True,
+                )
+            return TrackerResult(
+                gaze_point=None,
+                valid=False,
+                fps=self._calculate_fps(),
+                timings=timings,
+                error_message="视线射线未与屏幕平面相交",
+                face_detected=True,
+            )
+
+        raw_point = self.screen_geometry.world_to_screen_px(intersection, clamp=clamp_to_screen)
+        
+        # 5. 时序平滑
+        t0 = time.perf_counter()
+        smoothed_point = self.smoother.update(raw_point)
         timings['smoothing'] = (time.perf_counter() - t0) * 1000
         
         # 保存为有效结果（用于后续容错）
@@ -714,6 +745,14 @@ class TrackerPipeline:
         if self.face_detector is not None:
             self.face_detector.close()
             self.face_detector = None
+
+        if self.smoother is not None:
+            self.smoother.reset()
+
+        self._last_valid_result = None
+        self._latest_result = None
+        self._latest_frame = None
+        self._frame_times.clear()
         
         print("推理管道资源已释放")
     
@@ -736,3 +775,5 @@ class TrackerPipeline:
     def set_calibration_mode(self, enabled: bool) -> None:
         """设置校准模式。校准模式下禁用坐标 clamp，保留原始值。"""
         self._calibration_mode = enabled
+        if self.smoother is not None:
+            self.smoother.reset()

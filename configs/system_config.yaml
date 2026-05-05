@@ -17,6 +17,8 @@ model:
 geometry:
   screen_w_mm: 347.0
   screen_h_mm: 194.0
+  screen_distance_mm: 500.0
+  cam_above_screen_mm: 5.0
 calibration:
   num_points: 9
   save_path: calibration.json

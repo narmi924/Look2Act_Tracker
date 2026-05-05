@@ -614,11 +614,13 @@ class SettingsPage(QWidget):
                 'geometry': {
                     'screen_w_mm': self.config.screen_w_mm,
                     'screen_h_mm': self.config.screen_h_mm,
+                    'screen_distance_mm': self.config.screen_distance_mm,
+                    'cam_above_screen_mm': self.config.cam_above_screen_mm,
                 },
                 'calibration': {
                     'num_points': 9,
                     'save_path': 'calibration.json',
-                    'max_residual_px': 50.0,
+                    'max_residual_px': 300.0,
                 },
                 'smoother': {
                     'alpha': self.config.smoother_alpha,
