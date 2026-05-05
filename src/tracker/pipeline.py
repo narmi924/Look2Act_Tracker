@@ -86,6 +86,7 @@ class SystemConfig:
     model_version: str = "auto"  # "auto" 从 checkpoint 自动检测, "v1", "v2"
     tracker_backend: str = "classic"  # "classic" 体验模式, "deep" 研究模型
     deep_gaze_space: str = "head"  # "head" 原链路, "camera" 跳过 PnP 旋转实验
+    deep_pose_input: str = "live"  # "live" 使用 PnP 姿态, "zero" 用零向量做消融
     
     # 几何配置
     screen_w_mm: float = 344.0
@@ -124,6 +125,7 @@ class SystemConfig:
             model_version=data.get('model', {}).get('model_version', 'auto'),
             tracker_backend=data.get('tracker', {}).get('backend', 'classic'),
             deep_gaze_space=data.get('model', {}).get('deep_gaze_space', 'head'),
+            deep_pose_input=data.get('model', {}).get('deep_pose_input', 'live'),
             screen_w_mm=data.get('geometry', {}).get('screen_w_mm', 344.0),
             screen_h_mm=data.get('geometry', {}).get('screen_h_mm', 194.0),
             screen_distance_mm=data.get('geometry', {}).get('screen_distance_mm', 500.0),
@@ -147,6 +149,11 @@ class SystemConfig:
     def normalized_smoother_type(self) -> str:
         smoother_type = (self.smoother_type or "kalman").lower()
         return smoother_type if smoother_type in {"kalman", "ema", "none"} else "kalman"
+
+    @property
+    def normalized_deep_pose_input(self) -> str:
+        pose_input = (self.deep_pose_input or "live").lower()
+        return pose_input if pose_input in {"live", "zero"} else "live"
 
 
 class TrackerPipeline:
@@ -527,9 +534,12 @@ class TrackerPipeline:
             right_tensor = torch.from_numpy(right_rgb).permute(2, 0, 1).float() / 255.0
             
             # 构建 head pose 向量 (yaw, pitch, roll)，单位：度
-            head_pose_vec = np.array([
-                head_pose.yaw, head_pose.pitch, head_pose.roll
-            ], dtype=np.float32)
+            if self.config.normalized_deep_pose_input == "zero":
+                head_pose_vec = np.zeros(3, dtype=np.float32)
+            else:
+                head_pose_vec = np.array([
+                    head_pose.yaw, head_pose.pitch, head_pose.roll
+                ], dtype=np.float32)
             
             if self.model_version == "v2":
                 left_batch = left_tensor.unsqueeze(0)
@@ -673,6 +683,7 @@ class TrackerPipeline:
                 "model_version": self.model_version,
                 "onnx_inputs": list(self.onnx_input_names),
                 "deep_gaze_space": self.config.deep_gaze_space,
+                "deep_pose_input": self.config.normalized_deep_pose_input,
                 "gaze_vector": d.tolist(),
                 "head_pose": {
                     "yaw": float(head_pose.yaw),
@@ -957,6 +968,7 @@ class TrackerPipeline:
                 "backend": self.config.camera_backend,
             },
             "deep_gaze_space": self.config.deep_gaze_space,
+            "deep_pose_input": self.config.normalized_deep_pose_input,
         }
         if self.screen_geometry is not None:
             diag["screen_geometry"] = {

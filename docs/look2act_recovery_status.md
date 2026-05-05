@@ -55,7 +55,7 @@ Deep camera-space experiment:
 
 ```powershell
 conda activate gaze-env
-python scripts/diagnose_tracker.py --backend deep --deep-space camera --smoother none --frames 300 --csv diagnostics_deep.csv
+python scripts/diagnose_tracker.py --backend deep --deep-space camera --deep-pose-input zero --smoother none --frames 300 --csv diagnostics_deep.csv
 python scripts/analyze_tracker_diagnostics.py diagnostics_deep.csv
 ```
 
@@ -93,7 +93,7 @@ Latest result before this document was added: `32 passed, 1 warning`.
 
 - If classic works smoothly enough, tune dwell timings and verification/interaction visuals.
 - If classic is unstable, inspect `diagnostics_classic.csv` for feature jumps, invalid frames, and calibration residuals.
-- If deep output is still unusable, compare `deep_gaze_space=head` against `camera` before retraining labels.
+- If deep output is still unusable, compare `deep_gaze_space=head` against `camera`, and `deep_pose_input=live` against `zero`, before retraining labels.
 - If retraining labels is needed, first resolve the head-pose Euler convention and the fixed-plane/distance mismatch flagged by `audit_gaze_labels.py`.
 - If synthetic data is added, follow `docs/research/unityeyes_integration_plan.md`; use it for controlled pretraining/ablation, not as a direct patch for the live tracking failure.
 - Only run preprocess/train/export/evaluate manually in a separate terminal.

@@ -79,6 +79,7 @@ model:
   use_ipex: false             # 是否使用 IPEX 优化
   use_onnx: false             # 是否使用 ONNX Runtime
   deep_gaze_space: "head"     # deep 原链路；camera 为坐标系实验
+  deep_pose_input: "live"     # live 使用 PnP 姿态；zero 为姿态输入消融
 
 geometry:
   screen_w_mm: 344.0          # 屏幕物理宽度（毫米）

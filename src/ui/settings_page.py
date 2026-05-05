@@ -87,6 +87,7 @@ class SettingsPage(QWidget):
         self.use_onnx_switch: Optional[SwitchButton] = None
         self.onnx_path_edit: Optional[LineEdit] = None
         self.deep_gaze_space_combo: Optional[ComboBox] = None
+        self.deep_pose_input_combo: Optional[ComboBox] = None
         
         self.screen_w_mm_spin: Optional[DoubleSpinBox] = None
         self.screen_h_mm_spin: Optional[DoubleSpinBox] = None
@@ -356,6 +357,21 @@ class SettingsPage(QWidget):
         deep_space_row.addWidget(deep_space_hint)
         deep_space_row.addStretch(1)
         layout.addLayout(deep_space_row)
+
+        deep_pose_row = QHBoxLayout()
+        deep_pose_label = BodyLabel("Deep 姿态输入 / Pose Input:")
+        deep_pose_label.setFixedWidth(200)
+        self.deep_pose_input_combo = ComboBox()
+        self.deep_pose_input_combo.addItems(["live", "zero"])
+        self.deep_pose_input_combo.setCurrentText("live")
+        self.deep_pose_input_combo.setFixedWidth(150)
+        deep_pose_hint = BodyLabel("zero 用于排查坏 head-pose 特征污染")
+        deep_pose_hint.setStyleSheet("color: #888; font-size: 12px;")
+        deep_pose_row.addWidget(deep_pose_label)
+        deep_pose_row.addWidget(self.deep_pose_input_combo)
+        deep_pose_row.addWidget(deep_pose_hint)
+        deep_pose_row.addStretch(1)
+        layout.addLayout(deep_pose_row)
         
         return card
     
@@ -594,6 +610,8 @@ class SettingsPage(QWidget):
             self.onnx_path_edit.setText(self.config.onnx_path)
         if self.deep_gaze_space_combo is not None:
             self.deep_gaze_space_combo.setCurrentText(self.config.deep_gaze_space)
+        if self.deep_pose_input_combo is not None:
+            self.deep_pose_input_combo.setCurrentText(self.config.normalized_deep_pose_input)
         if self.backend_combo is not None:
             self.backend_combo.setCurrentText(self.config.normalized_backend)
         
@@ -646,6 +664,9 @@ class SettingsPage(QWidget):
         if self.deep_gaze_space_combo is not None:
             value = self.deep_gaze_space_combo.currentText()
             self.config.deep_gaze_space = value if value in {"head", "camera"} else "head"
+        if self.deep_pose_input_combo is not None:
+            value = self.deep_pose_input_combo.currentText()
+            self.config.deep_pose_input = value if value in {"live", "zero"} else "live"
         
         # 几何设置
         if self.screen_w_mm_spin is not None:
@@ -694,6 +715,7 @@ class SettingsPage(QWidget):
                     'use_onnx': self.config.use_onnx,
                     'onnx_path': self.config.onnx_path,
                     'deep_gaze_space': self.config.deep_gaze_space,
+                    'deep_pose_input': self.config.deep_pose_input,
                 },
                 'geometry': {
                     'screen_w_mm': self.config.screen_w_mm,
