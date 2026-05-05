@@ -86,6 +86,7 @@ class SettingsPage(QWidget):
         self.use_ipex_switch: Optional[SwitchButton] = None
         self.use_onnx_switch: Optional[SwitchButton] = None
         self.onnx_path_edit: Optional[LineEdit] = None
+        self.deep_gaze_space_combo: Optional[ComboBox] = None
         
         self.screen_w_mm_spin: Optional[DoubleSpinBox] = None
         self.screen_h_mm_spin: Optional[DoubleSpinBox] = None
@@ -338,6 +339,22 @@ class SettingsPage(QWidget):
         onnx_path_row.addWidget(self.onnx_path_edit, stretch=1)
         onnx_path_row.addWidget(browse_onnx_btn)
         layout.addLayout(onnx_path_row)
+
+        # Deep gaze coordinate space
+        deep_space_row = QHBoxLayout()
+        deep_space_label = BodyLabel("Deep 坐标空间 / Deep Space:")
+        deep_space_label.setFixedWidth(200)
+        self.deep_gaze_space_combo = ComboBox()
+        self.deep_gaze_space_combo.addItems(["head", "camera"])
+        self.deep_gaze_space_combo.setCurrentText("head")
+        self.deep_gaze_space_combo.setFixedWidth(150)
+        deep_space_hint = BodyLabel("head 为原链路，camera 用于跳过 PnP 旋转实验")
+        deep_space_hint.setStyleSheet("color: #888; font-size: 12px;")
+        deep_space_row.addWidget(deep_space_label)
+        deep_space_row.addWidget(self.deep_gaze_space_combo)
+        deep_space_row.addWidget(deep_space_hint)
+        deep_space_row.addStretch(1)
+        layout.addLayout(deep_space_row)
         
         return card
     
@@ -558,6 +575,8 @@ class SettingsPage(QWidget):
             self.use_onnx_switch.setChecked(self.config.use_onnx)
         if self.onnx_path_edit is not None:
             self.onnx_path_edit.setText(self.config.onnx_path)
+        if self.deep_gaze_space_combo is not None:
+            self.deep_gaze_space_combo.setCurrentText(self.config.deep_gaze_space)
         if self.backend_combo is not None:
             self.backend_combo.setCurrentText(self.config.normalized_backend)
         
@@ -605,6 +624,9 @@ class SettingsPage(QWidget):
             self.config.use_onnx = self.use_onnx_switch.isChecked()
         if self.onnx_path_edit is not None:
             self.config.onnx_path = self.onnx_path_edit.text()
+        if self.deep_gaze_space_combo is not None:
+            value = self.deep_gaze_space_combo.currentText()
+            self.config.deep_gaze_space = value if value in {"head", "camera"} else "head"
         
         # 几何设置
         if self.screen_w_mm_spin is not None:

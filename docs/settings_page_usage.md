@@ -34,6 +34,9 @@
   - 需要先导出 ONNX 模型
 - **ONNX 模型路径**：ONNX 模型文件路径（.onnx）
   - 默认：`checkpoints/gaze_net.onnx`
+- **Deep 坐标空间**：
+  - `head`：保留原始 deep 链路，模型输出先经头姿旋转到 camera space
+  - `camera`：实验模式，模型输出按 camera-space 直接使用，用于排查 PnP rotation 放大问题
 
 ### 3. 几何设置
 
@@ -102,6 +105,7 @@ model:
   use_ipex: false
   use_onnx: true
   onnx_path: checkpoints/gaze_net.onnx
+  deep_gaze_space: head
 
 geometry:
   screen_w_mm: 344.0

@@ -23,10 +23,27 @@ def test_system_config_default_values():
     assert config.checkpoint_path == "checkpoints/best_model.pth"
     assert config.use_ipex is False
     assert config.use_onnx is False
+    assert config.normalized_backend == "classic"
+    assert config.calibration_path == "calibration_classic.json"
+    assert config.deep_gaze_space == "head"
     assert config.screen_w_mm == 344.0
     assert config.screen_h_mm == 194.0
     assert config.smoother_alpha == 0.3
     assert config.target_fps == 30
+
+
+def test_system_config_backend_paths():
+    """测试 tracker backend 与校准文件路径分离。"""
+    classic = SystemConfig(tracker_backend="classic")
+    deep = SystemConfig(tracker_backend="deep")
+    unknown = SystemConfig(tracker_backend="bad")
+
+    assert classic.normalized_backend == "classic"
+    assert classic.calibration_path == "calibration_classic.json"
+    assert deep.normalized_backend == "deep"
+    assert deep.calibration_path == "calibration_deep.json"
+    assert unknown.normalized_backend == "classic"
+    assert unknown.calibration_path == "calibration_classic.json"
 
 
 def test_system_config_from_yaml():
@@ -49,6 +66,7 @@ def test_system_config_from_yaml():
             'use_ipex': True,
             'use_onnx': True,
             'onnx_path': 'models/custom.onnx',
+            'deep_gaze_space': 'camera',
         },
         'geometry': {
             'screen_w_mm': 400.0,
@@ -81,6 +99,7 @@ def test_system_config_from_yaml():
         assert config.use_ipex is True
         assert config.use_onnx is True
         assert config.onnx_path == 'models/custom.onnx'
+        assert config.deep_gaze_space == 'camera'
         
         # 验证几何配置
         assert config.screen_w_mm == 400.0
@@ -108,6 +127,7 @@ def test_system_config_yaml_round_trip():
         checkpoint_path='test_model.pth',
         use_ipex=True,
         use_onnx=False,
+        deep_gaze_space='camera',
         screen_w_mm=500.0,
         screen_h_mm=300.0,
         smoother_alpha=0.7,
@@ -132,6 +152,7 @@ def test_system_config_yaml_round_trip():
             'use_ipex': original_config.use_ipex,
             'use_onnx': original_config.use_onnx,
             'onnx_path': original_config.onnx_path,
+            'deep_gaze_space': original_config.deep_gaze_space,
         },
         'geometry': {
             'screen_w_mm': original_config.screen_w_mm,
@@ -162,6 +183,7 @@ def test_system_config_yaml_round_trip():
         assert loaded_config.checkpoint_path == original_config.checkpoint_path
         assert loaded_config.use_ipex == original_config.use_ipex
         assert loaded_config.use_onnx == original_config.use_onnx
+        assert loaded_config.deep_gaze_space == original_config.deep_gaze_space
         assert loaded_config.screen_w_mm == original_config.screen_w_mm
         assert loaded_config.screen_h_mm == original_config.screen_h_mm
         assert loaded_config.smoother_alpha == original_config.smoother_alpha
