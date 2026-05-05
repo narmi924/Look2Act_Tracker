@@ -93,6 +93,7 @@ class SettingsPage(QWidget):
         
         self.alpha_slider: Optional[Slider] = None
         self.alpha_value_label: Optional[BodyLabel] = None
+        self.smoother_type_combo: Optional[ComboBox] = None
         
         self.target_fps_spin: Optional[SpinBox] = None
         self.backend_combo: Optional[ComboBox] = None
@@ -425,6 +426,22 @@ class SettingsPage(QWidget):
         hint.setStyleSheet("color: #888; font-size: 13px; margin-bottom: 8px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
+
+        # 平滑方式
+        type_row = QHBoxLayout()
+        type_label = BodyLabel("平滑方式 / Smoother:")
+        type_label.setFixedWidth(200)
+        self.smoother_type_combo = ComboBox()
+        self.smoother_type_combo.addItems(["kalman", "ema", "none"])
+        self.smoother_type_combo.setCurrentText("kalman")
+        self.smoother_type_combo.setFixedWidth(150)
+        type_hint = BodyLabel("classic 默认 Kalman；EMA/none 用于对照")
+        type_hint.setStyleSheet("color: #888; font-size: 12px;")
+        type_row.addWidget(type_label)
+        type_row.addWidget(self.smoother_type_combo)
+        type_row.addWidget(type_hint)
+        type_row.addStretch(1)
+        layout.addLayout(type_row)
         
         # 平滑系数 alpha
         alpha_row = QHBoxLayout()
@@ -592,6 +609,8 @@ class SettingsPage(QWidget):
             self.alpha_slider.setValue(alpha_int)
             if self.alpha_value_label is not None:
                 self.alpha_value_label.setText(f"{self.config.smoother_alpha:.2f}")
+        if self.smoother_type_combo is not None:
+            self.smoother_type_combo.setCurrentText(self.config.normalized_smoother_type)
         
         # 追踪设置
         if self.target_fps_spin is not None:
@@ -637,6 +656,8 @@ class SettingsPage(QWidget):
         # 平滑设置
         if self.alpha_slider is not None:
             self.config.smoother_alpha = self.alpha_slider.value() / 100.0
+        if self.smoother_type_combo is not None:
+            self.config.smoother_type = self.smoother_type_combo.currentText()
         
         # 追踪设置
         if self.target_fps_spin is not None:

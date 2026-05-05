@@ -26,6 +26,7 @@ def test_system_config_default_values():
     assert config.normalized_backend == "classic"
     assert config.calibration_path == "calibration_classic.json"
     assert config.deep_gaze_space == "head"
+    assert config.normalized_smoother_type == "kalman"
     assert config.screen_w_mm == 344.0
     assert config.screen_h_mm == 194.0
     assert config.smoother_alpha == 0.3
@@ -44,6 +45,14 @@ def test_system_config_backend_paths():
     assert deep.calibration_path == "calibration_deep.json"
     assert unknown.normalized_backend == "classic"
     assert unknown.calibration_path == "calibration_classic.json"
+
+
+def test_system_config_smoother_type_normalization():
+    """测试平滑器类型归一化。"""
+    assert SystemConfig(smoother_type="kalman").normalized_smoother_type == "kalman"
+    assert SystemConfig(smoother_type="ema").normalized_smoother_type == "ema"
+    assert SystemConfig(smoother_type="none").normalized_smoother_type == "none"
+    assert SystemConfig(smoother_type="bad").normalized_smoother_type == "kalman"
 
 
 def test_system_config_from_yaml():
@@ -74,6 +83,7 @@ def test_system_config_from_yaml():
         },
         'smoother': {
             'alpha': 0.5,
+            'type': 'ema',
         },
         'tracker': {
             'target_fps': 60,
@@ -107,6 +117,7 @@ def test_system_config_from_yaml():
         
         # 验证平滑配置
         assert config.smoother_alpha == 0.5
+        assert config.smoother_type == 'ema'
         
         # 验证追踪配置
         assert config.target_fps == 60
@@ -131,6 +142,7 @@ def test_system_config_yaml_round_trip():
         screen_w_mm=500.0,
         screen_h_mm=300.0,
         smoother_alpha=0.7,
+        smoother_type='none',
         target_fps=45,
     )
     
@@ -160,6 +172,7 @@ def test_system_config_yaml_round_trip():
         },
         'smoother': {
             'alpha': original_config.smoother_alpha,
+            'type': original_config.smoother_type,
         },
         'tracker': {
             'target_fps': original_config.target_fps,
@@ -187,6 +200,7 @@ def test_system_config_yaml_round_trip():
         assert loaded_config.screen_w_mm == original_config.screen_w_mm
         assert loaded_config.screen_h_mm == original_config.screen_h_mm
         assert loaded_config.smoother_alpha == original_config.smoother_alpha
+        assert loaded_config.smoother_type == original_config.smoother_type
         assert loaded_config.target_fps == original_config.target_fps
         
     finally:

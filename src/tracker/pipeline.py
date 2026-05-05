@@ -143,6 +143,11 @@ class SystemConfig:
     def calibration_path(self) -> str:
         return "calibration_classic.json" if self.normalized_backend == "classic" else "calibration_deep.json"
 
+    @property
+    def normalized_smoother_type(self) -> str:
+        smoother_type = (self.smoother_type or "kalman").lower()
+        return smoother_type if smoother_type in {"kalman", "ema", "none"} else "kalman"
+
 
 class TrackerPipeline:
     """端到端实时推理管道。
@@ -648,7 +653,10 @@ class TrackerPipeline:
         
         # 5. 时序平滑
         t0 = time.perf_counter()
-        smoothed_point = self.smoother.update(raw_point)
+        if self.config.normalized_smoother_type == "none" or self.smoother is None:
+            smoothed_point = raw_point
+        else:
+            smoothed_point = self.smoother.update(raw_point)
         timings['smoothing'] = (time.perf_counter() - t0) * 1000
         
         # 保存为有效结果（用于后续容错）
@@ -727,12 +735,19 @@ class TrackerPipeline:
             )
 
         raw_point = feature.point
-        if self._calibration_mode or self.classic_smoother is None:
+        smoother_type = self.config.normalized_smoother_type
+        if self._calibration_mode or smoother_type == "none":
             output_point = raw_point
-        else:
+        elif smoother_type == "ema" and self.smoother is not None:
+            t1 = time.perf_counter()
+            output_point = self.smoother.update(raw_point)
+            timings["smoothing"] = (time.perf_counter() - t1) * 1000
+        elif self.classic_smoother is not None:
             t1 = time.perf_counter()
             output_point = self.classic_smoother.update(raw_point)
             timings["smoothing"] = (time.perf_counter() - t1) * 1000
+        else:
+            output_point = raw_point
 
         result = TrackerResult(
             gaze_point=output_point,
@@ -746,6 +761,7 @@ class TrackerPipeline:
             debug={
                 "feature_method": feature.method,
                 "feature_confidence": feature.confidence,
+                "smoother_type": smoother_type,
                 "left_pupil": left_pupil,
                 "right_pupil": right_pupil,
                 "left_iris": left_iris,

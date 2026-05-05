@@ -38,6 +38,19 @@ def test_process_classic_result_uses_iris_offsets_without_smoothing():
     assert result.debug["feature_method"] == "iris_offset"
 
 
+def test_process_classic_result_can_disable_smoothing():
+    pipeline = TrackerPipeline(
+        model_path="",
+        config=SystemConfig(tracker_backend="classic", smoother_type="none"),
+    )
+    pipeline.classic_smoother = ClassicKalmanSmoother()
+
+    result = pipeline._process_classic_result(_classic_face_result(), {})
+
+    assert np.allclose(result.gaze_point, result.raw_point)
+    assert result.debug["smoother_type"] == "none"
+
+
 def test_process_frame_no_face_result_keeps_backend():
     pipeline = TrackerPipeline(
         model_path="",
