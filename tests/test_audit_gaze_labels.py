@@ -3,9 +3,11 @@ import pandas as pd
 
 from scripts.audit_gaze_labels import (
     audit_split,
+    compute_projection_mismatch_stats,
     describe_series,
     euler_to_rotation_matrix,
     flatten_for_csv,
+    project_gaze_to_screen_px,
 )
 
 
@@ -47,3 +49,34 @@ def test_audit_split_reports_pose_and_target_risks():
     assert summary["pose_abs_gt_90_ratio"]["head_pitch"] == 1.0
     assert csv_row["split"] == "toy"
     assert csv_row["head_pitch_abs_gt_90_ratio"] == 1.0
+
+
+def test_projection_mismatch_detects_runtime_origin_shift():
+    gaze = np.array([0.2, 0.1, 1.0])
+    origin_projection = project_gaze_to_screen_px(
+        gaze,
+        np.array([0.0, 0.0, 0.0]),
+        screen_w_px=1536,
+        screen_h_px=864,
+    )
+    assert origin_projection is not None
+    df = pd.DataFrame(
+        {
+            "gaze_x": [gaze[0]],
+            "gaze_y": [gaze[1]],
+            "gaze_z": [gaze[2]],
+            "norm_target_x": [origin_projection[0] / 1536],
+            "norm_target_y": [origin_projection[1] / 864],
+        }
+    )
+
+    stats = compute_projection_mismatch_stats(
+        df,
+        screen_w_px=1536,
+        screen_h_px=864,
+        runtime_origin_z=400.0,
+    )
+
+    assert stats["available"] is True
+    assert stats["camera_origin_fixed_plane"]["error_px"]["mean"] < 1e-9
+    assert stats["runtime_origin"]["error_px"]["mean"] > 0.0

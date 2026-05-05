@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.data.preprocessing import DEFAULT_GEOMETRY
+
 
 REQUIRED_COLUMNS = {
     "gaze_x",
@@ -40,6 +42,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--processed-dir", default="dataset_processed")
     parser.add_argument("--output", default="evaluation_results/label_audit/summary.json")
     parser.add_argument("--csv", default="evaluation_results/label_audit/split_summary.csv")
+    parser.add_argument("--screen-w", type=int, default=1536)
+    parser.add_argument("--screen-h", type=int, default=864)
+    parser.add_argument(
+        "--runtime-origin-z",
+        type=float,
+        default=400.0,
+        help="Approximate runtime ray origin z in mm for mismatch simulation.",
+    )
     return parser.parse_args()
 
 
@@ -115,6 +125,73 @@ def _unit_vectors(df: pd.DataFrame) -> np.ndarray:
     return gaze / norms
 
 
+def project_gaze_to_screen_px(
+    gaze_vector: np.ndarray,
+    origin_mm: np.ndarray,
+    screen_w_px: int,
+    screen_h_px: int,
+) -> tuple[float, float] | None:
+    """Project a camera-space ray onto the default screen plane."""
+    direction = np.asarray(gaze_vector, dtype=np.float64).flatten()
+    norm = np.linalg.norm(direction)
+    if norm < 1e-12:
+        return None
+    direction = direction / norm
+    origin = np.asarray(origin_mm, dtype=np.float64).flatten()
+    if abs(direction[2]) < 1e-12:
+        return None
+
+    t = (DEFAULT_GEOMETRY.screen_distance_mm - origin[2]) / direction[2]
+    if t < 0:
+        return None
+    hit = origin + t * direction
+    screen_x_mm = hit[0] + DEFAULT_GEOMETRY.screen_w_mm / 2.0
+    screen_y_mm = hit[1] - DEFAULT_GEOMETRY.cam_above_screen_mm
+    px = screen_x_mm / DEFAULT_GEOMETRY.screen_w_mm * screen_w_px
+    py = screen_y_mm / DEFAULT_GEOMETRY.screen_h_mm * screen_h_px
+    return (float(px), float(py))
+
+
+def compute_projection_mismatch_stats(
+    df: pd.DataFrame,
+    screen_w_px: int,
+    screen_h_px: int,
+    runtime_origin_z: float,
+) -> dict[str, object]:
+    """Quantify fixed-geometry projection error under different ray origins.
+
+    Processed labels may have been generated with per-sample distance proxies,
+    so camera-origin error is not expected to be exactly zero. The useful signal
+    here is whether the runtime-style origin makes the mismatch substantially
+    worse under the same fixed screen plane.
+    """
+    if df.empty:
+        return {"available": False}
+
+    gaze = _unit_vectors(df)
+    target_px = df["norm_target_x"].to_numpy(dtype=np.float64) * screen_w_px
+    target_py = df["norm_target_y"].to_numpy(dtype=np.float64) * screen_h_px
+    origins = {
+                "camera_origin_fixed_plane": np.array([0.0, 0.0, 0.0], dtype=np.float64),
+                "runtime_origin": np.array([0.0, 0.0, runtime_origin_z], dtype=np.float64),
+    }
+    stats: dict[str, object] = {"available": True, "runtime_origin_z": runtime_origin_z}
+    for name, origin in origins.items():
+        errors = []
+        invalid = 0
+        for vec, tx, ty in zip(gaze, target_px, target_py):
+            projected = project_gaze_to_screen_px(vec, origin, screen_w_px, screen_h_px)
+            if projected is None:
+                invalid += 1
+                continue
+            errors.append(float(np.hypot(projected[0] - tx, projected[1] - ty)))
+        stats[name] = {
+            "error_px": describe_series(pd.Series(errors)),
+            "invalid_ratio": float(invalid / max(len(gaze), 1)),
+        }
+    return stats
+
+
 def compute_head_local_stats(df: pd.DataFrame) -> dict[str, object]:
     """Estimate what labels look like if current gaze is camera-space.
 
@@ -146,7 +223,13 @@ def compute_head_local_stats(df: pd.DataFrame) -> dict[str, object]:
     }
 
 
-def audit_split(name: str, df: pd.DataFrame) -> dict[str, object]:
+def audit_split(
+    name: str,
+    df: pd.DataFrame,
+    screen_w_px: int = 1536,
+    screen_h_px: int = 864,
+    runtime_origin_z: float = 400.0,
+) -> dict[str, object]:
     missing = sorted(REQUIRED_COLUMNS - set(df.columns))
     summary: dict[str, object] = {
         "split": name,
@@ -187,6 +270,12 @@ def audit_split(name: str, df: pd.DataFrame) -> dict[str, object]:
             for col in POSE_COLUMNS
         }
     summary["head_local_if_camera_space"] = compute_head_local_stats(df)
+    summary["projection_mismatch"] = compute_projection_mismatch_stats(
+        df,
+        screen_w_px=screen_w_px,
+        screen_h_px=screen_h_px,
+        runtime_origin_z=runtime_origin_z,
+    )
     return summary
 
 
@@ -218,6 +307,16 @@ def flatten_for_csv(summary: dict[str, object]) -> dict[str, object]:
     head_local = summary.get("head_local_if_camera_space", {})
     if isinstance(head_local, dict):
         row["head_local_negative_z_ratio"] = head_local.get("negative_z_ratio")
+    projection = summary.get("projection_mismatch", {})
+    if isinstance(projection, dict):
+        for origin_name in ("camera_origin_fixed_plane", "runtime_origin"):
+            origin_stats = projection.get(origin_name, {})
+            if isinstance(origin_stats, dict):
+                err = origin_stats.get("error_px", {})
+                if isinstance(err, dict):
+                    row[f"{origin_name}_projection_error_mean"] = err.get("mean")
+                    row[f"{origin_name}_projection_error_p95"] = err.get("p95")
+                row[f"{origin_name}_projection_invalid_ratio"] = origin_stats.get("invalid_ratio")
     return row
 
 
@@ -249,6 +348,15 @@ def print_findings(summaries: Iterable[dict[str, object]]) -> None:
                 "[audit]   R^-1 camera-label z<0 ratio="
                 f"{head_local.get('negative_z_ratio'):.3f}"
             )
+        projection = summary.get("projection_mismatch", {})
+        if projection.get("available"):
+            cam_err = projection["camera_origin_fixed_plane"]["error_px"]
+            run_err = projection["runtime_origin"]["error_px"]
+            print(
+                "[audit]   projection error px "
+                f"fixed_origin_z0 mean={cam_err['mean']:.1f}, "
+                f"runtime_z{projection['runtime_origin_z']:.0f} mean={run_err['mean']:.1f}"
+            )
 
 
 def main() -> int:
@@ -263,7 +371,16 @@ def main() -> int:
         print(f"[audit] no labels.csv files found under: {processed_dir}")
         return 2
 
-    summaries = [audit_split(name, df) for name, df in split_frames.items()]
+    summaries = [
+        audit_split(
+            name,
+            df,
+            screen_w_px=args.screen_w,
+            screen_h_px=args.screen_h,
+            runtime_origin_z=args.runtime_origin_z,
+        )
+        for name, df in split_frames.items()
+    ]
     print_findings(summaries)
 
     output_path = Path(args.output)

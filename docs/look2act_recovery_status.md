@@ -73,8 +73,9 @@ Current audit result on `dataset_processed`:
 - Target duplicate ratio is high because the dataset contains repeated frames per calibration target.
 - `head_pitch` is almost always `abs(pitch) > 90°`.
 - Treating stored labels as camera-space and converting with `R^-1 @ gaze` gives nearly all negative local z, which indicates the stored Euler angles should not be used directly for head-local label regeneration.
+- Projecting stored labels back to screen with the fixed runtime plane already has large mean error, and a runtime-style ray origin worsens it. This points to distance/screen-geometry mismatch in addition to the rotation-space question.
 
-Research implication: do not run the deep label-regeneration/retraining path until the head-pose coordinate convention is fixed or replaced by a verified rotation matrix source.
+Research implication: do not run the deep label-regeneration/retraining path until the head-pose coordinate convention and label/runtime screen geometry are fixed or explicitly modeled.
 
 ## Short Tests
 
@@ -91,5 +92,5 @@ Latest result before this document was added: `32 passed, 1 warning`.
 - If classic works smoothly enough, tune dwell timings and verification/interaction visuals.
 - If classic is unstable, inspect `diagnostics_classic.csv` for feature jumps, invalid frames, and calibration residuals.
 - If deep output is still unusable, compare `deep_gaze_space=head` against `camera` before retraining labels.
-- If retraining labels is needed, first resolve the head-pose Euler convention flagged by `audit_gaze_labels.py`.
+- If retraining labels is needed, first resolve the head-pose Euler convention and the fixed-plane/distance mismatch flagged by `audit_gaze_labels.py`.
 - Only run preprocess/train/export/evaluate manually in a separate terminal.
