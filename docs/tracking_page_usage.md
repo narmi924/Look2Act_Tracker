@@ -110,6 +110,7 @@ self.cursor_border_width = 2                 # 边框宽度
 
 ```powershell
 conda run --no-capture-output -n gaze-env python scripts/diagnose_tracker.py --backend classic --frames 300
+conda run --no-capture-output -n gaze-env python scripts/diagnose_tracker.py --backend deep --frames 300 --csv diagnostics_deep.csv
 ```
 
 ### FPS 显示

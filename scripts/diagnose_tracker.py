@@ -6,6 +6,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 import time
 from pathlib import Path
@@ -26,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backend", choices=["classic", "deep"], default=None)
     parser.add_argument("--frames", type=int, default=300)
     parser.add_argument("--interval", type=float, default=0.2)
+    parser.add_argument("--csv", dest="csv_path", default=None, help="Optional CSV output path.")
     parser.add_argument("--no-calibration", action="store_true")
     return parser.parse_args()
 
@@ -97,6 +99,30 @@ def main() -> int:
 
     printed = 0
     last_print = 0.0
+    csv_file = None
+    csv_writer = None
+    if args.csv_path:
+        csv_path = Path(args.csv_path)
+        csv_file = csv_path.open("w", newline="", encoding="utf-8")
+        csv_writer = csv.DictWriter(
+            csv_file,
+            fieldnames=[
+                "index",
+                "time_s",
+                "backend",
+                "valid",
+                "face_detected",
+                "fps",
+                "raw_x",
+                "raw_y",
+                "calibrated_x",
+                "calibrated_y",
+                "error",
+                "timings",
+            ],
+        )
+        csv_writer.writeheader()
+        print(f"[diagnose] csv output: {csv_path}")
     try:
         while printed < args.frames and pipeline.is_running():
             now = time.perf_counter()
@@ -114,6 +140,23 @@ def main() -> int:
             raw = result.raw_point or result.gaze_point
             calibrated = _calibrated_point(result, calibrator)
             timing = " ".join(f"{k}={v:.1f}ms" for k, v in result.timings.items())
+            if csv_writer is not None:
+                csv_writer.writerow(
+                    {
+                        "index": printed,
+                        "time_s": f"{time.time():.3f}",
+                        "backend": result.backend,
+                        "valid": result.valid,
+                        "face_detected": result.face_detected,
+                        "fps": f"{result.fps:.3f}",
+                        "raw_x": "" if raw is None else f"{raw[0]:.6f}",
+                        "raw_y": "" if raw is None else f"{raw[1]:.6f}",
+                        "calibrated_x": "" if calibrated is None else f"{calibrated[0]:.6f}",
+                        "calibrated_y": "" if calibrated is None else f"{calibrated[1]:.6f}",
+                        "error": result.error_message or "",
+                        "timings": timing,
+                    }
+                )
             print(
                 f"[diagnose] #{printed:04d} "
                 f"backend={result.backend} valid={result.valid} face={result.face_detected} "
@@ -126,6 +169,8 @@ def main() -> int:
         print("[diagnose] interrupted")
     finally:
         pipeline.stop()
+        if csv_file is not None:
+            csv_file.close()
 
     return 1 if errors else 0
 
