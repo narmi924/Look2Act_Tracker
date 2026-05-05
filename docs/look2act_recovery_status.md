@@ -48,6 +48,7 @@ Classic:
 ```powershell
 conda activate gaze-env
 python scripts/diagnose_tracker.py --backend classic --frames 300 --csv diagnostics_classic.csv
+python scripts/analyze_tracker_diagnostics.py diagnostics_classic.csv
 ```
 
 Deep camera-space experiment:
@@ -55,6 +56,7 @@ Deep camera-space experiment:
 ```powershell
 conda activate gaze-env
 python scripts/diagnose_tracker.py --backend deep --deep-space camera --smoother none --frames 300 --csv diagnostics_deep.csv
+python scripts/analyze_tracker_diagnostics.py diagnostics_deep.csv
 ```
 
 ## Label Coordinate Audit
