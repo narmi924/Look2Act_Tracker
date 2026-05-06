@@ -285,3 +285,58 @@ python scripts/export_onnx.py --checkpoint checkpoints/deep_pog_topology/best_mo
 python scripts/evaluate_pog.py --checkpoint checkpoints/deep_pog_topology/best_model.pth --output evaluation_results/deep_pog_topology
 python scripts/evaluate_pog_topology.py --checkpoint checkpoints/deep_pog_topology/best_model.pth --output evaluation_results/deep_pog_topology/topology.json
 ```
+
+## 十、2026-05-06 追加训练实验结果
+
+在 `research/deep-pog-screen-point` 分支中，已按“先短跑、再选择最值得配置跑 60 epoch”的策略完成一轮 direct PoG 实验。
+
+10 epoch 候选结果：
+
+| 实验 | best val px | test mean px | pred area ratio | corr x | corr y | mono x | mono y | 结论 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `linear_topology_e10` | 389.12 | 341.02 | 0.231 | 0.570 | 0.549 | 0.807 | 0.741 | 排序较稳，但输出范围被压缩 |
+| `linear_base_e10` | 377.98 | 334.64 | 0.429 | 0.491 | 0.447 | 0.719 | 0.776 | 像素误差最低，输出范围最大 |
+| `tanh_topology_e10` | 452.53 | 445.31 | 0.002 | 0.215 | 0.293 | 0.649 | 0.621 | 基本坍缩，淘汰 |
+| `linear_topology010_e10` | 396.10 | 355.90 | 0.262 | 0.526 | 0.529 | 0.719 | 0.724 | 轻量拓扑未达到折中效果 |
+
+根据短跑结果，选择 `linear_base_e60` 继续跑 60 epoch。训练结果：
+
+```text
+config = configs/experiments/train_pog_linear_base_e60.yaml
+best epoch = 58
+best val_pixel_error_px = 221.76
+epoch 60 val_pixel_error_px = 222.36
+checkpoint = checkpoints/experiments/deep_pog_linear_base_e60/best_model.pth
+onnx = checkpoints/experiments/gaze_pog_linear_base_e60.onnx
+ONNX max diff = 2.384186e-07
+```
+
+60 epoch test pixel metrics：
+
+```text
+num_samples = 1390
+mean_pixel_error = 246.12 px
+median_pixel_error = 170.24 px
+p95_pixel_error = 720.68 px
+mean_norm_error = 0.1679
+median_norm_error = 0.1095
+```
+
+60 epoch test topology metrics：
+
+```text
+points = 71
+prediction_extent = 0.5546 x 0.8135
+pred_to_target_area_ratio = 1.0979
+corr pred_x ~ target_x = 0.7410
+corr pred_y ~ target_y = 0.3424
+row monotonic x = 0.7719
+column monotonic y = 0.7414
+```
+
+阶段判断：
+
+- Direct PoG 不是完全不可救：60 epoch 后 validation pixel error 从短跑约 378px 降到约 222px，test median pixel error 约 170px。
+- 输出范围不再坍缩，`pred_to_target_area_ratio ≈ 1.10`，这比 topology-loss 短跑更适合实时 25 点校准。
+- 但模型仍未真正达到可交互标准：y 方向相关性只有约 0.342，P95 仍高达约 721px。
+- 下一步最重要的是用 `gaze_pog_linear_base_e60.onnx` 做实时 25 点 deep_pog 校准，检查 raw topology 是否比旧模型明显改善；如果实时仍 y 轴崩坏，应优先研究 y 轴标签、屏幕高度、采集姿态和实时域差异。
