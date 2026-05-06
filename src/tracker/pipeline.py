@@ -92,6 +92,11 @@ class SystemConfig:
     deep_gaze_space: str = "head"  # "head" 原链路, "camera" 跳过 PnP 旋转实验
     deep_pose_input: str = "live"  # "live" 使用 PnP 姿态, "zero" 用零向量做消融
     deep_ray_origin: str = "face_translation"  # "face_translation" 或 "zero_origin"
+
+    # 校准配置
+    calibration_num_points: int = 0  # 0 表示按 backend 默认
+    calibration_save_path: str = ""
+    calibration_max_residual_px: float = 300.0
     
     # 几何配置
     screen_w_mm: float = 344.0
@@ -130,6 +135,9 @@ class SystemConfig:
             deep_gaze_space=data.get('model', {}).get('deep_gaze_space', 'head'),
             deep_pose_input=data.get('model', {}).get('deep_pose_input', 'live'),
             deep_ray_origin=data.get('model', {}).get('deep_ray_origin', 'face_translation'),
+            calibration_num_points=data.get('calibration', {}).get('num_points', 0),
+            calibration_save_path=data.get('calibration', {}).get('save_path', ''),
+            calibration_max_residual_px=data.get('calibration', {}).get('max_residual_px', 300.0),
             screen_w_mm=data.get('geometry', {}).get('screen_w_mm', 344.0),
             screen_h_mm=data.get('geometry', {}).get('screen_h_mm', 194.0),
             screen_distance_mm=data.get('geometry', {}).get('screen_distance_mm', 500.0),
@@ -147,11 +155,27 @@ class SystemConfig:
 
     @property
     def calibration_path(self) -> str:
+        if self.calibration_save_path:
+            return self.calibration_save_path
         if self.normalized_backend == "classic":
             return "calibration_classic.json"
         if self.normalized_backend == "deep_pog":
             return "calibration_deep_pog.json"
         return "calibration_deep.json"
+
+    @property
+    def effective_calibration_num_points(self) -> int:
+        if self.calibration_num_points > 0:
+            return self.calibration_num_points
+        if self.normalized_backend in {"classic", "deep_pog"}:
+            return 25
+        return 9
+
+    @property
+    def effective_calibration_method(self) -> str:
+        if self.normalized_backend in {"classic", "deep_pog"}:
+            return "polynomial"
+        return "polynomial" if self.effective_calibration_num_points >= 25 else "affine"
 
     @property
     def normalized_smoother_type(self) -> str:

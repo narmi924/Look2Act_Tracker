@@ -60,6 +60,15 @@ def calibration_path_for_backend(backend: str) -> Path:
     return Path("calibration_classic.json")
 
 
+def calibration_module_for_config(config: SystemConfig) -> CalibrationModule:
+    """Build calibration module from runtime config instead of hard-coded backend defaults."""
+    return CalibrationModule(
+        num_points=config.effective_calibration_num_points,
+        max_residual_px=config.calibration_max_residual_px,
+        method=config.effective_calibration_method,
+    )
+
+
 def min_valid_points_for_calibration(num_points: int, method: str) -> int:
     """Return the minimum usable point count before fitting calibration."""
     if method == "polynomial":
@@ -445,25 +454,37 @@ class CalibrationPage(QWidget):
             tracker: TrackerPipeline 实例（必须已启动）
         """
         self.tracker = tracker
-        self._configure_for_backend(tracker.config.normalized_backend)
+        self._configure_for_config(tracker.config)
 
     def _configure_for_backend(self, backend: str) -> None:
         """Switch calibration strategy for the active tracker backend."""
+        config = SystemConfig(tracker_backend=backend)
+        self._configure_for_config(config)
+
+    def _configure_for_config(self, config: SystemConfig) -> None:
+        """Switch calibration strategy for the active tracker config."""
+        backend = config.normalized_backend
         backend = backend if backend in {"classic", "deep", "deep_pog"} else "classic"
-        if backend == self.backend and self.calibrator is not None:
+        num_points = config.effective_calibration_num_points
+        method = config.effective_calibration_method
+        if (
+            backend == self.backend
+            and self.calibrator is not None
+            and self.calibrator.num_points == num_points
+            and self.calibrator.method.value == method
+            and Path(self.calibration_path) == Path(config.calibration_path)
+        ):
             return
 
         self.backend = backend
-        self.calibration_path = calibration_path_for_backend(backend)
+        self.calibration_path = Path(config.calibration_path)
+        self.calibrator = calibration_module_for_config(config)
         if backend == "classic":
-            self.calibrator = CalibrationModule(num_points=25, max_residual_px=300.0, method="polynomial")
-            self.status_label.setText(tx("Classic 5x5 校准", "Classic 5x5 Calibration"))
+            self.status_label.setText(tx(f"Classic {num_points}点校准", f"Classic {num_points}-point Calibration"))
         elif backend == "deep":
-            self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
-            self.status_label.setText(tx("Deep 9点校准", "Deep 9-point Calibration"))
+            self.status_label.setText(tx(f"Deep {num_points}点校准", f"Deep {num_points}-point Calibration"))
         else:
-            self.calibrator = CalibrationModule(num_points=25, max_residual_px=300.0, method="polynomial")
-            self.status_label.setText(tx("Deep PoG 5x5 校准", "Deep PoG 5x5 Calibration"))
+            self.status_label.setText(tx(f"Deep PoG {num_points}点校准", f"Deep PoG {num_points}-point Calibration"))
         self.calibration_success = False
         self.calibration_residual = 0.0
         self.residual_label.setText(tx("残差：N/A", "Residual: N/A"))

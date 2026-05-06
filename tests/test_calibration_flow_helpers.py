@@ -1,7 +1,8 @@
-from src.tracker.pipeline import TrackerResult
+from src.tracker.pipeline import SystemConfig, TrackerResult
 from src.ui.calibration_page import (
     CalibrationPage,
     CalibrationFullscreenWidget,
+    calibration_module_for_config,
     calibration_path_for_backend,
     min_samples_per_calibration_point,
     min_valid_points_for_calibration,
@@ -62,6 +63,19 @@ def test_min_valid_points_for_calibration():
 def test_min_samples_per_calibration_point():
     assert min_samples_per_calibration_point(45) == 15
     assert min_samples_per_calibration_point(12) == 6
+
+
+def test_deep_experiment_config_uses_25_point_polynomial_calibration():
+    config = SystemConfig(
+        tracker_backend="deep",
+        calibration_num_points=25,
+        calibration_save_path="calibration_deep.json",
+    )
+
+    calibrator = calibration_module_for_config(config)
+
+    assert calibrator.num_points == 25
+    assert calibrator.method.value == "polynomial"
 
 
 def test_calibration_finished_stays_on_result_actions():

@@ -33,6 +33,8 @@ def test_system_config_default_values():
     assert config.use_onnx is False
     assert config.normalized_backend == "classic"
     assert config.calibration_path == "calibration_classic.json"
+    assert config.effective_calibration_num_points == 25
+    assert config.effective_calibration_method == "polynomial"
     assert config.deep_gaze_space == "head"
     assert config.normalized_deep_pose_input == "live"
     assert config.normalized_smoother_type == "kalman"
@@ -47,6 +49,7 @@ def test_system_config_backend_paths():
     classic = SystemConfig(tracker_backend="classic")
     deep_pog = SystemConfig(tracker_backend="deep_pog")
     deep = SystemConfig(tracker_backend="deep")
+    deep_25 = SystemConfig(tracker_backend="deep", calibration_num_points=25, calibration_save_path="custom_deep.json")
     unknown = SystemConfig(tracker_backend="bad")
 
     assert classic.normalized_backend == "classic"
@@ -55,6 +58,11 @@ def test_system_config_backend_paths():
     assert deep_pog.calibration_path == "calibration_deep_pog.json"
     assert deep.normalized_backend == "deep"
     assert deep.calibration_path == "calibration_deep.json"
+    assert deep.effective_calibration_num_points == 9
+    assert deep.effective_calibration_method == "affine"
+    assert deep_25.calibration_path == "custom_deep.json"
+    assert deep_25.effective_calibration_num_points == 25
+    assert deep_25.effective_calibration_method == "polynomial"
     assert unknown.normalized_backend == "classic"
     assert unknown.calibration_path == "calibration_classic.json"
 
@@ -184,6 +192,11 @@ def test_system_config_from_yaml():
             'screen_w_mm': 400.0,
             'screen_h_mm': 250.0,
         },
+        'calibration': {
+            'num_points': 25,
+            'save_path': 'calibration_deep.json',
+            'max_residual_px': 240.0,
+        },
         'smoother': {
             'alpha': 0.5,
             'type': 'ema',
@@ -215,6 +228,9 @@ def test_system_config_from_yaml():
         assert config.deep_gaze_space == 'camera'
         assert config.deep_pose_input == 'zero'
         assert config.deep_ray_origin == 'zero_origin'
+        assert config.calibration_num_points == 25
+        assert config.calibration_path == 'calibration_deep.json'
+        assert config.calibration_max_residual_px == 240.0
         
         # 验证几何配置
         assert config.screen_w_mm == 400.0

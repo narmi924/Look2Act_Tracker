@@ -23,6 +23,7 @@ from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
 from src.tracker.classic import EyeTouchScreenSmoother
 from src.tracker.pipeline import SystemConfig, TrackerPipeline
+from src.ui.calibration_page import calibration_module_for_config
 from src.ui.fluent_theme import PALETTE
 from src.ui.i18n import tx, tx_button
 from src.ui.interaction_overlay import (
@@ -485,10 +486,7 @@ class TrackingPage(QWidget):
 
         try:
             if self.calibrator is None:
-                if self.tracker_config.normalized_backend == "classic":
-                    self.calibrator = CalibrationModule(num_points=25, max_residual_px=300.0, method="polynomial")
-                else:
-                    self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
+                self.calibrator = calibration_module_for_config(self.tracker_config)
 
             load_calibration(self.calibrator, str(load_path))
             self.screen_stabilizer.reset()
