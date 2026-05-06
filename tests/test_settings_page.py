@@ -7,8 +7,15 @@ from pathlib import Path
 
 import pytest
 import yaml
+import numpy as np
 
 from src.tracker.pipeline import SystemConfig
+from src.ui.settings_page import (
+    detect_supported_camera_resolutions,
+    format_resolution,
+    parse_resolution,
+    sort_resolutions,
+)
 
 
 def test_system_config_default_values():
@@ -54,6 +61,58 @@ def test_system_config_smoother_type_normalization():
     assert SystemConfig(smoother_type="ema").normalized_smoother_type == "ema"
     assert SystemConfig(smoother_type="none").normalized_smoother_type == "none"
     assert SystemConfig(smoother_type="bad").normalized_smoother_type == "kalman"
+
+
+def test_resolution_format_parse_and_sort():
+    assert format_resolution(1280, 720) == "1280x720"
+    assert parse_resolution("1920 x 1080") == (1920, 1080)
+    assert sort_resolutions([(1920, 1080), (640, 480), (640, 480)]) == [
+        (640, 480),
+        (1920, 1080),
+    ]
+
+
+def test_detect_supported_camera_resolutions_uses_actual_frame_size():
+    import cv2
+
+    class FakeCapture:
+        def __init__(self, *args):
+            self.width = 640
+            self.height = 480
+            self.released = False
+
+        def isOpened(self):
+            return True
+
+        def set(self, prop, value):
+            if prop == cv2.CAP_PROP_FRAME_WIDTH:
+                self.width = int(value)
+            elif prop == cv2.CAP_PROP_FRAME_HEIGHT:
+                self.height = int(value)
+
+        def get(self, prop):
+            if prop == cv2.CAP_PROP_FRAME_WIDTH:
+                return self.width
+            if prop == cv2.CAP_PROP_FRAME_HEIGHT:
+                return self.height
+            return 0
+
+        def read(self):
+            if (self.width, self.height) == (1920, 1080):
+                return True, np.zeros((720, 1280, 3), dtype=np.uint8)
+            return True, np.zeros((self.height, self.width, 3), dtype=np.uint8)
+
+        def release(self):
+            self.released = True
+
+    detected = detect_supported_camera_resolutions(
+        0,
+        "auto",
+        candidates=((640, 480), (1920, 1080)),
+        capture_factory=lambda *args: FakeCapture(*args),
+    )
+
+    assert detected == [(640, 480), (1280, 720)]
 
 
 def test_system_config_deep_pose_input_normalization():

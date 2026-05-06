@@ -51,6 +51,92 @@ from src.tracker.pipeline import SystemConfig
 from src.ui.fluent_theme import PALETTE
 
 
+COMMON_CAMERA_RESOLUTIONS: tuple[tuple[int, int], ...] = (
+    (320, 240),
+    (640, 480),
+    (800, 600),
+    (960, 540),
+    (1280, 720),
+    (1920, 1080),
+)
+
+
+def format_resolution(width: int, height: int) -> str:
+    return f"{int(width)}x{int(height)}"
+
+
+def parse_resolution(text: str) -> tuple[int, int]:
+    parts = text.lower().replace(" ", "").split("x")
+    if len(parts) != 2:
+        raise ValueError(f"无效分辨率格式: {text}")
+    return int(parts[0]), int(parts[1])
+
+
+def sort_resolutions(resolutions: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    return sorted(set(resolutions), key=lambda item: (item[0] * item[1], item[0], item[1]))
+
+
+def _opencv_backend(backend: str) -> int:
+    if backend == "dshow":
+        import cv2
+
+        return cv2.CAP_DSHOW
+    return 0
+
+
+def probe_camera_resolution(
+    camera_index: int,
+    backend: str,
+    width: int,
+    height: int,
+    capture_factory=None,
+) -> Optional[tuple[int, int]]:
+    """Try a camera resolution and return the actual frame size if readable."""
+    import cv2
+
+    factory = capture_factory or cv2.VideoCapture
+    backend_id = _opencv_backend(backend)
+    cap = factory(camera_index, backend_id) if backend_id else factory(camera_index)
+    try:
+        if cap is None or not cap.isOpened():
+            return None
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(width))
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(height))
+        ok, frame = cap.read()
+        if ok and frame is not None:
+            actual_h, actual_w = frame.shape[:2]
+        else:
+            actual_w = int(round(cap.get(cv2.CAP_PROP_FRAME_WIDTH)))
+            actual_h = int(round(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        if actual_w <= 0 or actual_h <= 0:
+            return None
+        return (actual_w, actual_h)
+    finally:
+        if cap is not None:
+            cap.release()
+
+
+def detect_supported_camera_resolutions(
+    camera_index: int,
+    backend: str,
+    candidates: tuple[tuple[int, int], ...] = COMMON_CAMERA_RESOLUTIONS,
+    capture_factory=None,
+) -> list[tuple[int, int]]:
+    """Probe common camera modes and return unique actual resolutions."""
+    detected: list[tuple[int, int]] = []
+    for width, height in candidates:
+        actual = probe_camera_resolution(
+            camera_index,
+            backend,
+            width,
+            height,
+            capture_factory=capture_factory,
+        )
+        if actual is not None:
+            detected.append(actual)
+    return sort_resolutions(detected)
+
+
 class SettingsPage(QWidget):
     """设置页面。
     
@@ -78,6 +164,7 @@ class SettingsPage(QWidget):
         
         # 控件引用
         self.camera_index_spin: Optional[SpinBox] = None
+        self.camera_resolution_combo: Optional[ComboBox] = None
         self.camera_width_combo: Optional[ComboBox] = None
         self.camera_height_combo: Optional[ComboBox] = None
         self.camera_backend_combo: Optional[ComboBox] = None
@@ -231,31 +318,25 @@ class SettingsPage(QWidget):
         index_row.addStretch(1)
         layout.addLayout(index_row)
         
-        # 分辨率（宽度）
-        width_row = QHBoxLayout()
-        width_label = BodyLabel("分辨率宽度 / Width (px):")
-        width_label.setFixedWidth(200)
-        self.camera_width_combo = ComboBox()
-        self.camera_width_combo.addItems(["320", "640", "1280", "1920"])
-        self.camera_width_combo.setCurrentText("640")
-        self.camera_width_combo.setFixedWidth(150)
-        width_row.addWidget(width_label)
-        width_row.addWidget(self.camera_width_combo)
-        width_row.addStretch(1)
-        layout.addLayout(width_row)
-        
-        # 分辨率（高度）
-        height_row = QHBoxLayout()
-        height_label = BodyLabel("分辨率高度 / Height (px):")
-        height_label.setFixedWidth(200)
-        self.camera_height_combo = ComboBox()
-        self.camera_height_combo.addItems(["240", "480", "720", "1080"])
-        self.camera_height_combo.setCurrentText("480")
-        self.camera_height_combo.setFixedWidth(150)
-        height_row.addWidget(height_label)
-        height_row.addWidget(self.camera_height_combo)
-        height_row.addStretch(1)
-        layout.addLayout(height_row)
+        # 分辨率
+        resolution_row = QHBoxLayout()
+        resolution_label = BodyLabel("分辨率 / Resolution:")
+        resolution_label.setFixedWidth(200)
+        self.camera_resolution_combo = ComboBox()
+        self.camera_resolution_combo.addItems([format_resolution(w, h) for w, h in COMMON_CAMERA_RESOLUTIONS])
+        self.camera_resolution_combo.setCurrentText("1280x720")
+        self.camera_resolution_combo.setFixedWidth(150)
+        detect_resolution_btn = PushButton("检测支持分辨率\nDetect")
+        detect_resolution_btn.setFixedWidth(150)
+        detect_resolution_btn.clicked.connect(self._handle_detect_camera_resolutions)
+        resolution_hint = BodyLabel("先检测，再选择。Classic 会自动按实际帧尺寸适配。")
+        resolution_hint.setStyleSheet("color: #888; font-size: 12px;")
+        resolution_row.addWidget(resolution_label)
+        resolution_row.addWidget(self.camera_resolution_combo)
+        resolution_row.addWidget(detect_resolution_btn)
+        resolution_row.addWidget(resolution_hint)
+        resolution_row.addStretch(1)
+        layout.addLayout(resolution_row)
         
         # 后端
         backend_row = QHBoxLayout()
@@ -592,6 +673,11 @@ class SettingsPage(QWidget):
         # 摄像头设置
         if self.camera_index_spin is not None:
             self.camera_index_spin.setValue(self.config.camera_index)
+        if self.camera_resolution_combo is not None:
+            self._set_resolution_options(
+                [(self.config.camera_width, self.config.camera_height), *COMMON_CAMERA_RESOLUTIONS],
+                selected=(self.config.camera_width, self.config.camera_height),
+            )
         if self.camera_width_combo is not None:
             self.camera_width_combo.setCurrentText(str(self.config.camera_width))
         if self.camera_height_combo is not None:
@@ -643,9 +729,15 @@ class SettingsPage(QWidget):
         # 摄像头设置
         if self.camera_index_spin is not None:
             self.config.camera_index = self.camera_index_spin.value()
-        if self.camera_width_combo is not None:
+        if self.camera_resolution_combo is not None:
+            width, height = parse_resolution(self.camera_resolution_combo.currentText())
+            self.config.camera_width = width
+            self.config.camera_height = height
+        elif self.camera_width_combo is not None:
             self.config.camera_width = int(self.camera_width_combo.currentText())
-        if self.camera_height_combo is not None:
+            if self.camera_height_combo is not None:
+                self.config.camera_height = int(self.camera_height_combo.currentText())
+        elif self.camera_height_combo is not None:
             self.config.camera_height = int(self.camera_height_combo.currentText())
         if self.camera_backend_combo is not None:
             self.config.camera_backend = self.camera_backend_combo.currentText()
@@ -683,6 +775,45 @@ class SettingsPage(QWidget):
         # 追踪设置
         if self.target_fps_spin is not None:
             self.config.target_fps = self.target_fps_spin.value()
+
+    def _set_resolution_options(
+        self,
+        resolutions: list[tuple[int, int]] | tuple[tuple[int, int], ...],
+        selected: Optional[tuple[int, int]] = None,
+    ) -> None:
+        if self.camera_resolution_combo is None:
+            return
+        selected = selected or (self.config.camera_width, self.config.camera_height)
+        options = sort_resolutions([*resolutions, selected])
+        self.camera_resolution_combo.clear()
+        self.camera_resolution_combo.addItems([format_resolution(w, h) for w, h in options])
+        self.camera_resolution_combo.setCurrentText(format_resolution(*selected))
+
+    def _handle_detect_camera_resolutions(self) -> None:
+        """检测当前摄像头可实际打开的常见分辨率。"""
+        try:
+            camera_index = self.camera_index_spin.value() if self.camera_index_spin is not None else self.config.camera_index
+            backend = self.camera_backend_combo.currentText() if self.camera_backend_combo is not None else self.config.camera_backend
+            current = (
+                parse_resolution(self.camera_resolution_combo.currentText())
+                if self.camera_resolution_combo is not None
+                else (self.config.camera_width, self.config.camera_height)
+            )
+            self.status_label.setText("正在检测摄像头支持分辨率，请稍候...")
+            self.status_label.setStyleSheet("color: #FF9800; font-weight: 600;")
+            detected = detect_supported_camera_resolutions(camera_index, backend)
+            if not detected:
+                self.status_label.setText("未检测到可用分辨率，请确认摄像头未被其他程序占用。")
+                self.status_label.setStyleSheet("color: #D32F2F; font-weight: 600;")
+                return
+            selected = current if current in detected else detected[-1]
+            self._set_resolution_options(detected, selected=selected)
+            labels = ", ".join(format_resolution(w, h) for w, h in detected)
+            self.status_label.setText(f"✓ 已检测到支持分辨率：{labels}")
+            self.status_label.setStyleSheet("color: #4CAF50; font-weight: 600;")
+        except Exception as e:
+            self.status_label.setText(f"✗ 检测失败: {e}")
+            self.status_label.setStyleSheet("color: #D32F2F; font-weight: 600;")
     
     def _handle_save(self) -> None:
         """保存设置到 YAML 文件。"""

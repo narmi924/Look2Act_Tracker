@@ -247,7 +247,11 @@ class TrackerPipeline:
             
             actual_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             actual_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            _print(f"摄像头已打开：{actual_w}x{actual_h}")
+            _print(
+                "摄像头已打开："
+                f"请求 {self.config.camera_width}x{self.config.camera_height}，"
+                f"实际 {actual_w}x{actual_h}"
+            )
             
             # 2. 初始化人脸检测器
             self.face_detector = FaceDetector(
@@ -398,7 +402,7 @@ class TrackerPipeline:
                 screen_x_axis=screen_x_axis,
                 screen_y_axis=screen_y_axis,
             )
-            print(f"屏幕几何模型已初始化：{screen_w_px}x{screen_h_px} px")
+            print(f"屏幕几何模型已初始化：屏幕 {screen_w_px}x{screen_h_px} px")
             
             # 6. 初始化平滑滤波器
             self.smoother = GazeSmoother(alpha=self.config.smoother_alpha)
