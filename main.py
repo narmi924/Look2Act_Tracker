@@ -17,6 +17,7 @@ import logging
 import argparse
 from pathlib import Path
 
+import yaml
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
 
@@ -42,6 +43,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     args, _ = parser.parse_known_args(argv)
     return args
+
+
+def validate_config_path(config_path: Path) -> tuple[bool, str]:
+    """Validate the startup config before any UI writes to it."""
+    if not config_path.exists():
+        return False, (
+            f"配置文件不存在：{config_path}\n"
+            "如果你在 Git Bash 中运行，请使用正斜杠，例如：\n"
+            "python main.py --config configs/experiments/system_deep_camera_zero_720.yaml"
+        )
+    try:
+        with config_path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception as e:
+        return False, f"配置文件读取失败：{config_path}\n{e}"
+    required_sections = {"camera", "model", "tracker"}
+    missing = sorted(section for section in required_sections if section not in data)
+    if missing:
+        return False, (
+            f"配置文件不完整：{config_path}\n"
+            f"缺少配置节：{', '.join(missing)}\n"
+            "这通常是 Git Bash 反斜杠路径被转义后产生的错误文件。"
+        )
+    return True, ""
 
 
 def setup_application() -> QApplication:
@@ -75,6 +100,10 @@ def main() -> int:
         args = parse_args(sys.argv[1:])
         sys.argv = [sys.argv[0]]
         config_path = Path(args.config)
+        ok, error_message = validate_config_path(config_path)
+        if not ok:
+            logger.error(error_message)
+            return 2
         logger.info("=" * 60)
         logger.info("Look2Act Tracker 启动中...")
         logger.info(f"系统配置路径: {config_path}")

@@ -9,7 +9,7 @@ import pytest
 import yaml
 import numpy as np
 
-from main import parse_args
+from main import parse_args, validate_config_path
 from src.tracker.pipeline import SystemConfig
 from src.ui.settings_page import (
     detect_supported_camera_resolutions,
@@ -71,6 +71,23 @@ def test_main_config_argument_selects_experiment_yaml():
     args = parse_args(["--config", "configs/experiments/system_deep_camera_zero_720.yaml"])
 
     assert args.config == "configs/experiments/system_deep_camera_zero_720.yaml"
+
+
+def test_startup_config_validation_rejects_bash_escaped_partial_file(tmp_path):
+    bad_config = tmp_path / "configsexperimentssystem_deep_camera_zero_720.yaml"
+    bad_config.write_text("ui:\n  language: zh\n", encoding="utf-8")
+
+    ok, message = validate_config_path(bad_config)
+
+    assert ok is False
+    assert "配置文件不完整" in message
+
+
+def test_startup_config_validation_accepts_experiment_yaml():
+    ok, message = validate_config_path(Path("configs/experiments/system_deep_camera_zero_720.yaml"))
+
+    assert ok is True
+    assert message == ""
 
 
 def test_resolution_format_parse_and_sort():
