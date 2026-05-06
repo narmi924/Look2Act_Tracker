@@ -66,6 +66,16 @@ def main() -> int:
         # 创建应用
         app = setup_application()
         logger.info("QApplication 已创建")
+
+        from src.ui.i18n import load_language
+        from src.ui.language_dialog import LanguageSelectionDialog
+
+        load_language()
+        dialog = LanguageSelectionDialog()
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return 0
+        language = dialog.selected_language
+        logger.info(f"界面语言已设置: {language}")
         
         # 导入主窗口（延迟导入，避免在 QApplication 创建前导入 Qt 组件）
         from src.ui.main_window import MainWindow

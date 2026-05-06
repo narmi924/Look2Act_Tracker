@@ -1,5 +1,6 @@
 ui:
-  window_mode: adaptive
+  language: bilingual
+  window_mode: fullscreen
 camera:
   index: 0
   width: 1280

@@ -49,6 +49,7 @@ from qfluentwidgets import (
 
 from src.tracker.pipeline import SystemConfig
 from src.ui.fluent_theme import PALETTE
+from src.ui.i18n import get_language, language_label, set_language, tx, tx_button
 
 
 COMMON_CAMERA_RESOLUTIONS: tuple[tuple[int, int], ...] = (
@@ -68,7 +69,7 @@ def format_resolution(width: int, height: int) -> str:
 def parse_resolution(text: str) -> tuple[int, int]:
     parts = text.lower().replace(" ", "").split("x")
     if len(parts) != 2:
-        raise ValueError(f"无效分辨率格式 / Invalid resolution format: {text}")
+        raise ValueError(tx(f"无效分辨率格式：{text}", f"Invalid resolution format: {text}"))
     return int(parts[0]), int(parts[1])
 
 
@@ -168,6 +169,7 @@ class SettingsPage(QWidget):
         self.camera_width_combo: Optional[ComboBox] = None
         self.camera_height_combo: Optional[ComboBox] = None
         self.camera_backend_combo: Optional[ComboBox] = None
+        self.language_combo: Optional[ComboBox] = None
         
         self.model_path_edit: Optional[LineEdit] = None
         self.use_ipex_switch: Optional[SwitchButton] = None
@@ -195,19 +197,19 @@ class SettingsPage(QWidget):
     def _init_ui(self) -> None:
         """初始化 UI 布局。"""
         # 标题
-        title = QLabel("系统设置 / System Settings")
+        title = QLabel(tx("系统设置", "System Settings"))
         title.setStyleSheet("font-size: 32px; font-weight: 900;")
         
         # 控制按钮
-        self.save_btn = PrimaryPushButton("保存设置\nSave Settings")
+        self.save_btn = PrimaryPushButton(tx_button("保存设置", "Save Settings"))
         self.save_btn.setFixedSize(160, 60)
         self.save_btn.clicked.connect(self._handle_save)
         
-        self.reset_btn = PushButton("恢复默认\nReset Defaults")
+        self.reset_btn = PushButton(tx_button("恢复默认", "Reset Defaults"))
         self.reset_btn.setFixedSize(160, 60)
         self.reset_btn.clicked.connect(self._handle_reset)
 
-        self.advanced_btn = PushButton("高级设置\nAdvanced Settings")
+        self.advanced_btn = PushButton(tx_button("高级设置", "Advanced Settings"))
         self.advanced_btn.setFixedSize(140, 60)
         self.advanced_btn.clicked.connect(self._toggle_advanced_settings)
         
@@ -223,6 +225,7 @@ class SettingsPage(QWidget):
         
         # 各种设置卡片
         window_card = self._create_window_settings_card()
+        language_card = self._create_language_settings_card()
         camera_card = self._create_camera_settings_card()
         self.model_card = self._create_model_settings_card()
         self.geometry_card = self._create_geometry_settings_card()
@@ -249,12 +252,17 @@ class SettingsPage(QWidget):
         scroll_layout.setSpacing(16)
         
         scroll_layout.addWidget(window_card)
+        scroll_layout.addWidget(language_card)
         scroll_layout.addWidget(camera_card)
         scroll_layout.addWidget(self.model_card)
         scroll_layout.addWidget(self.geometry_card)
         scroll_layout.addWidget(smoother_card)
         scroll_layout.addWidget(tracker_card)
-        author_label = BodyLabel("作者 / Author: 依木热尼江·买买提明 / Imranjan Mamtimin · imranjan.cn")
+        author_label = BodyLabel(tx(
+            "作者：依木热尼江·买买提明 · imranjan.cn",
+            "Author: Imranjan Mamtimin · imranjan.cn",
+            "作者 / Author: 依木热尼江·买买提明 / Imranjan Mamtimin · imranjan.cn",
+        ))
         author_label.setStyleSheet("color: #666; font-size: 13px; font-weight: 600; margin-top: 8px;")
         scroll_layout.addWidget(author_label)
         scroll_layout.addWidget(self.status_label)
@@ -277,27 +285,60 @@ class SettingsPage(QWidget):
         layout.setSpacing(12)
         
         # 标题
-        title = BodyLabel("窗口显示设置 / Window Settings")
+        title = BodyLabel(tx("窗口显示设置", "Window Settings"))
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
         
         # 提示信息
         hint = BodyLabel(
-            "自适应模式：保留系统任务栏可见 / Adaptive mode: keep the system taskbar visible\n"
-            "全屏模式：覆盖任务栏（独立应用形态） / Fullscreen mode: cover the taskbar like a standalone app\n"
-            "注意：设置将在下次启动时生效 / Note: this setting takes effect after restart"
+            tx_button(
+                "自适应模式：保留系统任务栏可见；全屏模式：覆盖任务栏；设置将在下次启动时生效",
+                "Adaptive mode keeps the taskbar visible; fullscreen mode covers it; this setting takes effect after restart",
+            )
         )
         hint.setStyleSheet("color: #888; font-size: 13px; margin-bottom: 8px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
         
         # 模式单选框
-        self.adaptive_radio = RadioButton("自适应模式（保留任务栏） / Adaptive Mode")
-        self.fullscreen_radio = RadioButton("全屏模式（覆盖任务栏） / Fullscreen Mode")
+        self.adaptive_radio = RadioButton(tx("自适应模式（保留任务栏）", "Adaptive Mode"))
+        self.fullscreen_radio = RadioButton(tx("全屏模式（覆盖任务栏）", "Fullscreen Mode"))
         
         layout.addWidget(self.adaptive_radio)
         layout.addWidget(self.fullscreen_radio)
         
+        return card
+
+    def _create_language_settings_card(self) -> CardWidget:
+        card = CardWidget()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        title = BodyLabel(tx("语言设置", "Language Settings"))
+        title.setStyleSheet("font-size: 18px; font-weight: 600;")
+        layout.addWidget(title)
+
+        row = QHBoxLayout()
+        label = BodyLabel(tx("界面语言：", "UI Language:"))
+        label.setFixedWidth(200)
+        self.language_combo = ComboBox()
+        self.language_combo.addItems([
+            language_label("zh"),
+            language_label("en"),
+            language_label("bilingual"),
+        ])
+        self.language_combo.setFixedWidth(180)
+        hint = BodyLabel(tx(
+            "保存后下次启动生效",
+            "Takes effect after saving and restarting",
+        ))
+        hint.setStyleSheet("color: #888; font-size: 12px;")
+        row.addWidget(label)
+        row.addWidget(self.language_combo)
+        row.addWidget(hint)
+        row.addStretch(1)
+        layout.addLayout(row)
         return card
     
     def _create_camera_settings_card(self) -> CardWidget:
@@ -308,13 +349,13 @@ class SettingsPage(QWidget):
         layout.setSpacing(12)
         
         # 标题
-        title = BodyLabel("摄像头设置 / Camera Settings")
+        title = BodyLabel(tx("摄像头设置", "Camera Settings"))
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
         
         # 摄像头索引
         index_row = QHBoxLayout()
-        index_label = BodyLabel("摄像头索引 / Camera Index:")
+        index_label = BodyLabel(tx("摄像头索引：", "Camera Index:"))
         index_label.setFixedWidth(200)
         self.camera_index_spin = SpinBox()
         self.camera_index_spin.setRange(0, 10)
@@ -327,16 +368,16 @@ class SettingsPage(QWidget):
         
         # 分辨率
         resolution_row = QHBoxLayout()
-        resolution_label = BodyLabel("分辨率 / Resolution:")
+        resolution_label = BodyLabel(tx("分辨率：", "Resolution:"))
         resolution_label.setFixedWidth(200)
         self.camera_resolution_combo = ComboBox()
         self.camera_resolution_combo.addItems([format_resolution(w, h) for w, h in COMMON_CAMERA_RESOLUTIONS])
         self.camera_resolution_combo.setCurrentText("1280x720")
         self.camera_resolution_combo.setFixedWidth(150)
-        detect_resolution_btn = PushButton("检测分辨率\nDetect Resolution")
+        detect_resolution_btn = PushButton(tx_button("检测分辨率", "Detect Resolution"))
         detect_resolution_btn.setFixedWidth(150)
         detect_resolution_btn.clicked.connect(self._handle_detect_camera_resolutions)
-        resolution_hint = BodyLabel("先检测，再选择。Classic 会自动按实际帧尺寸适配。 / Detect first, then choose. Classic adapts to the actual frame size.")
+        resolution_hint = BodyLabel(tx("先检测，再选择。Classic 会自动按实际帧尺寸适配。", "Detect first, then choose. Classic adapts to the actual frame size."))
         resolution_hint.setStyleSheet("color: #888; font-size: 12px;")
         resolution_row.addWidget(resolution_label)
         resolution_row.addWidget(self.camera_resolution_combo)
@@ -347,7 +388,7 @@ class SettingsPage(QWidget):
         
         # 后端
         backend_row = QHBoxLayout()
-        backend_label = BodyLabel("摄像头后端 / Backend:")
+        backend_label = BodyLabel(tx("摄像头后端：", "Backend:"))
         backend_label.setFixedWidth(200)
         self.camera_backend_combo = ComboBox()
         self.camera_backend_combo.addItems(["dshow", "auto"])
@@ -368,18 +409,18 @@ class SettingsPage(QWidget):
         layout.setSpacing(12)
         
         # 标题
-        title = BodyLabel("模型设置 / Model Settings")
+        title = BodyLabel(tx("模型设置", "Model Settings"))
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
         
         # 模型权重路径
         model_path_row = QHBoxLayout()
-        model_path_label = BodyLabel("模型权重路径 / Model Path:")
+        model_path_label = BodyLabel(tx("模型权重路径：", "Model Path:"))
         model_path_label.setFixedWidth(200)
         self.model_path_edit = LineEdit()
         self.model_path_edit.setPlaceholderText("checkpoints/best_model.pth")
         self.model_path_edit.setText("checkpoints/best_model.pth")
-        browse_model_btn = PushButton("浏览 / Browse")
+        browse_model_btn = PushButton(tx("浏览", "Browse"))
         browse_model_btn.setFixedWidth(120)
         browse_model_btn.clicked.connect(self._browse_model_path)
         model_path_row.addWidget(model_path_label)
@@ -389,7 +430,7 @@ class SettingsPage(QWidget):
         
         # IPEX 优化开关
         ipex_row = QHBoxLayout()
-        ipex_label = BodyLabel("IPEX 优化 / IPEX Optimization:")
+        ipex_label = BodyLabel(tx("IPEX 优化：", "IPEX Optimization:"))
         ipex_label.setFixedWidth(200)
         self.use_ipex_switch = SwitchButton()
         self.use_ipex_switch.setChecked(False)
@@ -407,7 +448,7 @@ class SettingsPage(QWidget):
         onnx_label.setFixedWidth(200)
         self.use_onnx_switch = SwitchButton()
         self.use_onnx_switch.setChecked(True)
-        onnx_hint = BodyLabel("(推荐 / Recommended)")
+        onnx_hint = BodyLabel(tx("（推荐）", "(Recommended)"))
         onnx_hint.setStyleSheet("color: #888; font-size: 12px;")
         onnx_row.addWidget(onnx_label)
         onnx_row.addWidget(self.use_onnx_switch)
@@ -417,12 +458,12 @@ class SettingsPage(QWidget):
         
         # ONNX 模型路径
         onnx_path_row = QHBoxLayout()
-        onnx_path_label = BodyLabel("ONNX 模型路径 / ONNX Path:")
+        onnx_path_label = BodyLabel(tx("ONNX 模型路径：", "ONNX Path:"))
         onnx_path_label.setFixedWidth(200)
         self.onnx_path_edit = LineEdit()
         self.onnx_path_edit.setPlaceholderText("checkpoints/gaze_net.onnx")
         self.onnx_path_edit.setText("checkpoints/gaze_net.onnx")
-        browse_onnx_btn = PushButton("浏览 / Browse")
+        browse_onnx_btn = PushButton(tx("浏览", "Browse"))
         browse_onnx_btn.setFixedWidth(120)
         browse_onnx_btn.clicked.connect(self._browse_onnx_path)
         onnx_path_row.addWidget(onnx_path_label)
@@ -432,13 +473,13 @@ class SettingsPage(QWidget):
 
         # Deep gaze coordinate space
         deep_space_row = QHBoxLayout()
-        deep_space_label = BodyLabel("Deep 坐标空间 / Deep Space:")
+        deep_space_label = BodyLabel(tx("Deep 坐标空间：", "Deep Space:"))
         deep_space_label.setFixedWidth(200)
         self.deep_gaze_space_combo = ComboBox()
         self.deep_gaze_space_combo.addItems(["head", "camera"])
         self.deep_gaze_space_combo.setCurrentText("head")
         self.deep_gaze_space_combo.setFixedWidth(150)
-        deep_space_hint = BodyLabel("head 为原链路，camera 用于跳过 PnP 旋转实验 / head is the original path; camera skips PnP rotation for experiments")
+        deep_space_hint = BodyLabel(tx("head 为原链路，camera 用于跳过 PnP 旋转实验", "head is the original path; camera skips PnP rotation for experiments"))
         deep_space_hint.setStyleSheet("color: #888; font-size: 12px;")
         deep_space_row.addWidget(deep_space_label)
         deep_space_row.addWidget(self.deep_gaze_space_combo)
@@ -447,13 +488,13 @@ class SettingsPage(QWidget):
         layout.addLayout(deep_space_row)
 
         deep_pose_row = QHBoxLayout()
-        deep_pose_label = BodyLabel("Deep 姿态输入 / Pose Input:")
+        deep_pose_label = BodyLabel(tx("Deep 姿态输入：", "Pose Input:"))
         deep_pose_label.setFixedWidth(200)
         self.deep_pose_input_combo = ComboBox()
         self.deep_pose_input_combo.addItems(["live", "zero"])
         self.deep_pose_input_combo.setCurrentText("live")
         self.deep_pose_input_combo.setFixedWidth(150)
-        deep_pose_hint = BodyLabel("zero 用于排查坏 head-pose 特征污染 / zero helps isolate bad head-pose feature noise")
+        deep_pose_hint = BodyLabel(tx("zero 用于排查坏 head-pose 特征污染", "zero helps isolate bad head-pose feature noise"))
         deep_pose_hint.setStyleSheet("color: #888; font-size: 12px;")
         deep_pose_row.addWidget(deep_pose_label)
         deep_pose_row.addWidget(self.deep_pose_input_combo)
@@ -471,19 +512,19 @@ class SettingsPage(QWidget):
         layout.setSpacing(12)
         
         # 标题
-        title = BodyLabel("几何设置 / Geometry Settings")
+        title = BodyLabel(tx("几何设置", "Geometry Settings"))
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
         
         # 提示信息
-        hint = BodyLabel("请使用尺子测量屏幕的实际物理尺寸（不含边框）\nPlease measure the actual physical size of the screen (excluding bezels)")
+        hint = BodyLabel(tx_button("请使用尺子测量屏幕的实际物理尺寸（不含边框）", "Please measure the actual physical size of the screen (excluding bezels)"))
         hint.setStyleSheet("color: #888; font-size: 13px; margin-bottom: 8px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
         
         # 屏幕宽度
         width_row = QHBoxLayout()
-        width_label = BodyLabel("屏幕宽度 / Screen Width (mm):")
+        width_label = BodyLabel(tx("屏幕宽度（mm）：", "Screen Width (mm):"))
         width_label.setFixedWidth(220)
         self.screen_w_mm_spin = DoubleSpinBox()
         self.screen_w_mm_spin.setRange(100.0, 1000.0)
@@ -498,7 +539,7 @@ class SettingsPage(QWidget):
         
         # 屏幕高度
         height_row = QHBoxLayout()
-        height_label = BodyLabel("屏幕高度 / Screen Height (mm):")
+        height_label = BodyLabel(tx("屏幕高度（mm）：", "Screen Height (mm):"))
         height_label.setFixedWidth(220)
         self.screen_h_mm_spin = DoubleSpinBox()
         self.screen_h_mm_spin.setRange(100.0, 1000.0)
@@ -521,25 +562,25 @@ class SettingsPage(QWidget):
         layout.setSpacing(12)
         
         # 标题
-        title = BodyLabel("平滑设置 / Smoothing Settings")
+        title = BodyLabel(tx("平滑设置", "Smoothing Settings"))
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
         
         # 提示信息
-        hint = BodyLabel("平滑系数越小，注视点越平滑但响应越慢\nSmaller alpha = smoother but slower response")
+        hint = BodyLabel(tx_button("平滑系数越小，注视点越平滑但响应越慢", "Smaller alpha = smoother but slower response"))
         hint.setStyleSheet("color: #888; font-size: 13px; margin-bottom: 8px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
         # 平滑方式
         type_row = QHBoxLayout()
-        type_label = BodyLabel("平滑方式 / Smoother:")
+        type_label = BodyLabel(tx("平滑方式：", "Smoother:"))
         type_label.setFixedWidth(200)
         self.smoother_type_combo = ComboBox()
         self.smoother_type_combo.addItems(["kalman", "ema", "none"])
         self.smoother_type_combo.setCurrentText("kalman")
         self.smoother_type_combo.setFixedWidth(150)
-        type_hint = BodyLabel("classic 默认 Kalman；EMA/none 用于对照 / classic defaults to Kalman; EMA/none are for comparison")
+        type_hint = BodyLabel(tx("classic 默认 Kalman；EMA/none 用于对照", "classic defaults to Kalman; EMA/none are for comparison"))
         type_hint.setStyleSheet("color: #888; font-size: 12px;")
         type_row.addWidget(type_label)
         type_row.addWidget(self.smoother_type_combo)
@@ -549,7 +590,7 @@ class SettingsPage(QWidget):
         
         # 平滑系数 alpha
         alpha_row = QHBoxLayout()
-        alpha_label = BodyLabel("平滑系数 / Alpha:")
+        alpha_label = BodyLabel(tx("平滑系数：", "Alpha:"))
         alpha_label.setFixedWidth(200)
         self.alpha_slider = Slider(Qt.Orientation.Horizontal)
         self.alpha_slider.setRange(1, 100)  # 0.01 ~ 1.00
@@ -575,19 +616,19 @@ class SettingsPage(QWidget):
         layout.setSpacing(12)
         
         # 标题
-        title = BodyLabel("追踪设置 / Tracking Settings")
+        title = BodyLabel(tx("追踪设置", "Tracking Settings"))
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         layout.addWidget(title)
         
         # 目标帧率
         backend_row = QHBoxLayout()
-        backend_label = BodyLabel("追踪模式 / Backend:")
+        backend_label = BodyLabel(tx("追踪模式：", "Backend:"))
         backend_label.setFixedWidth(200)
         self.backend_combo = ComboBox()
         self.backend_combo.addItems(["classic", "deep"])
         self.backend_combo.setCurrentText("classic")
         self.backend_combo.setFixedWidth(150)
-        backend_hint = BodyLabel("classic 用于流畅体验，deep 用于研究模型 / classic is for smooth experience; deep is for research")
+        backend_hint = BodyLabel(tx("classic 用于流畅体验，deep 用于研究模型", "classic is for smooth experience; deep is for research"))
         backend_hint.setStyleSheet("color: #888; font-size: 12px;")
         backend_row.addWidget(backend_label)
         backend_row.addWidget(self.backend_combo)
@@ -597,7 +638,7 @@ class SettingsPage(QWidget):
 
         # 目标帧率
         fps_row = QHBoxLayout()
-        fps_label = BodyLabel("目标帧率 / Target FPS:")
+        fps_label = BodyLabel(tx("目标帧率：", "Target FPS:"))
         fps_label.setFixedWidth(200)
         self.target_fps_spin = SpinBox()
         self.target_fps_spin.setRange(10, 60)
@@ -616,7 +657,9 @@ class SettingsPage(QWidget):
             self.model_card.setVisible(self.advanced_visible)
         if self.geometry_card is not None:
             self.geometry_card.setVisible(self.advanced_visible)
-        self.advanced_btn.setText("隐藏高级\nHide Advanced" if self.advanced_visible else "高级设置\nAdvanced Settings")
+        self.advanced_btn.setText(
+            tx_button("隐藏高级", "Hide Advanced") if self.advanced_visible else tx_button("高级设置", "Advanced Settings")
+        )
     
     def _on_alpha_changed(self, value: int) -> None:
         """平滑系数滑块变化回调。"""
@@ -628,9 +671,9 @@ class SettingsPage(QWidget):
         """浏览模型权重文件。"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "选择模型权重文件 / Select Model File",
+            tx("选择模型权重文件", "Select Model File"),
             "checkpoints",
-            "PyTorch 模型 / PyTorch Models (*.pth *.pt);;所有文件 / All Files (*.*)"
+            tx("PyTorch 模型 (*.pth *.pt);;所有文件 (*.*)", "PyTorch Models (*.pth *.pt);;All Files (*.*)")
         )
         
         if file_path and self.model_path_edit is not None:
@@ -640,9 +683,9 @@ class SettingsPage(QWidget):
         """浏览 ONNX 模型文件。"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "选择 ONNX 模型文件 / Select ONNX File",
+            tx("选择 ONNX 模型文件", "Select ONNX File"),
             "checkpoints",
-            "ONNX 模型 / ONNX Models (*.onnx);;所有文件 / All Files (*.*)"
+            tx("ONNX 模型 (*.onnx);;所有文件 (*.*)", "ONNX Models (*.onnx);;All Files (*.*)")
         )
         
         if file_path and self.onnx_path_edit is not None:
@@ -663,8 +706,11 @@ class SettingsPage(QWidget):
         except Exception as e:
             QMessageBox.warning(
                 self,
-                "加载失败 / Load Failed",
-                f"加载配置文件失败：{e}\n\n将使用默认配置。\n\nFailed to load config file: {e}\n\nDefault settings will be used."
+                tx("加载失败", "Load Failed"),
+                tx(
+                    f"加载配置文件失败：{e}\n\n将使用默认配置。",
+                    f"Failed to load config file: {e}\n\nDefault settings will be used.",
+                )
             )
             print(f"[SETTINGS_PAGE] 加载配置失败: {e}")
     
@@ -676,6 +722,9 @@ class SettingsPage(QWidget):
                 self.fullscreen_radio.setChecked(True)
             else:
                 self.adaptive_radio.setChecked(True)
+        if self.language_combo is not None:
+            language = self.config.language or get_language()
+            self.language_combo.setCurrentText(language_label(language))
                 
         # 摄像头设置
         if self.camera_index_spin is not None:
@@ -732,6 +781,13 @@ class SettingsPage(QWidget):
         # 窗口设置
         if hasattr(self, 'fullscreen_radio'):
             self.config.window_mode = 'fullscreen' if self.fullscreen_radio.isChecked() else 'adaptive'
+        if self.language_combo is not None:
+            language_map = {
+                language_label("zh"): "zh",
+                language_label("en"): "en",
+                language_label("bilingual"): "bilingual",
+            }
+            self.config.language = language_map.get(self.language_combo.currentText(), get_language())
             
         # 摄像头设置
         if self.camera_index_spin is not None:
@@ -806,20 +862,20 @@ class SettingsPage(QWidget):
                 if self.camera_resolution_combo is not None
                 else (self.config.camera_width, self.config.camera_height)
             )
-            self.status_label.setText("正在检测摄像头支持分辨率，请稍候... / Detecting supported camera resolutions, please wait...")
+            self.status_label.setText(tx("正在检测摄像头支持分辨率，请稍候...", "Detecting supported camera resolutions, please wait..."))
             self.status_label.setStyleSheet("color: #FF9800; font-weight: 600;")
             detected = detect_supported_camera_resolutions(camera_index, backend)
             if not detected:
-                self.status_label.setText("未检测到可用分辨率，请确认摄像头未被其他程序占用。 / No usable resolution detected. Make sure the camera is not used by another app.")
+                self.status_label.setText(tx("未检测到可用分辨率，请确认摄像头未被其他程序占用。", "No usable resolution detected. Make sure the camera is not used by another app."))
                 self.status_label.setStyleSheet("color: #D32F2F; font-weight: 600;")
                 return
             selected = current if current in detected else detected[-1]
             self._set_resolution_options(detected, selected=selected)
             labels = ", ".join(format_resolution(w, h) for w, h in detected)
-            self.status_label.setText(f"✓ 已检测到支持分辨率 / Supported resolutions detected: {labels}")
+            self.status_label.setText(tx(f"✓ 已检测到支持分辨率：{labels}", f"✓ Supported resolutions detected: {labels}"))
             self.status_label.setStyleSheet("color: #4CAF50; font-weight: 600;")
         except Exception as e:
-            self.status_label.setText(f"✗ 检测失败 / Detection failed: {e}")
+            self.status_label.setText(tx(f"✗ 检测失败：{e}", f"✗ Detection failed: {e}"))
             self.status_label.setStyleSheet("color: #D32F2F; font-weight: 600;")
     
     def _handle_save(self) -> None:
@@ -834,6 +890,7 @@ class SettingsPage(QWidget):
             # 构建 YAML 数据
             config_data = {
                 'ui': {
+                    'language': self.config.language,
                     'window_mode': self.config.window_mode,
                 },
                 'camera': {
@@ -882,7 +939,8 @@ class SettingsPage(QWidget):
                 yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
             
             # 更新状态
-            self.status_label.setText(f"✓ 设置已保存 / Settings saved to {self.config_path}")
+            set_language(self.config.language)
+            self.status_label.setText(tx(f"✓ 设置已保存到 {self.config_path}", f"✓ Settings saved to {self.config_path}"))
             self.status_label.setStyleSheet("color: #4CAF50; font-weight: 600;")
             
             # 发出配置变更信号
@@ -891,8 +949,8 @@ class SettingsPage(QWidget):
             print(f"[SETTINGS_PAGE] 设置已保存: {self.config_path}")
             
         except Exception as e:
-            QMessageBox.critical(self, "保存失败 / Save Failed", f"保存设置失败：{e}\n\nFailed to save settings: {e}")
-            self.status_label.setText(f"✗ 保存失败 / Save failed: {e}")
+            QMessageBox.critical(self, tx("保存失败", "Save Failed"), tx(f"保存设置失败：{e}", f"Failed to save settings: {e}"))
+            self.status_label.setText(tx(f"✗ 保存失败：{e}", f"✗ Save failed: {e}"))
             self.status_label.setStyleSheet("color: #D32F2F; font-weight: 600;")
             print(f"[SETTINGS_PAGE] 保存失败: {e}")
     
@@ -900,8 +958,8 @@ class SettingsPage(QWidget):
         """恢复默认设置。"""
         reply = QMessageBox.question(
             self,
-            "确认恢复默认 / Confirm Reset",
-            "确定要恢复所有设置为默认值吗？\n\nAre you sure you want to reset all settings to defaults?",
+            tx("确认恢复默认", "Confirm Reset"),
+            tx("确定要恢复所有设置为默认值吗？", "Are you sure you want to reset all settings to defaults?"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -911,7 +969,7 @@ class SettingsPage(QWidget):
             self.config = SystemConfig()
             self._update_ui_from_config()
             
-            self.status_label.setText("✓ 已恢复默认设置（未保存） / Defaults restored (not saved)")
+            self.status_label.setText(tx("✓ 已恢复默认设置（未保存）", "✓ Defaults restored (not saved)"))
             self.status_label.setStyleSheet("color: #FF9800; font-weight: 600;")
             
             print("[SETTINGS_PAGE] 已恢复默认设置")

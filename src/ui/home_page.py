@@ -31,6 +31,7 @@ from qfluentwidgets import (
 )
 
 from src.ui.fluent_theme import PALETTE
+from src.ui.i18n import tx, tx_button
 
 
 class HomePage(QWidget):
@@ -99,7 +100,7 @@ class HomePage(QWidget):
         title_layout.addWidget(main_title)
 
         # 副标题
-        sub_title = CaptionLabel("视线驱动交互系统 · Gaze-Driven Interaction System")
+        sub_title = CaptionLabel(tx("视线驱动交互系统", "Gaze-Driven Interaction System", "视线驱动交互系统 · Gaze-Driven Interaction System"))
         sub_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub_title.setStyleSheet("""
             QLabel {
@@ -112,7 +113,11 @@ class HomePage(QWidget):
         """)
         title_layout.addWidget(sub_title)
 
-        credit = CaptionLabel("作者 / Author: 依木热尼江·买买提明 / Imranjan Mamtimin · imranjan.cn")
+        credit = CaptionLabel(tx(
+            "作者：依木热尼江·买买提明 · imranjan.cn",
+            "Author: Imranjan Mamtimin · imranjan.cn",
+            "作者 / Author: 依木热尼江·买买提明 / Imranjan Mamtimin · imranjan.cn",
+        ))
         credit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         credit.setStyleSheet("""
             QLabel {
@@ -180,14 +185,14 @@ class HomePage(QWidget):
         cam_card = CardWidget()
         cam_card.setStyleSheet(card_style)
         cam_layout = QVBoxLayout(cam_card)
-        cam_title = TitleLabel("步骤 1：摄像头预览\nStep 1: Camera Preview")
+        cam_title = TitleLabel(tx_button("步骤 1：摄像头预览", "Step 1: Camera Preview"))
         cam_title.setWordWrap(True)
         cam_layout.addWidget(cam_title)
-        cam_desc = CaptionLabel("检查摄像头画面和人脸检测\nCheck camera feed and face detection")
+        cam_desc = CaptionLabel(tx_button("检查摄像头画面和人脸检测", "Check camera feed and face detection"))
         cam_desc.setWordWrap(True)
         cam_layout.addWidget(cam_desc)
         cam_layout.addStretch()
-        cam_btn = PrimaryPushButton("开始预览 / Preview")
+        cam_btn = PrimaryPushButton(tx("开始预览", "Preview"))
         cam_btn.setStyleSheet(btn_style)
         cam_btn.clicked.connect(self.navigate_to_camera.emit)
         cam_layout.addWidget(cam_btn)
@@ -196,14 +201,14 @@ class HomePage(QWidget):
         calib_card = CardWidget()
         calib_card.setStyleSheet(card_style)
         calib_layout = QVBoxLayout(calib_card)
-        calib_title = TitleLabel("步骤 2：视线校准\nStep 2: Gaze Calibration")
+        calib_title = TitleLabel(tx_button("步骤 2：视线校准", "Step 2: Gaze Calibration"))
         calib_title.setWordWrap(True)
         calib_layout.addWidget(calib_title)
-        calib_desc = CaptionLabel("注视校准点优化映射精度\nLook at calibration points to improve mapping accuracy")
+        calib_desc = CaptionLabel(tx_button("注视校准点优化映射精度", "Look at calibration points to improve mapping accuracy"))
         calib_desc.setWordWrap(True)
         calib_layout.addWidget(calib_desc)
         calib_layout.addStretch()
-        calib_btn = PrimaryPushButton("开始校准 / Calibrate")
+        calib_btn = PrimaryPushButton(tx("开始校准", "Calibrate"))
         calib_btn.setStyleSheet(btn_style)
         calib_btn.clicked.connect(self.navigate_to_calibration.emit)
         calib_layout.addWidget(calib_btn)
@@ -212,14 +217,14 @@ class HomePage(QWidget):
         track_card = CardWidget()
         track_card.setStyleSheet(card_style)
         track_layout = QVBoxLayout(track_card)
-        track_title = TitleLabel("步骤 3：验证与交互\nStep 3: Verification & Interaction")
+        track_title = TitleLabel(tx_button("步骤 3：验证与交互", "Step 3: Verification & Interaction"))
         track_title.setWordWrap(True)
         track_layout.addWidget(track_title)
-        track_desc = CaptionLabel("进入全屏验证和独立交互窗口\nEnter fullscreen verification and interaction")
+        track_desc = CaptionLabel(tx_button("进入全屏验证和独立交互窗口", "Enter fullscreen verification and interaction"))
         track_desc.setWordWrap(True)
         track_layout.addWidget(track_desc)
         track_layout.addStretch()
-        track_btn = PrimaryPushButton("开始追踪 / Track")
+        track_btn = PrimaryPushButton(tx("开始追踪", "Track"))
         track_btn.setStyleSheet(btn_style)
         track_btn.clicked.connect(self.navigate_to_tracking.emit)
         track_layout.addWidget(track_btn)
