@@ -108,6 +108,7 @@ def load_split_data(
     processed_dir: Path, split: str, augment: bool = False,
     model_version: str = "v2",
     target_mode: str = "gaze3d",
+    head_pose_mode: str = "stored",
 ) -> GazeDataset | None:
     """加载指定划分的数据集。"""
     split_dir = processed_dir / split
@@ -123,6 +124,7 @@ def load_split_data(
         df, image_root=split_dir, augment=augment,
         model_version="v2" if model_version == "pog_v1" else model_version,
         target_mode=target_mode,
+        head_pose_mode=head_pose_mode,
     )
 
 
@@ -252,6 +254,7 @@ def main():
 
     model_version = model_cfg.get("version", "v1")
     target_mode = data_cfg.get("target_mode", target_mode_for_model(model_version))
+    head_pose_mode = data_cfg.get("head_pose_mode", "stored")
     metric_name = "val_pixel_error_px" if target_mode == "pog2d" else "val_angle_error"
 
     # 设备配置
@@ -317,11 +320,11 @@ def main():
 
     train_ds = load_split_data(
         processed_dir, "train", augment=augment, model_version=model_version,
-        target_mode=target_mode,
+        target_mode=target_mode, head_pose_mode=head_pose_mode,
     )
     val_ds = load_split_data(
         processed_dir, "val", augment=False, model_version=model_version,
-        target_mode=target_mode,
+        target_mode=target_mode, head_pose_mode=head_pose_mode,
     )
 
     if train_ds is None:

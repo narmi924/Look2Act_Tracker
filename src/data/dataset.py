@@ -66,6 +66,7 @@ class GazeDataset(Dataset):
         geometry: ScreenCameraGeometry = DEFAULT_GEOMETRY,
         model_version: str = "v2",
         target_mode: str = "gaze3d",
+        head_pose_mode: str = "stored",
     ):
         """初始化 Dataset。
 
@@ -77,6 +78,7 @@ class GazeDataset(Dataset):
             geometry: 屏幕-相机几何参数（在线模式用）
             model_version: "v1" 或 "v2"，决定输出格式
             target_mode: "gaze3d" 或 "pog2d"，决定训练脚本使用的目标
+            head_pose_mode: "stored" 使用标签姿态，"zero" 用零向量做消融/稳健 baseline
         """
         self.labels_df = labels_df.reset_index(drop=True)
         self.image_root = image_root
@@ -84,6 +86,7 @@ class GazeDataset(Dataset):
         self.geometry = geometry
         self.model_version = model_version
         self.target_mode = target_mode
+        self.head_pose_mode = head_pose_mode if head_pose_mode in {"stored", "zero"} else "stored"
 
         # 判断数据模式
         self._online_mode = "gaze_x" not in labels_df.columns
@@ -154,11 +157,7 @@ class GazeDataset(Dataset):
         if self.model_version in {"v2", "pog_v1"}:
             if right_eye is None:
                 right_eye = cv2.flip(left_eye, 1)
-            head_pose = torch.tensor([
-                float(row.get("head_yaw", 0)),
-                float(row.get("head_pitch", 0)),
-                float(row.get("head_roll", 0)),
-            ], dtype=torch.float32)
+            head_pose = self._head_pose_tensor(row)
             return {
                 "left_eye": self._img_to_tensor(left_eye),
                 "right_eye": self._img_to_tensor(right_eye),
@@ -231,11 +230,7 @@ class GazeDataset(Dataset):
                 aug_r = augment_sample(right_eye, gx, gy, gz, rng=self._rng)
                 right_eye = aug_r.eye_img
 
-            head_pose = torch.tensor([
-                float(row.get("head_yaw", 0)),
-                float(row.get("head_pitch", 0)),
-                float(row.get("head_roll", 0)),
-            ], dtype=torch.float32)
+            head_pose = self._head_pose_tensor(row)
 
             return {
                 "left_eye": self._img_to_tensor(left_eye),
@@ -259,6 +254,15 @@ class GazeDataset(Dataset):
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         tensor = torch.from_numpy(img_rgb).permute(2, 0, 1).float() / 255.0
         return tensor
+
+    def _head_pose_tensor(self, row: pd.Series) -> torch.Tensor:
+        if self.head_pose_mode == "zero":
+            return torch.zeros(3, dtype=torch.float32)
+        return torch.tensor([
+            float(row.get("head_yaw", 0)),
+            float(row.get("head_pitch", 0)),
+            float(row.get("head_roll", 0)),
+        ], dtype=torch.float32)
 
     def _empty_sample(self) -> dict:
         """返回空样本（图像加载失败时的 fallback）。"""

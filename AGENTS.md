@@ -41,7 +41,7 @@ Use these only for short checks unless the user asks otherwise:
 conda run --no-capture-output -n gaze-env python -m pytest tests/test_calibration.py tests/test_smoother.py tests/test_tracker_pipeline.py
 conda run --no-capture-output -n gaze-env python -m pytest tests/test_classic_tracker.py
 conda run --no-capture-output -n gaze-env python scripts/audit_gaze_labels.py
-conda run --no-capture-output -n gaze-env python scripts/evaluate_pog.py --checkpoint checkpoints/deep_pog/best_model.pth
+conda run --no-capture-output -n gaze-env python scripts/evaluate_pog.py --checkpoint checkpoints/deep_pog_zero/best_model.pth
 conda run --no-capture-output -n gaze-env python scripts/diagnose_tracker.py --backend classic --frames 300
 conda run --no-capture-output -n gaze-env python scripts/diagnose_tracker.py --backend deep --deep-space camera --deep-pose-input zero --smoother none --frames 300 --csv diagnostics_deep.csv
 conda run --no-capture-output -n gaze-env python scripts/analyze_tracker_diagnostics.py diagnostics_deep.csv
@@ -55,8 +55,8 @@ python scripts/preprocess.py
 python scripts/train.py --config configs/train_config.yaml
 python scripts/train.py --config configs/train_pog_config.yaml
 python scripts/export_onnx.py --checkpoint checkpoints/best_model.pth --output checkpoints/gaze_net.onnx
-python scripts/export_onnx.py --checkpoint checkpoints/deep_pog/best_model.pth --output checkpoints/gaze_pog.onnx
+python scripts/export_onnx.py --checkpoint checkpoints/deep_pog_zero/best_model.pth --output checkpoints/gaze_pog_zero.onnx
 python scripts/evaluate.py --checkpoint checkpoints/best_model.pth
-python scripts/evaluate_pog.py --checkpoint checkpoints/deep_pog/best_model.pth
+python scripts/evaluate_pog.py --checkpoint checkpoints/deep_pog_zero/best_model.pth
 python scripts/exp_leave_one_out.py --epochs 50 --device xpu
 ```

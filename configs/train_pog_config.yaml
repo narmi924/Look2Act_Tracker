@@ -28,6 +28,9 @@ data:
   dataset_raw_dir: "dataset_raw"
   dataset_processed_dir: "dataset_processed"
   target_mode: "pog2d"
+  # zero 避免当前数据集中异常 head_pitch 约定污染 PoG baseline。
+  # stored 可用于对照实验。
+  head_pose_mode: "zero"
   augmentation: true
   num_workers: 4
 
@@ -38,9 +41,9 @@ evaluation:
     - "p95_pixel_error"
 
 checkpoint:
-  save_dir: "checkpoints/deep_pog"
+  save_dir: "checkpoints/deep_pog_zero"
   save_best_only: true
 
 logging:
-  log_dir: "logs/deep_pog"
+  log_dir: "logs/deep_pog_zero"
   log_interval: 1

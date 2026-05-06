@@ -462,8 +462,8 @@ class CalibrationPage(QWidget):
             self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
             self.status_label.setText(tx("Deep 9点校准", "Deep 9-point Calibration"))
         else:
-            self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
-            self.status_label.setText(tx("Deep PoG 9点校准", "Deep PoG 9-point Calibration"))
+            self.calibrator = CalibrationModule(num_points=25, max_residual_px=300.0, method="polynomial")
+            self.status_label.setText(tx("Deep PoG 5x5 校准", "Deep PoG 5x5 Calibration"))
         self.calibration_success = False
         self.calibration_residual = 0.0
         self.residual_label.setText(tx("残差：N/A", "Residual: N/A"))

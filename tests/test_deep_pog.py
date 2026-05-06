@@ -37,6 +37,40 @@ def test_gaze_dataset_exposes_pog_target(tmp_path):
     assert sample["left_eye"].shape == (3, 128, 128)
 
 
+def test_gaze_dataset_can_zero_head_pose_for_pog_baseline(tmp_path):
+    image_dir = tmp_path / "train"
+    image_dir.mkdir()
+    img_path = image_dir / "eye.png"
+    import cv2
+
+    cv2.imwrite(str(img_path), np.zeros((128, 128, 3), dtype=np.uint8))
+    df = pd.DataFrame(
+        [
+            {
+                "eye_img_path": "eye.png",
+                "gaze_x": 0.0,
+                "gaze_y": 0.0,
+                "gaze_z": 1.0,
+                "norm_target_x": 0.25,
+                "norm_target_y": 0.75,
+                "head_yaw": 12.0,
+                "head_pitch": -170.0,
+                "head_roll": 4.0,
+            }
+        ]
+    )
+
+    ds = GazeDataset(
+        df,
+        image_root=image_dir,
+        model_version="v2",
+        target_mode="pog2d",
+        head_pose_mode="zero",
+    )
+
+    assert torch.allclose(ds[0]["head_pose"], torch.zeros(3))
+
+
 def test_deep_pog_output_maps_norm_point_to_screen_pixels():
     pipeline = TrackerPipeline(
         model_path="",
