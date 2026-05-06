@@ -146,6 +146,77 @@ def projection_metrics(
     }
 
 
+def topology_metrics(
+    predicted_norm: np.ndarray,
+    target_norm: np.ndarray,
+    target_decimals: int = 4,
+) -> dict[str, object]:
+    """Measure whether projected points preserve target screen topology."""
+    valid = np.isfinite(predicted_norm).all(axis=1) & np.isfinite(target_norm).all(axis=1)
+    if not np.any(valid):
+        return {"available": False, "points": 0}
+    df = pd.DataFrame(
+        {
+            "pred_x": predicted_norm[valid, 0],
+            "pred_y": predicted_norm[valid, 1],
+            "target_x": target_norm[valid, 0],
+            "target_y": target_norm[valid, 1],
+        }
+    )
+    df["target_x_round"] = df["target_x"].round(target_decimals)
+    df["target_y_round"] = df["target_y"].round(target_decimals)
+    grouped = (
+        df.groupby(["target_x_round", "target_y_round"], as_index=False)
+        .agg(
+            pred_x=("pred_x", "mean"),
+            pred_y=("pred_y", "mean"),
+            target_x=("target_x", "mean"),
+            target_y=("target_y", "mean"),
+            count=("pred_x", "size"),
+        )
+    )
+    pred_w = float(grouped["pred_x"].max() - grouped["pred_x"].min()) if len(grouped) else 0.0
+    pred_h = float(grouped["pred_y"].max() - grouped["pred_y"].min()) if len(grouped) else 0.0
+    target_w = float(grouped["target_x"].max() - grouped["target_x"].min()) if len(grouped) else 0.0
+    target_h = float(grouped["target_y"].max() - grouped["target_y"].min()) if len(grouped) else 0.0
+
+    def safe_corr(a: pd.Series, b: pd.Series) -> float:
+        if a.nunique(dropna=True) < 2 or b.nunique(dropna=True) < 2:
+            return 0.0
+        value = a.corr(b)
+        return 0.0 if pd.isna(value) else float(value)
+
+    def monotonic_fraction(group_col: str, order_col: str, pred_col: str) -> float:
+        ok = 0
+        total = 0
+        for _, group in grouped.sort_values([group_col, order_col]).groupby(group_col):
+            vals = group[pred_col].to_numpy(dtype=np.float64)
+            if vals.shape[0] < 2:
+                continue
+            diffs = np.diff(vals)
+            ok += int(np.sum(diffs > 0))
+            total += int(diffs.shape[0])
+        return float(ok / total) if total else 0.0
+
+    return {
+        "available": True,
+        "points": int(len(grouped)),
+        "prediction_extent": {"width": pred_w, "height": pred_h, "area": max(pred_w, 1e-9) * max(pred_h, 1e-9)},
+        "target_extent": {"width": target_w, "height": target_h, "area": max(target_w, 1e-9) * max(target_h, 1e-9)},
+        "pred_to_target_area_ratio": float((max(pred_w, 1e-9) * max(pred_h, 1e-9)) / (max(target_w, 1e-9) * max(target_h, 1e-9))),
+        "corr": {
+            "pred_x_vs_target_x": safe_corr(grouped["pred_x"], grouped["target_x"]),
+            "pred_y_vs_target_y": safe_corr(grouped["pred_y"], grouped["target_y"]),
+            "pred_x_vs_target_y": safe_corr(grouped["pred_x"], grouped["target_y"]),
+            "pred_y_vs_target_x": safe_corr(grouped["pred_y"], grouped["target_x"]),
+        },
+        "monotonic": {
+            "rows_pred_x_increases_with_target_x": monotonic_fraction("target_y_round", "target_x_round", "pred_x"),
+            "cols_pred_y_increases_with_target_y": monotonic_fraction("target_x_round", "target_y_round", "pred_y"),
+        },
+    }
+
+
 def describe(values: pd.Series | np.ndarray) -> dict[str, float]:
     arr = pd.to_numeric(pd.Series(values), errors="coerce").dropna().to_numpy(dtype=np.float64)
     if arr.size == 0:
@@ -160,6 +231,84 @@ def describe(values: pd.Series | np.ndarray) -> dict[str, float]:
     }
 
 
+def target_norm_from_frame(df: pd.DataFrame) -> np.ndarray:
+    return df[["norm_target_x", "norm_target_y"]].to_numpy(dtype=np.float64)
+
+
+def gaze_from_frame(df: pd.DataFrame) -> np.ndarray:
+    gaze = df[["gaze_x", "gaze_y", "gaze_z"]].to_numpy(dtype=np.float64)
+    norms = np.linalg.norm(gaze, axis=1, keepdims=True)
+    norms[norms < 1e-12] = 1.0
+    return gaze / norms
+
+
+def project_many(
+    gaze_vectors: np.ndarray,
+    distance_mm: float | np.ndarray | pd.Series,
+    ray_origin: np.ndarray | None = None,
+    geometry: ScreenCameraGeometry = DEFAULT_GEOMETRY,
+) -> np.ndarray:
+    if np.isscalar(distance_mm):
+        distances = np.full(gaze_vectors.shape[0], float(distance_mm), dtype=np.float64)
+    else:
+        distances = np.asarray(distance_mm, dtype=np.float64)
+    rows = []
+    for vec, dist in zip(gaze_vectors, distances):
+        if not np.isfinite(dist) or dist <= 0:
+            rows.append([np.nan, np.nan])
+            continue
+        projected = project_gaze_to_norm(vec, ray_origin=ray_origin, geometry=geometry, distance_mm=float(dist))
+        rows.append([np.nan, np.nan] if projected is None else [float(projected[0]), float(projected[1])])
+    return np.asarray(rows, dtype=np.float64)
+
+
+def add_implied_distances(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    gaze = gaze_from_frame(out)
+    target = target_norm_from_frame(out)
+    out["implied_screen_distance_mm"] = [
+        implied_screen_distance_mm(vec, tgt) for vec, tgt in zip(gaze, target)
+    ]
+    return out
+
+
+def group_median_distance(df: pd.DataFrame, group_cols: list[str]) -> np.ndarray:
+    if not group_cols:
+        return np.full(len(df), float(pd.to_numeric(df["implied_screen_distance_mm"], errors="coerce").median()))
+    available = [col for col in group_cols if col in df.columns]
+    if not available:
+        return group_median_distance(df, [])
+    medians = df.groupby(available)["implied_screen_distance_mm"].transform("median")
+    fallback = float(pd.to_numeric(df["implied_screen_distance_mm"], errors="coerce").median())
+    return pd.to_numeric(medians, errors="coerce").fillna(fallback).to_numpy(dtype=np.float64)
+
+
+def evaluate_label_projection_variants(
+    df: pd.DataFrame,
+    screen_w: int = 1920,
+    screen_h: int = 1080,
+) -> dict[str, object]:
+    df = add_implied_distances(df)
+    gaze = gaze_from_frame(df)
+    target = target_norm_from_frame(df)
+    variants: dict[str, np.ndarray] = {
+        "fixed_500mm": project_many(gaze, 500.0),
+        "fixed_720mm": project_many(gaze, 720.0),
+        "fixed_900mm": project_many(gaze, 900.0),
+        "dataset_median_distance": project_many(gaze, float(df["implied_screen_distance_mm"].median())),
+        "session_median_distance": project_many(gaze, group_median_distance(df, ["session_id"])),
+        "user_median_distance": project_many(gaze, group_median_distance(df, ["user_id"])),
+        "oracle_implied_distance": project_many(gaze, df["implied_screen_distance_mm"].to_numpy(dtype=np.float64)),
+    }
+    summary: dict[str, object] = {}
+    for name, projected in variants.items():
+        summary[name] = {
+            "projection": projection_metrics(projected, target, screen_w=screen_w, screen_h=screen_h),
+            "topology": topology_metrics(projected, target),
+        }
+    return summary
+
+
 def load_processed(processed_dir: Path, split: str) -> pd.DataFrame:
     labels_path = processed_dir / split / "labels.csv"
     if not labels_path.exists():
@@ -168,6 +317,7 @@ def load_processed(processed_dir: Path, split: str) -> pd.DataFrame:
 
 
 def analyze_processed_geometry(df: pd.DataFrame) -> dict[str, object]:
+    df = add_implied_distances(df)
     gaze = df[["gaze_x", "gaze_y", "gaze_z"]].to_numpy(dtype=np.float64)
     target = df[["norm_target_x", "norm_target_y"]].to_numpy(dtype=np.float64)
     yaw = pd.to_numeric(df.get("head_yaw", 0.0), errors="coerce").fillna(0.0).to_numpy(dtype=np.float64)
@@ -189,7 +339,7 @@ def analyze_processed_geometry(df: pd.DataFrame) -> dict[str, object]:
         R = euler_to_rotation_matrix(y, p, r)
         local = R.T @ vec
         rotated = R @ vec
-        implied_dist = implied_screen_distance_mm(vec, tgt)
+        implied_dist = float(df.iloc[len(implied_distances)]["implied_screen_distance_mm"])
         implied_distances.append(implied_dist)
         local_z.append(local[2])
         rotated_z.append(rotated[2])
@@ -232,6 +382,11 @@ def analyze_processed_geometry(df: pd.DataFrame) -> dict[str, object]:
         "approx_inverse_local_z_negative_ratio": float(np.mean(np.asarray(local_z) < 0.0)),
         "approx_rotated_z": describe(np.asarray(rotated_z)),
         "projection_variants": metrics,
+        "distance_variants": evaluate_label_projection_variants(df),
+        "retraining_gate": {
+            "head_local_allowed": False,
+            "reason": "Stored Euler/PnP convention is not proven safe: inverse local z is negative for almost all samples.",
+        },
     }
 
 
@@ -266,6 +421,16 @@ def print_summary(summary: dict[str, object]) -> None:
     for name, metrics in variants.items():
         print(
             "[3d-contract] "
+            f"{name}: valid={metrics.get('valid_ratio', 0):.3f} "
+            f"in_screen={metrics.get('in_screen_ratio', 0):.3f} "
+            f"mean_px={metrics.get('mean_pixel_error', 0):.1f} "
+            f"p95_px={metrics.get('p95_pixel_error', 0):.1f}"
+        )
+    distance_variants = processed.get("distance_variants", {})
+    for name, item in distance_variants.items():
+        metrics = item.get("projection", {})
+        print(
+            "[3d-contract-distance] "
             f"{name}: valid={metrics.get('valid_ratio', 0):.3f} "
             f"in_screen={metrics.get('in_screen_ratio', 0):.3f} "
             f"mean_px={metrics.get('mean_pixel_error', 0):.1f} "

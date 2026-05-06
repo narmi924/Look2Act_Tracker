@@ -4,10 +4,12 @@ import pandas as pd
 from scripts.analyze_3d_geometry_contract import (
     analyze_processed_geometry,
     euler_to_rotation_matrix,
+    evaluate_label_projection_variants,
     implied_screen_distance_mm,
     project_gaze_to_norm,
     projection_metrics,
     synthetic_projection_check,
+    topology_metrics,
 )
 from src.data.preprocessing import compute_gaze_vector
 
@@ -37,6 +39,36 @@ def test_projection_metrics_detects_large_error():
 
     assert metrics["valid_ratio"] == 1.0
     assert metrics["mean_pixel_error"] > 500.0
+
+
+def test_fixed_wrong_distance_has_larger_error_than_oracle_distance():
+    rows = []
+    for nx, ny in [(0.2, 0.2), (0.8, 0.8), (0.2, 0.8), (0.8, 0.2)]:
+        gx, gy, gz = compute_gaze_vector(nx * 1920, ny * 1080, 1920, 1080, distance_mm=900.0)
+        rows.append(
+            {
+                "gaze_x": gx,
+                "gaze_y": gy,
+                "gaze_z": gz,
+                "norm_target_x": nx,
+                "norm_target_y": ny,
+            }
+        )
+
+    variants = evaluate_label_projection_variants(pd.DataFrame(rows), screen_w=1920, screen_h=1080)
+
+    assert variants["oracle_implied_distance"]["projection"]["mean_pixel_error"] < 1e-6
+    assert variants["fixed_500mm"]["projection"]["mean_pixel_error"] > 100.0
+
+
+def test_topology_metrics_reports_ordered_grid():
+    target = np.array([[0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.9, 0.9]], dtype=np.float64)
+    summary = topology_metrics(target.copy(), target)
+
+    assert summary["available"] is True
+    assert summary["corr"]["pred_x_vs_target_x"] > 0.9
+    assert summary["corr"]["pred_y_vs_target_y"] > 0.9
+    assert summary["monotonic"]["rows_pred_x_increases_with_target_x"] == 1.0
 
 
 def test_euler_to_rotation_matrix_is_orthonormal():

@@ -5,6 +5,7 @@
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -104,6 +105,46 @@ def test_tracker_result_dataclass():
     assert result_no_face.valid is False
     assert result_no_face.face_detected is False
     assert "未检测到人脸" in result_no_face.error_message
+
+
+def test_deep_camera_space_runtime_does_not_apply_head_rotation():
+    config = SystemConfig(
+        tracker_backend="deep",
+        deep_gaze_space="camera",
+        deep_ray_origin="zero_origin",
+    )
+    pipeline = TrackerPipeline(model_path="", config=config)
+    head_pose = SimpleNamespace(
+        rotation_matrix=np.diag([-1.0, -1.0, 1.0]),
+        translation_vec=np.array([10.0, 20.0, 30.0]),
+    )
+
+    origin, direction = pipeline._compute_deep_ray(np.array([0.2, 0.3, 1.0]), head_pose)
+
+    expected = np.array([0.2, 0.3, 1.0], dtype=np.float64)
+    expected = expected / np.linalg.norm(expected)
+    assert np.allclose(origin, np.zeros(3))
+    assert np.allclose(direction, expected)
+
+
+def test_deep_head_space_runtime_applies_head_rotation():
+    config = SystemConfig(
+        tracker_backend="deep",
+        deep_gaze_space="head",
+        deep_ray_origin="face_translation",
+    )
+    pipeline = TrackerPipeline(model_path="", config=config)
+    rotation = np.diag([-1.0, -1.0, 1.0])
+    head_pose = SimpleNamespace(
+        rotation_matrix=rotation,
+        translation_vec=np.array([10.0, 20.0, 30.0]),
+    )
+
+    origin, direction = pipeline._compute_deep_ray(np.array([0.2, 0.3, 1.0]), head_pose)
+
+    expected = rotation @ (np.array([0.2, 0.3, 1.0], dtype=np.float64) / np.linalg.norm([0.2, 0.3, 1.0]))
+    assert np.allclose(origin, head_pose.translation_vec)
+    assert np.allclose(direction, expected)
 
 
 def test_error_callback():

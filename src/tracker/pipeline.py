@@ -666,16 +666,7 @@ class TrackerPipeline:
             )
         
         d = d / norm_d
-        if self.config.deep_gaze_space == "camera":
-            ray_origin = self._select_deep_ray_origin(head_pose.translation_vec)
-            ray_direction = d
-        else:
-            ray_origin, ray_direction = transform_gaze_to_camera(
-                d,
-                head_pose.rotation_matrix,
-                head_pose.translation_vec,
-            )
-            ray_origin = self._select_deep_ray_origin(ray_origin)
+        ray_origin, ray_direction = self._compute_deep_ray(d, head_pose)
         timings['coordinate_transform'] = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
@@ -750,6 +741,21 @@ class TrackerPipeline:
         if self.config.normalized_deep_ray_origin == "zero_origin":
             return np.zeros(3, dtype=np.float64)
         return np.asarray(face_translation, dtype=np.float64).flatten()
+
+    def _compute_deep_ray(self, gaze_direction: np.ndarray, head_pose) -> tuple[np.ndarray, np.ndarray]:
+        """Compute a 3D gaze ray according to the configured gaze-space contract."""
+        d = np.asarray(gaze_direction, dtype=np.float64).flatten()
+        norm = np.linalg.norm(d)
+        if norm > 1e-12:
+            d = d / norm
+        if self.config.deep_gaze_space == "camera":
+            return self._select_deep_ray_origin(head_pose.translation_vec), d
+        ray_origin, ray_direction = transform_gaze_to_camera(
+            d,
+            head_pose.rotation_matrix,
+            head_pose.translation_vec,
+        )
+        return self._select_deep_ray_origin(ray_origin), ray_direction
 
     def _process_deep_pog_output(
         self,
