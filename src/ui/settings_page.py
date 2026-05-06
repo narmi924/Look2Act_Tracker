@@ -933,6 +933,7 @@ class SettingsPage(QWidget):
                     'deep_gaze_space': self.config.deep_gaze_space,
                     'deep_pose_input': self.config.deep_pose_input,
                     'deep_ray_origin': self.config.deep_ray_origin,
+                    'deep_eye_input_mode': self.config.deep_eye_input_mode,
                 },
                 'geometry': {
                     'screen_w_mm': self.config.screen_w_mm,

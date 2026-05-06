@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import cv2
 
 # 添加 src 到路径
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -145,6 +146,18 @@ def test_deep_head_space_runtime_applies_head_rotation():
     expected = rotation @ (np.array([0.2, 0.3, 1.0], dtype=np.float64) / np.linalg.norm([0.2, 0.3, 1.0]))
     assert np.allclose(origin, head_pose.translation_vec)
     assert np.allclose(direction, expected)
+
+
+def test_deep_eye_input_mode_swaps_and_flips_runtime_crops():
+    config = SystemConfig(tracker_backend="deep", deep_eye_input_mode="swap_flip")
+    pipeline = TrackerPipeline(model_path="", config=config)
+    left = np.arange(12, dtype=np.uint8).reshape(2, 2, 3)
+    right = np.arange(12, 24, dtype=np.uint8).reshape(2, 2, 3)
+
+    out_left, out_right = pipeline._prepare_deep_eye_inputs(left, right)
+
+    assert np.array_equal(out_left, cv2.flip(right, 1))
+    assert np.array_equal(out_right, cv2.flip(left, 1))
 
 
 def test_error_callback():

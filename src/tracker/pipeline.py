@@ -92,6 +92,7 @@ class SystemConfig:
     deep_gaze_space: str = "head"  # "head" 原链路, "camera" 跳过 PnP 旋转实验
     deep_pose_input: str = "live"  # "live" 使用 PnP 姿态, "zero" 用零向量做消融
     deep_ray_origin: str = "face_translation"  # "face_translation" 或 "zero_origin"
+    deep_eye_input_mode: str = "normal"  # normal/swap/flip/swap_flip，用于实时 crop 契约消融
 
     # 校准配置
     calibration_num_points: int = 0  # 0 表示按 backend 默认
@@ -135,6 +136,7 @@ class SystemConfig:
             deep_gaze_space=data.get('model', {}).get('deep_gaze_space', 'head'),
             deep_pose_input=data.get('model', {}).get('deep_pose_input', 'live'),
             deep_ray_origin=data.get('model', {}).get('deep_ray_origin', 'face_translation'),
+            deep_eye_input_mode=data.get('model', {}).get('deep_eye_input_mode', 'normal'),
             calibration_num_points=data.get('calibration', {}).get('num_points', 0),
             calibration_save_path=data.get('calibration', {}).get('save_path', ''),
             calibration_max_residual_px=data.get('calibration', {}).get('max_residual_px', 300.0),
@@ -191,6 +193,11 @@ class SystemConfig:
     def normalized_deep_ray_origin(self) -> str:
         origin = (self.deep_ray_origin or "face_translation").lower()
         return origin if origin in {"face_translation", "zero_origin"} else "face_translation"
+
+    @property
+    def normalized_deep_eye_input_mode(self) -> str:
+        mode = (self.deep_eye_input_mode or "normal").lower()
+        return mode if mode in {"normal", "swap", "flip", "swap_flip"} else "normal"
 
 
 class TrackerPipeline:
@@ -586,6 +593,7 @@ class TrackerPipeline:
             )
         
         try:
+            left_eye, right_eye = self._prepare_deep_eye_inputs(left_eye, right_eye)
             # BGR → RGB（与训练时 _img_to_tensor 一致）
             left_rgb = cv2.cvtColor(left_eye, cv2.COLOR_BGR2RGB)
             right_rgb = cv2.cvtColor(right_eye, cv2.COLOR_BGR2RGB)
@@ -745,6 +753,7 @@ class TrackerPipeline:
                 "deep_gaze_space": self.config.deep_gaze_space,
                 "deep_pose_input": self.config.normalized_deep_pose_input,
                 "deep_ray_origin": self.config.normalized_deep_ray_origin,
+                "deep_eye_input_mode": self.config.normalized_deep_eye_input_mode,
                 "ray_origin": ray_origin.tolist(),
                 "ray_direction": ray_direction.tolist(),
                 "gaze_vector": d.tolist(),
@@ -780,6 +789,22 @@ class TrackerPipeline:
             head_pose.translation_vec,
         )
         return self._select_deep_ray_origin(ray_origin), ray_direction
+
+    def _prepare_deep_eye_inputs(
+        self,
+        left_eye: np.ndarray,
+        right_eye: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Apply realtime eye-crop contract ablations before model inference."""
+        mode = self.config.normalized_deep_eye_input_mode
+        left = left_eye
+        right = right_eye
+        if "swap" in mode:
+            left, right = right, left
+        if "flip" in mode:
+            left = cv2.flip(left, 1)
+            right = cv2.flip(right, 1)
+        return left, right
 
     def _process_deep_pog_output(
         self,
@@ -844,6 +869,7 @@ class TrackerPipeline:
                 "raw_norm_point": raw_norm,
                 "onnx_inputs": list(self.onnx_input_names),
                 "deep_pose_input": self.config.normalized_deep_pose_input,
+                "deep_eye_input_mode": self.config.normalized_deep_eye_input_mode,
                 "head_pose": {
                     "yaw": float(head_pose.yaw),
                     "pitch": float(head_pose.pitch),
@@ -1112,6 +1138,7 @@ class TrackerPipeline:
             "deep_gaze_space": self.config.deep_gaze_space,
             "deep_pose_input": self.config.normalized_deep_pose_input,
             "deep_ray_origin": self.config.normalized_deep_ray_origin,
+            "deep_eye_input_mode": self.config.normalized_deep_eye_input_mode,
         }
         if self.screen_geometry is not None:
             diag["screen_geometry"] = {

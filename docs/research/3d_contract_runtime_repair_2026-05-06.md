@@ -93,4 +93,12 @@ python main.py --config configs\experiments\system_deep_camera_zero_900.yaml
 
 2026-05-06 追加：720 mm 实时 25 点校准已能跑通，但 raw topology 显示 `raw_y` 比 `raw_x` 更稳定，横向仍有明显折叠。因此新增 `configs/experiments/system_deep_camera_zero_720_pose_zero.yaml`，保持 camera-space + zero origin + 720 mm 不变，只把模型输入的 `head_pose` 置零，用于隔离实时 PnP 姿态特征污染。
 
+2026-05-06 继续追加：`pose_zero` 没有稳定修复横向拓扑，因此新增实时 eye-crop 契约消融：
+
+- `configs/experiments/system_deep_camera_zero_720_pose_zero_swap.yaml`
+- `configs/experiments/system_deep_camera_zero_720_pose_zero_flip.yaml`
+- `configs/experiments/system_deep_camera_zero_720_pose_zero_swap_flip.yaml`
+
+这三组只改变进入模型前的左右眼顺序/水平翻转，用于检查训练和实时的 left/right eye crop、镜像方向是否错位。
+
 如果 720 mm 的实时 raw topology 明显优于旧 deep 链路，再进入 10 epoch smoke 重训；否则先继续排查实时 domain gap、camera crop、screen distance 估计和输入归一化。

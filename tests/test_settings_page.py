@@ -37,6 +37,7 @@ def test_system_config_default_values():
     assert config.effective_calibration_method == "polynomial"
     assert config.deep_gaze_space == "head"
     assert config.normalized_deep_pose_input == "live"
+    assert config.normalized_deep_eye_input_mode == "normal"
     assert config.normalized_smoother_type == "kalman"
     assert config.screen_w_mm == 344.0
     assert config.screen_h_mm == 194.0
@@ -187,6 +188,7 @@ def test_system_config_from_yaml():
             'deep_gaze_space': 'camera',
             'deep_pose_input': 'zero',
             'deep_ray_origin': 'zero_origin',
+            'deep_eye_input_mode': 'swap_flip',
         },
         'geometry': {
             'screen_w_mm': 400.0,
@@ -228,6 +230,7 @@ def test_system_config_from_yaml():
         assert config.deep_gaze_space == 'camera'
         assert config.deep_pose_input == 'zero'
         assert config.deep_ray_origin == 'zero_origin'
+        assert config.normalized_deep_eye_input_mode == 'swap_flip'
         assert config.calibration_num_points == 25
         assert config.calibration_path == 'calibration_deep.json'
         assert config.calibration_max_residual_px == 240.0
