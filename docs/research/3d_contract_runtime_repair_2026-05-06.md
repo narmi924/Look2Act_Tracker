@@ -101,4 +101,17 @@ python main.py --config configs\experiments\system_deep_camera_zero_900.yaml
 
 这三组只改变进入模型前的左右眼顺序/水平翻转，用于检查训练和实时的 left/right eye crop、镜像方向是否错位。
 
+2026-05-06 结论更新：`swap` 是当前最优 runtime eye-crop 契约。一次实时 25 点校准中达到 residual 160.67 px，验证阶段光标已能随眼球方向正确变化。对应拓扑指标约为 `corr_x=0.773`、`corr_y=0.880`、`mono_x=0.85`、`mono_y=0.95`、`area_ratio=0.216`。`flip` 表现为横向反向，`swap_flip` 基本折叠。因此当前 3D runtime 首选契约是：
+
+- `deep_gaze_space: camera`
+- `deep_ray_origin: zero_origin`
+- `screen_distance_mm: 720`
+- `deep_pose_input: zero`
+- `deep_eye_input_mode: swap`
+
+新增两个后续验证配置：
+
+- `configs/experiments/system_deep_camera_zero_720_pose_zero_swap_ema.yaml`：在最佳 raw 契约上加 EMA 平滑，用于验证演示观感。
+- `configs/experiments/system_deep_camera_zero_720_swap_live.yaml`：保持 `swap`，恢复 live head pose 输入，用于判断头部移动是否能被模型补偿。
+
 如果 720 mm 的实时 raw topology 明显优于旧 deep 链路，再进入 10 epoch smoke 重训；否则先继续排查实时 domain gap、camera crop、screen distance 估计和输入归一化。

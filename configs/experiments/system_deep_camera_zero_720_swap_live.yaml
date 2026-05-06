@@ -1,0 +1,37 @@
+ui:
+  language: bilingual
+  window_mode: fullscreen
+camera:
+  index: 0
+  width: 1280
+  height: 720
+  backend: dshow
+face_detection:
+  eye_crop_size: 128
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+model:
+  checkpoint_path: checkpoints/best_model.pth
+  use_ipex: false
+  use_onnx: true
+  onnx_path: checkpoints/gaze_net.onnx
+  deep_gaze_space: camera
+  deep_pose_input: live
+  deep_ray_origin: zero_origin
+  deep_eye_input_mode: swap
+geometry:
+  screen_w_mm: 347.0
+  screen_h_mm: 194.0
+  screen_distance_mm: 720.0
+  cam_above_screen_mm: 5.0
+calibration:
+  num_points: 25
+  save_path: calibration_deep.json
+  max_residual_px: 300.0
+smoother:
+  type: none
+  alpha: 0.3
+tracker:
+  backend: deep
+  target_fps: 30
+  timer_interval_ms: 33
