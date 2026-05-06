@@ -941,7 +941,7 @@ class SettingsPage(QWidget):
                     'cam_above_screen_mm': self.config.cam_above_screen_mm,
                 },
                 'calibration': {
-                    'num_points': 25 if self.config.normalized_backend == 'classic' else 9,
+                    'num_points': 25 if self.config.normalized_backend in {'classic', 'deep_pog'} else 9,
                     'save_path': self.config.calibration_path,
                     'max_residual_px': 300.0,
                 },
