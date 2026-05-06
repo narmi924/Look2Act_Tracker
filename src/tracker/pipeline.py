@@ -731,7 +731,7 @@ class TrackerPipeline:
         
         # 5. 时序平滑
         t0 = time.perf_counter()
-        if self.config.normalized_smoother_type == "none" or self.smoother is None:
+        if self._calibration_mode or self.config.normalized_smoother_type == "none" or self.smoother is None:
             smoothed_point = raw_point
         else:
             smoothed_point = self.smoother.update(raw_point)
@@ -848,7 +848,7 @@ class TrackerPipeline:
         timings["pog_to_screen"] = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
-        if self.config.normalized_smoother_type == "none" or self.smoother is None:
+        if self._calibration_mode or self.config.normalized_smoother_type == "none" or self.smoother is None:
             smoothed_point = raw_point
         else:
             smoothed_point = self.smoother.update(raw_point)

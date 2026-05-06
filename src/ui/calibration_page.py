@@ -199,13 +199,15 @@ class CalibrationFullscreenWidget(QWidget):
         result = self.tracker.get_latest_result()
         self.sampling_ticks += 1
         
+        sample_point = (result.raw_point or result.gaze_point) if result is not None else None
+
         if (
             self.sampling_ticks > self.discard_initial_frames
             and result is not None
             and result.valid
-            and result.gaze_point is not None
+            and sample_point is not None
         ):
-            self.current_samples.append(result.gaze_point)
+            self.current_samples.append(sample_point)
         
         # 检查是否采样完成
         if (
