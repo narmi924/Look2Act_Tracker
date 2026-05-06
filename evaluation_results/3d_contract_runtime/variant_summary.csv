@@ -1,0 +1,17 @@
+variant,gaze_space,ray_origin,distance,valid_ratio,in_screen_ratio,mean_pixel_error,median_pixel_error,p95_pixel_error,area_ratio,corr_x,corr_y,mono_x,mono_y
+camera_no_rotation+zero_origin+dataset_median,camera_no_rotation,zero_origin,dataset_median,1.0,1.0,216.21491635007015,150.00966811462814,688.1787389931281,0.8827932553350133,0.6633417491126729,0.7139068876281833,0.8245614035087719,0.7586206896551724
+camera_no_rotation+zero_origin+fixed_720mm,camera_no_rotation,zero_origin,fixed_720mm,1.0,1.0,216.47003682841424,150.0411106327627,688.8096085777909,0.8864698033279048,0.663341749112673,0.7139068876281831,0.8245614035087719,0.7586206896551724
+camera_no_rotation+zero_origin+fixed_900mm,camera_no_rotation,zero_origin,fixed_900mm,1.0,0.9093525179856116,296.3682127366372,266.24497872328584,732.3200021988675,1.3851090676998514,0.6633417491126729,0.7139068876281828,0.8245614035087719,0.7586206896551724
+camera_no_rotation+zero_origin+fixed_500mm,camera_no_rotation,zero_origin,fixed_500mm,1.0,1.0,299.7428111608522,259.28891922557796,662.5635577019383,0.4275027986727936,0.6633417491126731,0.7139068876281832,0.8245614035087719,0.7586206896551724
+camera_no_rotation+face_translation+fixed_900mm,camera_no_rotation,face_translation,fixed_900mm,1.0,1.0,557.9709016943734,569.9217983675878,846.3048188191055,0.05540436270799407,0.663341749112673,0.7139068876281828,0.8245614035087719,0.7586206896551724
+camera_no_rotation+face_translation+fixed_720mm,camera_no_rotation,face_translation,fixed_720mm,1.0,1.0,589.058935837021,605.3547799056541,885.248412530799,0.03545879213311619,0.663341749112673,0.7139068876281831,0.8245614035087719,0.7586206896551724
+camera_no_rotation+face_translation+dataset_median,camera_no_rotation,face_translation,dataset_median,1.0,1.0,589.3181198565577,605.6838329603747,885.6897754683218,0.035311730213400505,0.6633417491126732,0.7139068876281828,0.8245614035087719,0.7586206896551724
+camera_no_rotation+face_translation+fixed_500mm,camera_no_rotation,face_translation,fixed_500mm,1.0,0.9769784172661871,627.3771410280195,644.5986931297327,945.4114296764758,0.017100111946911765,0.6633417491126732,0.713906887628183,0.8245614035087719,0.7586206896551724
+head_space_with_rotation+zero_origin+fixed_500mm,head_space_with_rotation,zero_origin,fixed_500mm,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+head_space_with_rotation+face_translation+fixed_500mm,head_space_with_rotation,face_translation,fixed_500mm,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+head_space_with_rotation+zero_origin+fixed_720mm,head_space_with_rotation,zero_origin,fixed_720mm,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+head_space_with_rotation+face_translation+fixed_720mm,head_space_with_rotation,face_translation,fixed_720mm,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+head_space_with_rotation+zero_origin+fixed_900mm,head_space_with_rotation,zero_origin,fixed_900mm,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+head_space_with_rotation+face_translation+fixed_900mm,head_space_with_rotation,face_translation,fixed_900mm,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+head_space_with_rotation+zero_origin+dataset_median,head_space_with_rotation,zero_origin,dataset_median,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+head_space_with_rotation+face_translation+dataset_median,head_space_with_rotation,face_translation,dataset_median,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
