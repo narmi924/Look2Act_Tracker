@@ -9,6 +9,7 @@ import pytest
 import yaml
 import numpy as np
 
+from main import parse_args
 from src.tracker.pipeline import SystemConfig
 from src.ui.settings_page import (
     detect_supported_camera_resolutions,
@@ -64,6 +65,12 @@ def test_system_config_smoother_type_normalization():
     assert SystemConfig(smoother_type="ema").normalized_smoother_type == "ema"
     assert SystemConfig(smoother_type="none").normalized_smoother_type == "none"
     assert SystemConfig(smoother_type="bad").normalized_smoother_type == "kalman"
+
+
+def test_main_config_argument_selects_experiment_yaml():
+    args = parse_args(["--config", "configs/experiments/system_deep_camera_zero_720.yaml"])
+
+    assert args.config == "configs/experiments/system_deep_camera_zero_720.yaml"
 
 
 def test_resolution_format_parse_and_sort():

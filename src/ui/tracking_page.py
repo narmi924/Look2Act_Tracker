@@ -149,11 +149,12 @@ class GazeCursorOverlay(QWidget):
 
 
 class TrackingPage(QWidget):
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: Optional[QWidget] = None, config_path: Path | str | None = None):
         super().__init__(parent)
 
         self.tracker: Optional[TrackerPipeline] = None
         self.tracker_config: Optional[SystemConfig] = None
+        self.config_path = Path(config_path) if config_path is not None else Path("configs/system_config.yaml")
         self.calibrator: Optional[CalibrationModule] = None
 
         self.cursor_overlay: Optional[GazeCursorOverlay] = None
@@ -472,8 +473,7 @@ class TrackingPage(QWidget):
 
     def _handle_load_calibration(self) -> None:
         if self.tracker_config is None:
-            config_path = Path("configs/system_config.yaml")
-            self.tracker_config = SystemConfig.from_yaml(str(config_path)) if config_path.exists() else SystemConfig()
+            self.tracker_config = SystemConfig.from_yaml(str(self.config_path)) if self.config_path.exists() else SystemConfig()
 
         load_path = Path(self.tracker_config.calibration_path)
 
@@ -504,8 +504,7 @@ class TrackingPage(QWidget):
             self.error_label.setText("")
 
             if self.tracker is None:
-                config_path = Path("configs/system_config.yaml")
-                self.tracker_config = SystemConfig.from_yaml(str(config_path)) if config_path.exists() else SystemConfig()
+                self.tracker_config = SystemConfig.from_yaml(str(self.config_path)) if self.config_path.exists() else SystemConfig()
                 self.tracker = TrackerPipeline(
                     model_path=self.tracker_config.checkpoint_path,
                     config=self.tracker_config,

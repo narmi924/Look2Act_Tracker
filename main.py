@@ -14,6 +14,7 @@
 """
 import sys
 import logging
+import argparse
 from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
@@ -29,6 +30,18 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse Look2Act CLI arguments before Qt starts."""
+    parser = argparse.ArgumentParser(description="Look2Act Tracker")
+    parser.add_argument(
+        "--config",
+        default="configs/system_config.yaml",
+        help="Path to the system YAML config used by UI, tracker, and settings page.",
+    )
+    args, _ = parser.parse_known_args(argv)
+    return args
 
 
 def setup_application() -> QApplication:
@@ -59,8 +72,12 @@ def main() -> int:
         退出代码（0 表示成功）
     """
     try:
+        args = parse_args(sys.argv[1:])
+        sys.argv = [sys.argv[0]]
+        config_path = Path(args.config)
         logger.info("=" * 60)
         logger.info("Look2Act Tracker 启动中...")
+        logger.info(f"系统配置路径: {config_path}")
         logger.info("=" * 60)
         
         # 创建应用
@@ -70,8 +87,8 @@ def main() -> int:
         from src.ui.i18n import load_language
         from src.ui.language_dialog import LanguageSelectionDialog
 
-        load_language()
-        dialog = LanguageSelectionDialog()
+        load_language(config_path)
+        dialog = LanguageSelectionDialog(config_path=config_path)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return 0
         language = dialog.selected_language
@@ -81,7 +98,7 @@ def main() -> int:
         from src.ui.main_window import MainWindow
         
         # 创建主窗口
-        main_window = MainWindow()
+        main_window = MainWindow(config_path=config_path)
         logger.info("主窗口已创建")
         
         # 显示主窗口

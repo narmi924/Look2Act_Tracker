@@ -156,12 +156,12 @@ class SettingsPage(QWidget):
     
     config_changed = pyqtSignal(object)  # SystemConfig
     
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: Optional[QWidget] = None, config_path: Path | str | None = None):
         super().__init__(parent)
         
         # 当前配置
         self.config: SystemConfig = SystemConfig()
-        self.config_path = Path("configs/system_config.yaml")
+        self.config_path = Path(config_path) if config_path is not None else Path("configs/system_config.yaml")
         
         # 控件引用
         self.camera_index_spin: Optional[SpinBox] = None
