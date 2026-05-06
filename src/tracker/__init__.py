@@ -4,6 +4,7 @@ from src.tracker.pipeline import SystemConfig, TrackerPipeline, TrackerResult
 from src.tracker.smoother import GazeSmoother
 from src.tracker.classic import (
     ClassicKalmanSmoother,
+    EyeTouchScreenSmoother,
     detect_pupil_centroid,
     fuse_eye_features,
     normalize_iris_offset,
@@ -15,6 +16,7 @@ __all__ = [
     'SystemConfig',
     'GazeSmoother',
     'ClassicKalmanSmoother',
+    'EyeTouchScreenSmoother',
     'detect_pupil_centroid',
     'fuse_eye_features',
     'normalize_iris_offset',

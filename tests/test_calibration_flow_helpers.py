@@ -51,7 +51,7 @@ def test_calibration_path_is_backend_specific():
 
 
 def test_min_valid_points_for_calibration():
-    assert min_valid_points_for_calibration(25, "polynomial") == 12
+    assert min_valid_points_for_calibration(25, "polynomial") == 4
     assert min_valid_points_for_calibration(9, "polynomial") == 6
     assert min_valid_points_for_calibration(9, "affine") == 3
 

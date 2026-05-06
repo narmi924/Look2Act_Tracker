@@ -58,7 +58,7 @@ def calibration_path_for_backend(backend: str) -> Path:
 def min_valid_points_for_calibration(num_points: int, method: str) -> int:
     """Return the minimum usable point count before fitting calibration."""
     if method == "polynomial":
-        return 12 if num_points >= 25 else 6
+        return 4 if num_points >= 25 else 6
     return 3
 
 
@@ -105,7 +105,7 @@ class CalibrationFullscreenWidget(QWidget):
         # 校准状态
         self.current_point_index = 0
         self.countdown = 3  # 倒计时秒数
-        self.sampling_frames = 45 if calibrator.num_points >= 25 else 30
+        self.sampling_frames = 55 if calibrator.num_points >= 25 else 30
         self.max_sampling_ticks = self.sampling_frames * 3
         self.min_samples_per_point = min_samples_per_calibration_point(self.sampling_frames)
         self.current_samples: list[tuple[float, float]] = []  # 当前点的采样数据

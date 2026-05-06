@@ -6,22 +6,27 @@ from src.tracker.classic import ClassicKalmanSmoother
 from src.tracker.pipeline import SystemConfig, TrackerPipeline, TrackerResult
 
 
+def _eye_roi(width=80, height=40, pupil=(40, 20)):
+    eye = np.full((height, width, 3), 230, dtype=np.uint8)
+    yy, xx = np.ogrid[:height, :width]
+    mask = (xx - pupil[0]) ** 2 + (yy - pupil[1]) ** 2 <= 8 ** 2
+    eye[mask] = 5
+    return eye
+
+
 def _classic_face_result(**overrides):
     data = {
-        "left_iris_center": (110.0, 100.0),
-        "right_iris_center": (210.0, 100.0),
-        "left_eye_center": (100.0, 100.0),
-        "right_eye_center": (200.0, 100.0),
-        "left_eye_width": 100.0,
-        "right_eye_width": 100.0,
-        "left_eye_crop": None,
-        "right_eye_crop": None,
+        "left_eye_roi": _eye_roi(pupil=(20, 10)),
+        "right_eye_roi": _eye_roi(pupil=(40, 10)),
+        "left_eye_origin": (100, 50),
+        "right_eye_origin": (200, 50),
+        "frame_size": (400, 200),
     }
     data.update(overrides)
     return SimpleNamespace(**data)
 
 
-def test_process_classic_result_uses_iris_offsets_without_smoothing():
+def test_process_classic_result_uses_eyetouch_absolute_pupil_feature():
     pipeline = TrackerPipeline(
         model_path="",
         config=SystemConfig(tracker_backend="classic"),
@@ -33,9 +38,9 @@ def test_process_classic_result_uses_iris_offsets_without_smoothing():
 
     assert result.valid is True
     assert result.backend == "classic"
-    assert np.allclose(result.raw_point, (0.6, 0.5))
-    assert np.allclose(result.gaze_point, (0.6, 0.5))
-    assert result.debug["feature_method"] == "iris_offset"
+    assert np.allclose(result.raw_point, (0.45, 0.3), atol=0.04)
+    assert np.allclose(result.gaze_point, result.raw_point)
+    assert result.debug["feature_method"] == "eyetouch_pupil"
 
 
 def test_process_classic_result_can_disable_smoothing():

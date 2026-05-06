@@ -31,9 +31,9 @@ from src.geometry.screen_geometry import ScreenGeometry
 from src.models.gaze_net import GazeNet, GazeNetV2
 from src.tracker.classic import (
     ClassicKalmanSmoother,
+    absolute_pupil_point,
     detect_pupil_centroid,
     fuse_eye_features,
-    normalize_iris_offset,
 )
 from src.tracker.smoother import GazeSmoother
 from src.vision.face_detector import FaceDetector
@@ -702,24 +702,23 @@ class TrackerPipeline:
         face_result,
         timings: dict[str, float],
     ) -> TrackerResult:
-        """Process a detected face with the classic pupil feature backend."""
+        """Process a detected face with the Eye_Touch classic backend."""
         t0 = time.perf_counter()
-        left_iris = normalize_iris_offset(
-            face_result.left_iris_center,
-            face_result.left_eye_center,
-            face_result.left_eye_width,
+        left_pupil = detect_pupil_centroid(getattr(face_result, "left_eye_roi", None))
+        right_pupil = detect_pupil_centroid(getattr(face_result, "right_eye_roi", None))
+        left_abs = absolute_pupil_point(left_pupil, getattr(face_result, "left_eye_origin", None))
+        right_abs = absolute_pupil_point(right_pupil, getattr(face_result, "right_eye_origin", None))
+        frame_size = getattr(face_result, "frame_size", None) or (
+            self.config.camera_width,
+            self.config.camera_height,
         )
-        right_iris = normalize_iris_offset(
-            face_result.right_iris_center,
-            face_result.right_eye_center,
-            face_result.right_eye_width,
+        feature = fuse_eye_features(
+            left_abs,
+            right_abs,
+            camera_width=int(frame_size[0]),
+            camera_height=int(frame_size[1]),
+            method="eyetouch_pupil",
         )
-        left_pupil = detect_pupil_centroid(face_result.left_eye_crop)
-        right_pupil = detect_pupil_centroid(face_result.right_eye_crop)
-        left_norm = left_iris or left_pupil
-        right_norm = right_iris or right_pupil
-        feature_method = "iris_offset" if left_iris is not None or right_iris is not None else "pupil_centroid"
-        feature = fuse_eye_features(left_norm, right_norm, method=feature_method)
         timings["classic_feature"] = (time.perf_counter() - t0) * 1000
 
         if feature is None:
@@ -732,7 +731,7 @@ class TrackerPipeline:
                     error_message="classic 眼部特征提取失败",
                     face_detected=True,
                     backend="classic",
-                    debug={"left_pupil": left_pupil, "right_pupil": right_pupil, "left_iris": left_iris, "right_iris": right_iris},
+                    debug={"left_pupil": left_pupil, "right_pupil": right_pupil, "left_abs": left_abs, "right_abs": right_abs},
                 )
             return TrackerResult(
                 gaze_point=None,
@@ -742,26 +741,13 @@ class TrackerPipeline:
                 error_message="classic 眼部特征提取失败",
                 face_detected=True,
                 backend="classic",
-                debug={"left_pupil": left_pupil, "right_pupil": right_pupil, "left_iris": left_iris, "right_iris": right_iris},
+                debug={"left_pupil": left_pupil, "right_pupil": right_pupil, "left_abs": left_abs, "right_abs": right_abs},
             )
 
         raw_point = feature.point
-        smoother_type = self.config.normalized_smoother_type
-        if self._calibration_mode or smoother_type == "none":
-            output_point = raw_point
-        elif smoother_type == "ema" and self.smoother is not None:
-            t1 = time.perf_counter()
-            output_point = self.smoother.update(raw_point)
-            timings["smoothing"] = (time.perf_counter() - t1) * 1000
-        elif self.classic_smoother is not None:
-            t1 = time.perf_counter()
-            output_point = self.classic_smoother.update(raw_point)
-            timings["smoothing"] = (time.perf_counter() - t1) * 1000
-        else:
-            output_point = raw_point
 
         result = TrackerResult(
-            gaze_point=output_point,
+            gaze_point=raw_point,
             valid=True,
             fps=self._calculate_fps(),
             timings=timings,
@@ -772,11 +758,12 @@ class TrackerPipeline:
             debug={
                 "feature_method": feature.method,
                 "feature_confidence": feature.confidence,
-                "smoother_type": smoother_type,
+                "smoother_type": self.config.normalized_smoother_type,
                 "left_pupil": left_pupil,
                 "right_pupil": right_pupil,
-                "left_iris": left_iris,
-                "right_iris": right_iris,
+                "left_abs": left_abs,
+                "right_abs": right_abs,
+                "frame_size": frame_size,
                 "calibration_mode": self._calibration_mode,
             },
         )

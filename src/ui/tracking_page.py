@@ -20,6 +20,7 @@ from qfluentwidgets import BodyLabel, CardWidget, PrimaryPushButton, PushButton
 
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
+from src.tracker.classic import EyeTouchScreenSmoother
 from src.tracker.pipeline import SystemConfig, TrackerPipeline
 from src.ui.fluent_theme import PALETTE
 from src.ui.interaction_overlay import (
@@ -31,7 +32,7 @@ from src.ui.gomoku_window import GomokuWindow
 
 
 class ScreenGazeStabilizer:
-    """Screen-space smoother with median filtering and velocity gating."""
+    """Eye_Touch screen-space smoother used by the classic backend."""
 
     def __init__(
         self,
@@ -41,49 +42,13 @@ class ScreenGazeStabilizer:
         fast_threshold_px: float = 140.0,
         max_step_px: float = 75.0,
     ):
-        self.median_window = median_window
-        self.alpha = alpha
-        self.fast_alpha = fast_alpha
-        self.fast_threshold_px = fast_threshold_px
-        self.max_step_px = max_step_px
-        self._samples: list[tuple[float, float]] = []
-        self._stable: Optional[tuple[float, float]] = None
+        self._smoother = EyeTouchScreenSmoother(history_len=60)
 
     def reset(self) -> None:
-        self._samples.clear()
-        self._stable = None
+        self._smoother.reset()
 
     def update(self, point: tuple[float, float]) -> tuple[float, float]:
-        self._samples.append(point)
-        if len(self._samples) > self.median_window:
-            self._samples.pop(0)
-
-        xs = sorted(p[0] for p in self._samples)
-        ys = sorted(p[1] for p in self._samples)
-        mid = len(self._samples) // 2
-        candidate = (xs[mid], ys[mid])
-
-        if self._stable is None:
-            self._stable = candidate
-            return candidate
-
-        dx = candidate[0] - self._stable[0]
-        dy = candidate[1] - self._stable[1]
-        dist = math.hypot(dx, dy)
-        if dist > self.max_step_px:
-            scale = self.max_step_px / dist
-            candidate = (
-                self._stable[0] + dx * scale,
-                self._stable[1] + dy * scale,
-            )
-            dist = self.max_step_px
-
-        alpha = self.fast_alpha if dist > self.fast_threshold_px else self.alpha
-        self._stable = (
-            self._stable[0] + (candidate[0] - self._stable[0]) * alpha,
-            self._stable[1] + (candidate[1] - self._stable[1]) * alpha,
-        )
-        return self._stable
+        return self._smoother.update(point)
 
 
 class GazeCursorOverlay(QWidget):

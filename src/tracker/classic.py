@@ -1,11 +1,13 @@
-"""Classic image-processing gaze backend.
+"""Eye_Touch style classic image-processing gaze backend.
 
-This module provides the Eye_Touch-style runtime path used for smooth
-coarse gaze interaction: extract a compact pupil/iris feature from eye
-crops, map it with user calibration, and smooth the result.
+The classic path intentionally mirrors the earlier Eye_Touch course project:
+MediaPipe eye ROIs -> dark pupil centroid -> average absolute camera point ->
+camera-normalized polynomial calibration -> screen-space Kalman + 60-sample
+moving average.
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
@@ -15,39 +17,37 @@ import numpy as np
 
 @dataclass(frozen=True)
 class ClassicGazeFeature:
-    """Normalized two-dimensional eye feature used as calibration input."""
+    """Camera-normalized two-dimensional feature used as calibration input."""
 
     x: float
     y: float
     confidence: float
-    method: str
+    method: str = "eyetouch_pupil"
 
     @property
     def point(self) -> tuple[float, float]:
         return (self.x, self.y)
 
 
-def detect_pupil_centroid(eye_bgr: np.ndarray) -> Optional[tuple[float, float]]:
-    """Detect the dark pupil centroid in a cropped eye image.
+def detect_pupil_centroid(eye_roi: np.ndarray) -> Optional[tuple[float, float]]:
+    """Return the dark pupil centroid in ROI pixel coordinates.
 
-    Returns normalized coordinates in the crop, or ``None`` if the crop is
-    empty. A weighted dark-pixel centroid is used as a robust fallback.
+    This is the same two-stage detector used by Eye_Touch: Otsu inverse
+    threshold + contour centroid, with dark-pixel weighted centroid fallback.
     """
-    if eye_bgr is None or eye_bgr.size == 0:
+    if eye_roi is None or eye_roi.size == 0:
         return None
 
-    gray = cv2.cvtColor(eye_bgr, cv2.COLOR_BGR2GRAY)
-    k = max(3, int(min(gray.shape[:2]) / 8) | 1)
+    gray = cv2.cvtColor(eye_roi, cv2.COLOR_BGR2GRAY)
+    k = max(3, int(min(eye_roi.shape[:2]) / 8) | 1)
     gray = cv2.GaussianBlur(gray, (k, k), 0)
 
     try:
-        _, thresh = cv2.threshold(
-            gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
-        )
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     except cv2.error:
         _, thresh = cv2.threshold(gray, 40, 255, cv2.THRESH_BINARY_INV)
 
-    mk = max(3, int(min(gray.shape[:2]) / 20) | 1)
+    mk = max(3, int(min(eye_roi.shape[:2]) / 20) | 1)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (mk, mk))
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
@@ -58,19 +58,66 @@ def detect_pupil_centroid(eye_bgr: np.ndarray) -> Optional[tuple[float, float]]:
         if cv2.contourArea(contour) >= 10:
             moments = cv2.moments(contour)
             if moments["m00"] != 0:
-                cx = moments["m10"] / moments["m00"]
-                cy = moments["m01"] / moments["m00"]
-                return normalize_crop_point(cx, cy, gray.shape[1], gray.shape[0])
+                cx = float(moments["m10"] / moments["m00"])
+                cy = float(moments["m01"] / moments["m00"])
+                return (cx, cy)
 
     inv = 255.0 - gray.astype(np.float32)
-    weight_sum = float(np.sum(inv))
-    if weight_sum <= 1e-6:
-        return None
-
+    weight_sum = float(np.sum(inv)) + 1e-6
     yy, xx = np.indices(gray.shape)
     cx = float(np.sum(xx * inv) / weight_sum)
     cy = float(np.sum(yy * inv) / weight_sum)
-    return normalize_crop_point(cx, cy, gray.shape[1], gray.shape[0])
+    h, w = gray.shape
+    if 0.0 <= cx < w and 0.0 <= cy < h:
+        return (cx, cy)
+    return None
+
+
+def normalize_camera_point(
+    point: tuple[float, float],
+    camera_width: int,
+    camera_height: int,
+) -> tuple[float, float]:
+    """Normalize an absolute camera point by the active frame size."""
+    width = max(int(camera_width), 1)
+    height = max(int(camera_height), 1)
+    return (
+        float(np.clip(point[0] / float(width), 0.0, 1.0)),
+        float(np.clip(point[1] / float(height), 0.0, 1.0)),
+    )
+
+
+def absolute_pupil_point(
+    pupil: Optional[tuple[float, float]],
+    roi_origin: Optional[tuple[int, int]],
+) -> Optional[tuple[float, float]]:
+    """Convert an ROI-local pupil point to absolute camera coordinates."""
+    if pupil is None or roi_origin is None:
+        return None
+    return (float(roi_origin[0] + pupil[0]), float(roi_origin[1] + pupil[1]))
+
+
+def fuse_eye_features(
+    left_point: Optional[tuple[float, float]],
+    right_point: Optional[tuple[float, float]],
+    camera_width: int = 1,
+    camera_height: int = 1,
+    method: str = "eyetouch_pupil",
+) -> Optional[ClassicGazeFeature]:
+    """Average available absolute eye points and normalize by camera size."""
+    points = [p for p in (left_point, right_point) if p is not None]
+    if not points:
+        return None
+
+    arr = np.array(points, dtype=np.float64)
+    mean = arr.mean(axis=0)
+    norm_x, norm_y = normalize_camera_point(
+        (float(mean[0]), float(mean[1])),
+        camera_width,
+        camera_height,
+    )
+    confidence = 0.65 if len(points) == 1 else 1.0
+    return ClassicGazeFeature(norm_x, norm_y, confidence, method)
 
 
 def normalize_crop_point(
@@ -79,7 +126,7 @@ def normalize_crop_point(
     width: int,
     height: int,
 ) -> tuple[float, float]:
-    """Normalize a crop coordinate to [0, 1]."""
+    """Compatibility helper for older tests and experiments."""
     if width <= 1 or height <= 1:
         return (0.5, 0.5)
     nx = float(np.clip(x / float(width - 1), 0.0, 1.0))
@@ -87,37 +134,12 @@ def normalize_crop_point(
     return (nx, ny)
 
 
-def fuse_eye_features(
-    left_norm: Optional[tuple[float, float]],
-    right_norm: Optional[tuple[float, float]],
-    method: str = "pupil_centroid",
-) -> Optional[ClassicGazeFeature]:
-    """Fuse normalized left/right crop features into one calibration point."""
-    points = [p for p in (left_norm, right_norm) if p is not None]
-    if not points:
-        return None
-
-    arr = np.array(points, dtype=np.float64)
-    mean = arr.mean(axis=0)
-    confidence = 0.65 if len(points) == 1 else 1.0
-    return ClassicGazeFeature(
-        x=float(mean[0]),
-        y=float(mean[1]),
-        confidence=confidence,
-        method=method,
-    )
-
-
 def normalize_iris_offset(
     iris_center: Optional[tuple[float, float]],
     eye_center: Optional[tuple[float, float]],
     eye_width: Optional[float],
 ) -> Optional[tuple[float, float]]:
-    """Normalize an iris center relative to eye center and eye width.
-
-    The result is centered near 0.5/0.5 so it can be calibrated with the
-    same 2D mapping as crop-based pupil features.
-    """
+    """Compatibility helper; the Eye_Touch backend does not use iris offsets."""
     if iris_center is None or eye_center is None or eye_width is None or eye_width <= 1e-6:
         return None
     dx = (iris_center[0] - eye_center[0]) / eye_width
@@ -126,7 +148,7 @@ def normalize_iris_offset(
 
 
 class ClassicKalmanSmoother:
-    """Small 2D constant-velocity Kalman smoother for gaze points."""
+    """Eye_Touch constant-velocity Kalman filter."""
 
     def __init__(
         self,
@@ -154,10 +176,34 @@ class ClassicKalmanSmoother:
                 [[measurement[0, 0]], [measurement[1, 0]], [0.0], [0.0]],
                 dtype=np.float32,
             )
+            self._kf.statePre = self._kf.statePost.copy()
             self._initialized = True
+            return (float(measurement[0, 0]), float(measurement[1, 0]))
         self._kf.correct(measurement)
         prediction = self._kf.predict()
         return (float(prediction[0, 0]), float(prediction[1, 0]))
 
     def reset(self) -> None:
         self._initialized = False
+
+
+class EyeTouchScreenSmoother:
+    """Eye_Touch screen-space smoother: Kalman followed by 60-point mean."""
+
+    def __init__(self, history_len: int = 60):
+        self.kalman = ClassicKalmanSmoother()
+        self.history: deque[tuple[float, float]] = deque(maxlen=history_len)
+        self.current: Optional[tuple[float, float]] = None
+
+    def reset(self) -> None:
+        self.kalman.reset()
+        self.history.clear()
+        self.current = None
+
+    def update(self, point: tuple[float, float]) -> tuple[float, float]:
+        predicted = self.kalman.update(point)
+        self.history.append(predicted)
+        avg_x = sum(p[0] for p in self.history) / len(self.history)
+        avg_y = sum(p[1] for p in self.history) / len(self.history)
+        self.current = (float(avg_x), float(avg_y))
+        return self.current

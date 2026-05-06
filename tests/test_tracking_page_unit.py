@@ -140,16 +140,17 @@ def test_stage_buttons_do_not_require_manual_tracker_start(qapp):
     page.close()
 
 
-def test_screen_gaze_stabilizer_limits_large_jumps():
-    """屏幕级稳定器应压住 classic 追踪的大跳变。"""
-    stabilizer = ScreenGazeStabilizer(max_step_px=75.0)
+def test_screen_gaze_stabilizer_uses_eyetouch_screen_smoothing():
+    """classic 屏幕级平滑应采用 Eye_Touch 的 Kalman + 历史均值。"""
+    stabilizer = ScreenGazeStabilizer()
 
     first = stabilizer.update((100.0, 100.0))
-    jumped = stabilizer.update((900.0, 100.0))
+    jumped = first
+    for _ in range(20):
+        jumped = stabilizer.update((900.0, 100.0))
 
     assert first == (100.0, 100.0)
     assert 100.0 < jumped[0] < 900.0
-    assert jumped[0] - first[0] <= 75.0
     assert jumped[1] == pytest.approx(100.0)
 
 
