@@ -48,6 +48,7 @@ class FakeCalibrator:
 
 def test_calibration_path_is_backend_specific():
     assert calibration_path_for_backend("classic").name == "calibration_classic.json"
+    assert calibration_path_for_backend("deep_pog").name == "calibration_deep_pog.json"
     assert calibration_path_for_backend("deep").name == "calibration_deep.json"
     assert calibration_path_for_backend("unknown").name == "calibration_classic.json"
 

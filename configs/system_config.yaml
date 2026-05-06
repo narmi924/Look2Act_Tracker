@@ -17,6 +17,7 @@ model:
   onnx_path: checkpoints/gaze_net.onnx
   deep_gaze_space: head
   deep_pose_input: live
+  deep_ray_origin: face_translation
 geometry:
   screen_w_mm: 347.0
   screen_h_mm: 194.0

@@ -46,7 +46,7 @@ class LanguageSelectionDialog(QDialog):
 
         zh_btn = PrimaryPushButton("中文")
         en_btn = PushButton("English")
-        bilingual_btn = PushButton("双/Bilingual")
+        bilingual_btn = PushButton("双语 / Bilingual")
         for button in (zh_btn, en_btn, bilingual_btn):
             button.setFixedSize(150, 72)
             row.addWidget(button)

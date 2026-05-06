@@ -53,7 +53,11 @@ from src.ui.i18n import tx, tx_button
 
 
 def calibration_path_for_backend(backend: str) -> Path:
-    return Path("calibration_deep.json" if backend == "deep" else "calibration_classic.json")
+    if backend == "deep":
+        return Path("calibration_deep.json")
+    if backend == "deep_pog":
+        return Path("calibration_deep_pog.json")
+    return Path("calibration_classic.json")
 
 
 def min_valid_points_for_calibration(num_points: int, method: str) -> int:
@@ -445,7 +449,7 @@ class CalibrationPage(QWidget):
 
     def _configure_for_backend(self, backend: str) -> None:
         """Switch calibration strategy for the active tracker backend."""
-        backend = backend if backend in {"classic", "deep"} else "classic"
+        backend = backend if backend in {"classic", "deep", "deep_pog"} else "classic"
         if backend == self.backend and self.calibrator is not None:
             return
 
@@ -454,9 +458,12 @@ class CalibrationPage(QWidget):
         if backend == "classic":
             self.calibrator = CalibrationModule(num_points=25, max_residual_px=300.0, method="polynomial")
             self.status_label.setText(tx("Classic 5x5 校准", "Classic 5x5 Calibration"))
-        else:
+        elif backend == "deep":
             self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
             self.status_label.setText(tx("Deep 9点校准", "Deep 9-point Calibration"))
+        else:
+            self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
+            self.status_label.setText(tx("Deep PoG 9点校准", "Deep PoG 9-point Calibration"))
         self.calibration_success = False
         self.calibration_residual = 0.0
         self.residual_label.setText(tx("残差：N/A", "Residual: N/A"))

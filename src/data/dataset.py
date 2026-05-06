@@ -48,6 +48,7 @@ class GazeDataset(Dataset):
     - right_eye: (3, 128, 128) float32 张量
     - head_pose: (3,) float32 张量 (yaw, pitch, roll)
     - gaze: (3,) float32 张量，3D 视线方向单位向量
+    - pog: (2,) float32 张量，归一化屏幕坐标 [x, y]
     - meta: dict
 
     输出格式（V1 模式，model_version="v1"）：
@@ -64,6 +65,7 @@ class GazeDataset(Dataset):
         augment_rng_seed: Optional[int] = None,
         geometry: ScreenCameraGeometry = DEFAULT_GEOMETRY,
         model_version: str = "v2",
+        target_mode: str = "gaze3d",
     ):
         """初始化 Dataset。
 
@@ -74,12 +76,14 @@ class GazeDataset(Dataset):
             augment_rng_seed: 增强随机种子
             geometry: 屏幕-相机几何参数（在线模式用）
             model_version: "v1" 或 "v2"，决定输出格式
+            target_mode: "gaze3d" 或 "pog2d"，决定训练脚本使用的目标
         """
         self.labels_df = labels_df.reset_index(drop=True)
         self.image_root = image_root
         self.augment = augment
         self.geometry = geometry
         self.model_version = model_version
+        self.target_mode = target_mode
 
         # 判断数据模式
         self._online_mode = "gaze_x" not in labels_df.columns
@@ -136,6 +140,10 @@ class GazeDataset(Dataset):
             gx, gy, gz = aug.gaze_x, aug.gaze_y, aug.gaze_z
 
         gaze_tensor = torch.tensor([gx, gy, gz], dtype=torch.float32)
+        pog_tensor = torch.tensor(
+            [labels["norm_target_x"], labels["norm_target_y"]],
+            dtype=torch.float32,
+        )
         meta = {
             "norm_target_x": labels["norm_target_x"],
             "norm_target_y": labels["norm_target_y"],
@@ -143,7 +151,7 @@ class GazeDataset(Dataset):
             "user_id": str(row.get("user_id", "")),
         }
 
-        if self.model_version == "v2":
+        if self.model_version in {"v2", "pog_v1"}:
             if right_eye is None:
                 right_eye = cv2.flip(left_eye, 1)
             head_pose = torch.tensor([
@@ -156,12 +164,14 @@ class GazeDataset(Dataset):
                 "right_eye": self._img_to_tensor(right_eye),
                 "head_pose": head_pose,
                 "gaze": gaze_tensor,
+                "pog": pog_tensor,
                 "meta": meta,
             }
         else:
             return {
                 "eye_img": self._img_to_tensor(left_eye),
                 "gaze": gaze_tensor,
+                "pog": pog_tensor,
                 "meta": meta,
             }
 
@@ -189,6 +199,13 @@ class GazeDataset(Dataset):
             gx, gy, gz = aug.gaze_x, aug.gaze_y, aug.gaze_z
 
         gaze_tensor = torch.tensor([gx, gy, gz], dtype=torch.float32)
+        pog_tensor = torch.tensor(
+            [
+                float(row.get("norm_target_x", 0)),
+                float(row.get("norm_target_y", 0)),
+            ],
+            dtype=torch.float32,
+        )
         meta = {
             "norm_target_x": float(row.get("norm_target_x", 0)),
             "norm_target_y": float(row.get("norm_target_y", 0)),
@@ -196,7 +213,7 @@ class GazeDataset(Dataset):
             "user_id": str(row.get("user_id", "")),
         }
 
-        if self.model_version == "v2":
+        if self.model_version in {"v2", "pog_v1"}:
             # 加载右眼图像
             right_eye = None
             if self._has_right_eye:
@@ -225,12 +242,14 @@ class GazeDataset(Dataset):
                 "right_eye": self._img_to_tensor(right_eye),
                 "head_pose": head_pose,
                 "gaze": gaze_tensor,
+                "pog": pog_tensor,
                 "meta": meta,
             }
         else:
             return {
                 "eye_img": self._img_to_tensor(left_eye),
                 "gaze": gaze_tensor,
+                "pog": pog_tensor,
                 "meta": meta,
             }
 
@@ -243,12 +262,13 @@ class GazeDataset(Dataset):
 
     def _empty_sample(self) -> dict:
         """返回空样本（图像加载失败时的 fallback）。"""
-        if self.model_version == "v2":
+        if self.model_version in {"v2", "pog_v1"}:
             return {
                 "left_eye": torch.zeros(3, 128, 128, dtype=torch.float32),
                 "right_eye": torch.zeros(3, 128, 128, dtype=torch.float32),
                 "head_pose": torch.zeros(3, dtype=torch.float32),
                 "gaze": torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32),
+                "pog": torch.tensor([0.0, 0.0], dtype=torch.float32),
                 "meta": {
                     "norm_target_x": 0.0,
                     "norm_target_y": 0.0,
@@ -260,6 +280,7 @@ class GazeDataset(Dataset):
             return {
                 "eye_img": torch.zeros(3, 128, 128, dtype=torch.float32),
                 "gaze": torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32),
+                "pog": torch.tensor([0.0, 0.0], dtype=torch.float32),
                 "meta": {
                     "norm_target_x": 0.0,
                     "norm_target_y": 0.0,

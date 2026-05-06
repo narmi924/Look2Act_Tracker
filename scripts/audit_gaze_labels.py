@@ -40,6 +40,7 @@ POSE_COLUMNS = ["head_yaw", "head_pitch", "head_roll"]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Audit Look2Act processed labels.")
     parser.add_argument("--processed-dir", default="dataset_processed")
+    parser.add_argument("--raw-dir", default="dataset_raw")
     parser.add_argument("--output", default="evaluation_results/label_audit/summary.json")
     parser.add_argument("--csv", default="evaluation_results/label_audit/split_summary.csv")
     parser.add_argument("--screen-w", type=int, default=1536)
@@ -51,6 +52,58 @@ def parse_args() -> argparse.Namespace:
         help="Approximate runtime ray origin z in mm for mismatch simulation.",
     )
     return parser.parse_args()
+
+
+def load_raw_labels(raw_dir: Path) -> pd.DataFrame | None:
+    """Load raw per-session labels if dataset_raw is available."""
+    if not raw_dir.exists():
+        return None
+    frames = []
+    for labels_path in sorted(raw_dir.glob("*/labels.csv")):
+        try:
+            df = pd.read_csv(labels_path)
+        except Exception:
+            continue
+        df["raw_session_dir"] = labels_path.parent.name
+        frames.append(df)
+    if not frames:
+        return None
+    return pd.concat(frames, ignore_index=True)
+
+
+def audit_raw_dataset(raw_dir: Path) -> dict[str, object]:
+    """Summarize raw collection geometry and columns for contract diagnosis."""
+    raw = load_raw_labels(raw_dir)
+    if raw is None or raw.empty:
+        return {"available": False, "raw_dir": str(raw_dir)}
+
+    summary: dict[str, object] = {
+        "available": True,
+        "raw_dir": str(raw_dir),
+        "rows": int(len(raw)),
+        "sessions": int(raw["session_id"].nunique()) if "session_id" in raw.columns else 0,
+        "users": int(raw["user_id"].nunique()) if "user_id" in raw.columns else 0,
+        "columns": sorted(raw.columns.tolist()),
+    }
+    for col in ("screen_w", "screen_h", "frame_w", "frame_h", "target_x", "target_y"):
+        if col in raw.columns:
+            summary[col] = describe_series(raw[col])
+    if set(POSE_COLUMNS).issubset(raw.columns):
+        summary["pose_abs_gt_90_ratio"] = {
+            col: float(np.mean(np.abs(pd.to_numeric(raw[col], errors="coerce")) > 90.0))
+            for col in POSE_COLUMNS
+        }
+        for col in POSE_COLUMNS:
+            summary[col] = describe_series(raw[col])
+    if {"target_x", "target_y", "screen_w", "screen_h"}.issubset(raw.columns):
+        nx = pd.to_numeric(raw["target_x"], errors="coerce") / pd.to_numeric(raw["screen_w"], errors="coerce")
+        ny = pd.to_numeric(raw["target_y"], errors="coerce") / pd.to_numeric(raw["screen_h"], errors="coerce")
+        summary["raw_norm_target_x"] = describe_series(nx)
+        summary["raw_norm_target_y"] = describe_series(ny)
+        summary["raw_out_of_bounds_target_ratio"] = float(
+            np.mean((nx < 0.0) | (nx > 1.0) | (ny < 0.0) | (ny > 1.0))
+        )
+    return summary
 
 
 def euler_to_rotation_matrix(yaw_deg: float, pitch_deg: float, roll_deg: float) -> np.ndarray:
@@ -359,9 +412,28 @@ def print_findings(summaries: Iterable[dict[str, object]]) -> None:
             )
 
 
+def print_raw_findings(raw_summary: dict[str, object]) -> None:
+    if not raw_summary.get("available"):
+        print(f"[audit] raw dataset not found: {raw_summary.get('raw_dir')}")
+        return
+    print(
+        "[audit] raw dataset "
+        f"rows={raw_summary.get('rows')} sessions={raw_summary.get('sessions')} "
+        f"users={raw_summary.get('users')}"
+    )
+    pose_ratios = raw_summary.get("pose_abs_gt_90_ratio")
+    if pose_ratios:
+        print(f"[audit] raw abs(pose)>90 ratios: {pose_ratios}")
+    for key in ("screen_w", "screen_h", "frame_w", "frame_h"):
+        stats = raw_summary.get(key)
+        if isinstance(stats, dict) and stats.get("count", 0):
+            print(f"[audit] raw {key}: p50={stats.get('p50')} min={stats.get('min')} max={stats.get('max')}")
+
+
 def main() -> int:
     args = parse_args()
     processed_dir = Path(args.processed_dir)
+    raw_summary = audit_raw_dataset(Path(args.raw_dir))
     if not processed_dir.exists():
         print(f"[audit] processed dataset not found: {processed_dir}")
         return 2
@@ -381,12 +453,13 @@ def main() -> int:
         )
         for name, df in split_frames.items()
     ]
+    print_raw_findings(raw_summary)
     print_findings(summaries)
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        json.dumps({"splits": summaries}, ensure_ascii=False, indent=2),
+        json.dumps({"raw_dataset": raw_summary, "splits": summaries}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 

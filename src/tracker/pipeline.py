@@ -28,7 +28,7 @@ import yaml
 
 from src.geometry.coordinate import transform_gaze_to_camera
 from src.geometry.screen_geometry import ScreenGeometry
-from src.models.gaze_net import GazeNet, GazeNetV2
+from src.models.gaze_net import GazeNet, GazeNetPoG, GazeNetV2
 from src.tracker.classic import (
     ClassicKalmanSmoother,
     absolute_pupil_point,
@@ -91,6 +91,7 @@ class SystemConfig:
     tracker_backend: str = "classic"  # "classic" 体验模式, "deep" 研究模型
     deep_gaze_space: str = "head"  # "head" 原链路, "camera" 跳过 PnP 旋转实验
     deep_pose_input: str = "live"  # "live" 使用 PnP 姿态, "zero" 用零向量做消融
+    deep_ray_origin: str = "face_translation"  # "face_translation" 或 "zero_origin"
     
     # 几何配置
     screen_w_mm: float = 344.0
@@ -128,6 +129,7 @@ class SystemConfig:
             tracker_backend=data.get('tracker', {}).get('backend', 'classic'),
             deep_gaze_space=data.get('model', {}).get('deep_gaze_space', 'head'),
             deep_pose_input=data.get('model', {}).get('deep_pose_input', 'live'),
+            deep_ray_origin=data.get('model', {}).get('deep_ray_origin', 'face_translation'),
             screen_w_mm=data.get('geometry', {}).get('screen_w_mm', 344.0),
             screen_h_mm=data.get('geometry', {}).get('screen_h_mm', 194.0),
             screen_distance_mm=data.get('geometry', {}).get('screen_distance_mm', 500.0),
@@ -141,11 +143,15 @@ class SystemConfig:
     @property
     def normalized_backend(self) -> str:
         backend = (self.tracker_backend or "classic").lower()
-        return backend if backend in {"classic", "deep"} else "classic"
+        return backend if backend in {"classic", "deep", "deep_pog"} else "classic"
 
     @property
     def calibration_path(self) -> str:
-        return "calibration_classic.json" if self.normalized_backend == "classic" else "calibration_deep.json"
+        if self.normalized_backend == "classic":
+            return "calibration_classic.json"
+        if self.normalized_backend == "deep_pog":
+            return "calibration_deep_pog.json"
+        return "calibration_deep.json"
 
     @property
     def normalized_smoother_type(self) -> str:
@@ -156,6 +162,11 @@ class SystemConfig:
     def normalized_deep_pose_input(self) -> str:
         pose_input = (self.deep_pose_input or "live").lower()
         return pose_input if pose_input in {"live", "zero"} else "live"
+
+    @property
+    def normalized_deep_ray_origin(self) -> str:
+        origin = (self.deep_ray_origin or "face_translation").lower()
+        return origin if origin in {"face_translation", "zero_origin"} else "face_translation"
 
 
 class TrackerPipeline:
@@ -293,7 +304,15 @@ class TrackerPipeline:
                 self.onnx_input_names = [inp.name for inp in inputs]
                 self.onnx_output_name = self.onnx_session.get_outputs()[0].name
                 
-                if len(inputs) == 3 and 'left_eye' in self.onnx_input_names:
+                output_shape = self.onnx_session.get_outputs()[0].shape
+                output_dim = output_shape[-1] if output_shape else None
+                if self.config.normalized_backend == "deep_pog" and output_dim != 2:
+                    print(f"错误：deep_pog 需要 2D PoG ONNX 输出，但当前输出维度为 {output_dim}")
+                    return False
+                if self.config.normalized_backend == "deep_pog" or output_dim == 2:
+                    self.model_version = "pog_v1"
+                    print(f"ONNX Deep PoG 模型已加载：{onnx_path}（双眼 + head pose -> 2D PoG）")
+                elif len(inputs) == 3 and 'left_eye' in self.onnx_input_names:
                     self.model_version = "v2"
                     print(f"ONNX V2 模型已加载：{onnx_path}（双眼 + head pose）")
                 else:
@@ -320,14 +339,26 @@ class TrackerPipeline:
                         state_dict = checkpoint
                 else:
                     if detected_version == "auto":
-                        detected_version = "v1"
+                        detected_version = "pog_v1" if self.config.normalized_backend == "deep_pog" else "v1"
                     print(f"警告：模型文件不存在 {self.model_path}，使用随机初始化权重")
+
+                if self.config.normalized_backend == "deep_pog" and detected_version != "pog_v1":
+                    print(f"错误：deep_pog 需要 pog_v1 checkpoint，但当前模型版本为 {detected_version}")
+                    return False
                 
                 self.model_version = detected_version
                 model_cfg = config_from_ckpt.get("model", {})
                 channels = model_cfg.get("channels", [32, 64, 128, 256])
                 
-                if self.model_version == "v2":
+                if self.model_version == "pog_v1":
+                    self.gaze_model = GazeNetPoG(
+                        num_channels=channels,
+                        head_pose_dim=model_cfg.get("head_pose_dim", 3),
+                        fusion_dim=model_cfg.get("fusion_dim", 128),
+                        dropout=model_cfg.get("dropout", 0.3),
+                    )
+                    print("使用 GazeNetPoG（双眼 + head pose -> 2D PoG）")
+                elif self.model_version == "v2":
                     self.gaze_model = GazeNetV2(
                         num_channels=channels,
                         head_pose_dim=model_cfg.get("head_pose_dim", 3),
@@ -547,7 +578,7 @@ class TrackerPipeline:
                     head_pose.yaw, head_pose.pitch, head_pose.roll
                 ], dtype=np.float32)
             
-            if self.model_version == "v2":
+            if self.model_version in {"v2", "pog_v1"}:
                 left_batch = left_tensor.unsqueeze(0)
                 right_batch = right_tensor.unsqueeze(0)
                 pose_batch = torch.from_numpy(head_pose_vec).unsqueeze(0)
@@ -602,6 +633,13 @@ class TrackerPipeline:
                 backend=backend,
             )
         
+        if backend == "deep_pog":
+            return self._process_deep_pog_output(
+                output=gaze_vector,
+                head_pose=head_pose,
+                timings=timings,
+            )
+
         # 4. Convert the predicted 3D gaze vector into a raw screen-space point.
         t0 = time.perf_counter()
         d = gaze_vector.astype(np.float64)
@@ -629,7 +667,7 @@ class TrackerPipeline:
         
         d = d / norm_d
         if self.config.deep_gaze_space == "camera":
-            ray_origin = np.asarray(head_pose.translation_vec, dtype=np.float64).flatten()
+            ray_origin = self._select_deep_ray_origin(head_pose.translation_vec)
             ray_direction = d
         else:
             ray_origin, ray_direction = transform_gaze_to_camera(
@@ -637,6 +675,7 @@ class TrackerPipeline:
                 head_pose.rotation_matrix,
                 head_pose.translation_vec,
             )
+            ray_origin = self._select_deep_ray_origin(ray_origin)
         timings['coordinate_transform'] = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
@@ -690,6 +729,9 @@ class TrackerPipeline:
                 "onnx_inputs": list(self.onnx_input_names),
                 "deep_gaze_space": self.config.deep_gaze_space,
                 "deep_pose_input": self.config.normalized_deep_pose_input,
+                "deep_ray_origin": self.config.normalized_deep_ray_origin,
+                "ray_origin": ray_origin.tolist(),
+                "ray_direction": ray_direction.tolist(),
                 "gaze_vector": d.tolist(),
                 "head_pose": {
                     "yaw": float(head_pose.yaw),
@@ -701,6 +743,86 @@ class TrackerPipeline:
         )
         self._last_valid_result = result
         
+        return result
+
+    def _select_deep_ray_origin(self, face_translation: np.ndarray) -> np.ndarray:
+        """Select the 3D deep ray origin for geometry-contract experiments."""
+        if self.config.normalized_deep_ray_origin == "zero_origin":
+            return np.zeros(3, dtype=np.float64)
+        return np.asarray(face_translation, dtype=np.float64).flatten()
+
+    def _process_deep_pog_output(
+        self,
+        output: np.ndarray,
+        head_pose,
+        timings: dict[str, float],
+    ) -> TrackerResult:
+        """Map a direct PoG model output to screen pixels without 3D ray geometry."""
+        t0 = time.perf_counter()
+        pog = np.asarray(output, dtype=np.float64).flatten()
+        if pog.shape[0] < 2 or not np.all(np.isfinite(pog[:2])):
+            if self._last_valid_result is not None:
+                return TrackerResult(
+                    gaze_point=self._last_valid_result.gaze_point,
+                    valid=True,
+                    fps=self._calculate_fps(),
+                    timings=timings,
+                    error_message="Deep PoG 输出无效",
+                    face_detected=True,
+                    backend="deep_pog",
+                )
+            return TrackerResult(
+                gaze_point=None,
+                valid=False,
+                fps=self._calculate_fps(),
+                timings=timings,
+                error_message="Deep PoG 输出无效",
+                face_detected=True,
+                backend="deep_pog",
+            )
+
+        raw_norm = (float(pog[0]), float(pog[1]))
+        screen_w = self.screen_geometry.screen_w_px if self.screen_geometry is not None else 1920
+        screen_h = self.screen_geometry.screen_h_px if self.screen_geometry is not None else 1080
+        raw_x = raw_norm[0] * screen_w
+        raw_y = raw_norm[1] * screen_h
+        if not self._calibration_mode:
+            raw_x = float(np.clip(raw_x, 0.0, screen_w - 1.0))
+            raw_y = float(np.clip(raw_y, 0.0, screen_h - 1.0))
+        raw_point = (float(raw_x), float(raw_y))
+        timings["pog_to_screen"] = (time.perf_counter() - t0) * 1000
+
+        t0 = time.perf_counter()
+        if self.config.normalized_smoother_type == "none" or self.smoother is None:
+            smoothed_point = raw_point
+        else:
+            smoothed_point = self.smoother.update(raw_point)
+        timings["smoothing"] = (time.perf_counter() - t0) * 1000
+
+        result = TrackerResult(
+            gaze_point=smoothed_point,
+            valid=True,
+            fps=self._calculate_fps(),
+            timings=timings,
+            error_message=None,
+            face_detected=True,
+            raw_point=raw_point,
+            backend="deep_pog",
+            debug={
+                "model_version": self.model_version,
+                "output_mode": "normalized_point_of_gaze",
+                "raw_norm_point": raw_norm,
+                "onnx_inputs": list(self.onnx_input_names),
+                "deep_pose_input": self.config.normalized_deep_pose_input,
+                "head_pose": {
+                    "yaw": float(head_pose.yaw),
+                    "pitch": float(head_pose.pitch),
+                    "roll": float(head_pose.roll),
+                },
+                "screen_geometry": self.get_diagnostics().get("screen_geometry", {}),
+            },
+        )
+        self._last_valid_result = result
         return result
 
     def _process_classic_result(
@@ -959,6 +1081,7 @@ class TrackerPipeline:
             },
             "deep_gaze_space": self.config.deep_gaze_space,
             "deep_pose_input": self.config.normalized_deep_pose_input,
+            "deep_ray_origin": self.config.normalized_deep_ray_origin,
         }
         if self.screen_geometry is not None:
             diag["screen_geometry"] = {

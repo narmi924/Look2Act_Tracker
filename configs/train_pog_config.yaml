@@ -1,0 +1,46 @@
+# Look2Act Deep PoG 训练配置
+# 训练：Intel XPU + IPEX；推理导出：ONNX Runtime CPU
+# 使用方式：
+#   conda activate gaze-env
+#   python scripts/train.py --config configs/train_pog_config.yaml
+
+model:
+  name: "GazeNetPoG"
+  version: "pog_v1"
+  channels: [32, 64, 128, 256]
+  input_size: 128
+  output_dim: 2
+  head_pose_dim: 3
+  fusion_dim: 128
+  dropout: 0.3
+
+training:
+  batch_size: 64
+  learning_rate: 0.001
+  epochs: 100
+  optimizer: "Adam"
+  scheduler: "CosineAnnealingLR"
+  weight_decay: 0.0001
+  device: "xpu"
+  use_ipex: true
+
+data:
+  dataset_raw_dir: "dataset_raw"
+  dataset_processed_dir: "dataset_processed"
+  target_mode: "pog2d"
+  augmentation: true
+  num_workers: 4
+
+evaluation:
+  metrics:
+    - "mean_pixel_error"
+    - "median_pixel_error"
+    - "p95_pixel_error"
+
+checkpoint:
+  save_dir: "checkpoints/deep_pog"
+  save_best_only: true
+
+logging:
+  log_dir: "logs/deep_pog"
+  log_interval: 1
