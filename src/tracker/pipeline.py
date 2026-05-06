@@ -888,9 +888,6 @@ class TrackerPipeline:
     
     def stop(self) -> None:
         """停止推理线程并释放资源。"""
-        if not self._running:
-            return
-        
         self._running = False
         
         if self._thread is not None:

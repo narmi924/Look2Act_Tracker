@@ -1,5 +1,7 @@
+from src.tracker.pipeline import TrackerResult
 from src.ui.calibration_page import (
     CalibrationPage,
+    CalibrationFullscreenWidget,
     calibration_path_for_backend,
     min_samples_per_calibration_point,
     min_valid_points_for_calibration,
@@ -77,3 +79,41 @@ def test_calibration_finished_stays_on_result_actions():
     assert page.start_btn.text().startswith("重新校准")
     assert page.load_btn.isHidden()
     assert not page.home_btn.isHidden()
+
+
+def test_calibration_sampling_discards_initial_transition_frames():
+    class FakeTracker:
+        def get_latest_result(self):
+            return TrackerResult(
+                gaze_point=(0.25, 0.5),
+                valid=True,
+                fps=30.0,
+                face_detected=True,
+                backend="classic",
+            )
+
+        def set_calibration_mode(self, enabled):
+            pass
+
+    class FakeTimer:
+        def stop(self):
+            pass
+
+    widget = CalibrationFullscreenWidget.__new__(CalibrationFullscreenWidget)
+    widget.tracker = FakeTracker()
+    widget.current_samples = []
+    widget.sampling_ticks = 0
+    widget.discard_initial_frames = 10
+    widget.sampling_frames = 45
+    widget.max_sampling_ticks = 165
+    widget.sampling_timer = FakeTimer()
+    widget.update = lambda: None
+
+    for _ in range(widget.discard_initial_frames):
+        widget._on_sampling_tick()
+
+    assert widget.current_samples == []
+
+    widget._on_sampling_tick()
+
+    assert widget.current_samples == [(0.25, 0.5)]

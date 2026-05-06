@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import QApplication
 
 from src.calibration.calibrator import CalibrationModule
 from src.ui.interaction_overlay import FullscreenStageWindow, InteractionLauncherOverlay
+from src.ui.gomoku_window import GomokuWindow
 from src.ui.tracking_page import GazeCursorOverlay, ScreenGazeStabilizer, TrackingPage
 
 
@@ -140,6 +141,29 @@ def test_stage_buttons_do_not_require_manual_tracker_start(qapp):
     page.close()
 
 
+def test_verification_passed_stops_tracker_runtime(qapp):
+    class FakeTracker:
+        def __init__(self):
+            self.stopped = False
+
+        def is_running(self):
+            return not self.stopped
+
+        def stop(self):
+            self.stopped = True
+
+    page = TrackingPage()
+    page.tracker = FakeTracker()
+
+    page._on_verification_passed()
+
+    assert page.tracker.stopped
+    assert page.verification_window is None
+    assert not page.stop_btn.isEnabled()
+
+    page.close()
+
+
 def test_screen_gaze_stabilizer_uses_eyetouch_screen_smoothing():
     """classic 屏幕级平滑应采用 Eye_Touch 的 Kalman + 历史均值。"""
     stabilizer = ScreenGazeStabilizer()
@@ -175,6 +199,22 @@ def test_interaction_launcher_uses_chinese_app_tiles(qapp):
     assert "退出" in titles
 
     overlay.close()
+
+
+def test_gomoku_window_is_large_5x5_ox_board(qapp):
+    window = GomokuWindow()
+    window.resize(900, 700)
+
+    assert window.board_size == 5
+    assert window.win_len == 3
+    assert len(window.board) == 5
+    assert all(len(row) == 5 for row in window.board)
+    assert window._board_pos_from_point(
+        window._board_rect().center().x(),
+        window._board_rect().center().y(),
+    ) == (2, 2)
+
+    window.close()
 
 
 if __name__ == "__main__":

@@ -491,6 +491,7 @@ class TrackingPage(QWidget):
         self._close_launcher_overlay()
         self._close_gomoku_window()
         self._reset_dwell_state()
+        self._stop_tracker_runtime()
 
         if self.cursor_overlay is not None:
             self.cursor_overlay.hide()
@@ -545,19 +546,23 @@ class TrackingPage(QWidget):
             window.close()
 
     def _on_verification_passed(self) -> None:
+        self.verification_window = None
         self._verification_passed = True
         self.verify_status.setText("已通过 / Passed")
         self.verify_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
+        self._stop_tracker_runtime()
         self._restore_cursor_overlay_if_needed()
         self._refresh_stage_controls()
 
     def _on_verification_cancelled(self) -> None:
+        self.verification_window = None
         if self._verification_passed:
             self.verify_status.setText("已通过 / Passed")
             self.verify_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
         else:
             self.verify_status.setText("待验证 / Verification Required")
             self.verify_status.setStyleSheet("color: #FF9800; font-weight: 600;")
+        self._stop_tracker_runtime()
         self._restore_cursor_overlay_if_needed()
         self._refresh_stage_controls()
 
@@ -633,6 +638,21 @@ class TrackingPage(QWidget):
         self.gomoku_window = None
         self._restore_cursor_overlay_if_needed()
         self._refresh_stage_controls()
+
+    def _stop_tracker_runtime(self) -> None:
+        self.update_timer.stop()
+        self.screen_stabilizer.reset()
+        if self.tracker is not None:
+            self.tracker.stop()
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.fps_value.setText("0.0")
+        for label in self.timing_labels.values():
+            label.setText("0.00 ms")
+        self.face_status.setText("未启动 / Not Started")
+        self.face_status.setStyleSheet("color: #888;")
+        self.gaze_status.setText("未启动 / Not Started")
+        self.gaze_status.setStyleSheet("color: #888;")
 
     def _update_tracking_data(self) -> None:
         if self.tracker is None or not self.tracker.is_running():

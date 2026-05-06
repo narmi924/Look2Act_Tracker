@@ -104,8 +104,10 @@ class CalibrationFullscreenWidget(QWidget):
         
         # 校准状态
         self.current_point_index = 0
-        self.sampling_frames = 55 if calibrator.num_points >= 25 else 30
-        self.max_sampling_ticks = self.sampling_frames * 3
+        self.discard_initial_frames = 10 if calibrator.num_points >= 25 else 0
+        self.total_sampling_frames = 55 if calibrator.num_points >= 25 else 30
+        self.sampling_frames = self.total_sampling_frames - self.discard_initial_frames
+        self.max_sampling_ticks = self.total_sampling_frames * 3
         self.min_samples_per_point = min_samples_per_calibration_point(self.sampling_frames)
         self.current_samples: list[tuple[float, float]] = []  # 当前点的采样数据
         self.sampling_ticks = 0
@@ -183,7 +185,12 @@ class CalibrationFullscreenWidget(QWidget):
         result = self.tracker.get_latest_result()
         self.sampling_ticks += 1
         
-        if result is not None and result.valid and result.gaze_point is not None:
+        if (
+            self.sampling_ticks > self.discard_initial_frames
+            and result is not None
+            and result.valid
+            and result.gaze_point is not None
+        ):
             self.current_samples.append(result.gaze_point)
         
         # 检查是否采样完成
@@ -290,7 +297,7 @@ class CalibrationFullscreenWidget(QWidget):
             if self.sampling_timer.isActive():
                 # 显示采样进度
                 progress = len(self.current_samples)
-                text = f"{progress}/{self.sampling_frames} ({self.sampling_ticks}/{self.max_sampling_ticks})"
+                text = f"{progress}/{self.sampling_frames} (skip {self.discard_initial_frames})"
                 painter.drawText(int(point.x - 40), int(point.y + 60), text)
         
         # 绘制进度信息（顶部中央）
