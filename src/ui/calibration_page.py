@@ -104,16 +104,11 @@ class CalibrationFullscreenWidget(QWidget):
         
         # 校准状态
         self.current_point_index = 0
-        self.countdown = 3  # 倒计时秒数
         self.sampling_frames = 55 if calibrator.num_points >= 25 else 30
         self.max_sampling_ticks = self.sampling_frames * 3
         self.min_samples_per_point = min_samples_per_calibration_point(self.sampling_frames)
         self.current_samples: list[tuple[float, float]] = []  # 当前点的采样数据
         self.sampling_ticks = 0
-        
-        # 定时器
-        self.countdown_timer = QTimer()
-        self.countdown_timer.timeout.connect(self._on_countdown_tick)
         
         self.sampling_timer = QTimer()
         self.sampling_timer.timeout.connect(self._on_sampling_tick)
@@ -173,25 +168,8 @@ class CalibrationFullscreenWidget(QWidget):
         # 显示全屏
         self.showFullScreen()
         
-        # 启动第一个点的倒计时
-        self._start_countdown()
-    
-    def _start_countdown(self) -> None:
-        """启动当前校准点的倒计时。"""
-        self.countdown = 3
-        self.countdown_timer.start(1000)  # 每秒触发一次
-        self.update()  # 刷新绘制
-    
-    def _on_countdown_tick(self) -> None:
-        """倒计时定时器回调。"""
-        self.countdown -= 1
-        
-        if self.countdown <= 0:
-            self.countdown_timer.stop()
-            # 倒计时结束，开始采样
-            self._start_sampling()
-        
-        self.update()  # 刷新绘制
+        # 校准点出现后立即采样，避免每点 3 秒等待影响效率。
+        self._start_sampling()
     
     def _start_sampling(self) -> None:
         """开始采样当前校准点的视线数据。"""
@@ -257,8 +235,8 @@ class CalibrationFullscreenWidget(QWidget):
             # 所有点采集完成，执行校准
             self._perform_calibration()
         else:
-            # 继续下一个点
-            self._start_countdown()
+            # 继续下一个点，立即开始采样
+            self._start_sampling()
     
     def _perform_calibration(self) -> None:
         """执行校准拟合。"""
@@ -304,16 +282,12 @@ class CalibrationFullscreenWidget(QWidget):
             painter.setBrush(QColor(255, 255, 255))
             painter.drawEllipse(int(point.x - 5), int(point.y - 5), 10, 10)
             
-            # 绘制倒计时或采样进度
+            # 绘制采样进度
             painter.setPen(QColor(255, 255, 255))
             font = QFont("Arial", 24, QFont.Weight.Bold)
             painter.setFont(font)
             
-            if self.countdown_timer.isActive():
-                # 显示倒计时
-                text = str(self.countdown)
-                painter.drawText(int(point.x - 20), int(point.y + 60), text)
-            elif self.sampling_timer.isActive():
+            if self.sampling_timer.isActive():
                 # 显示采样进度
                 progress = len(self.current_samples)
                 text = f"{progress}/{self.sampling_frames} ({self.sampling_ticks}/{self.max_sampling_ticks})"
@@ -341,7 +315,6 @@ class CalibrationFullscreenWidget(QWidget):
         """处理键盘事件。"""
         if event.key() == Qt.Key.Key_Escape:
             # 用户取消校准，关闭校准模式
-            self.countdown_timer.stop()
             self.sampling_timer.stop()
             if self.tracker is not None:
                 self.tracker.set_calibration_mode(False)
