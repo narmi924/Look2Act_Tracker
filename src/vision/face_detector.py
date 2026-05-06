@@ -366,8 +366,9 @@ class FaceDetector:
         eye_w = max(pts_x) - min(pts_x)
         eye_h = max(pts_y) - min(pts_y)
 
-        # 正方形裁剪，边长取宽高最大值 + 50% padding
-        side = max(eye_w, eye_h) * 1.5
+        # Match the offline EyeCropper/collector crop contract: 50% padding
+        # on each side, i.e. total side length is 2.0x the eye box.
+        side = max(eye_w, eye_h) * 2.0
         side = max(side, 40.0)  # 最小边长
 
         half = side / 2.0
@@ -400,5 +401,9 @@ class FaceDetector:
             )
 
         # resize 到固定尺寸
-        eye_img = cv2.resize(crop, (self.eye_crop_size, self.eye_crop_size))
+        eye_img = cv2.resize(
+            crop,
+            (self.eye_crop_size, self.eye_crop_size),
+            interpolation=cv2.INTER_AREA,
+        )
         return eye_img

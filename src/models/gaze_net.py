@@ -1,4 +1,4 @@
-"""GazeNet 系列模型：视线方向回归 CNN。
+"""GazeNet 系列模型：视线方向/屏幕点回归 CNN。
 
 V1 (GazeNet)：
     4 层 Conv + BN + ReLU + MaxPool → AdaptiveAvgPool → FC → L2 归一化
@@ -10,6 +10,11 @@ V2 (GazeNetV2)：
     输入：左眼 (B, 3, 128, 128) + 右眼 (B, 3, 128, 128) + head_pose (B, 3)
     输出：(B, 3) 单位视线向量
     参数量 < 2.5M
+
+PoG (GazeNetPoG)：
+    双眼共享 CNN 特征提取 + head pose 融合
+    输入同 V2
+    输出：(B, 2) 归一化屏幕坐标 [x, y]，范围 [0, 1]
 """
 
 import torch
@@ -179,3 +184,69 @@ class GazeNetV2(nn.Module):
         # L2 归一化
         out = F.normalize(out, p=2, dim=1)
         return out
+
+
+class GazeNetPoG(nn.Module):
+    """双眼 + head pose 的 Point-of-Gaze 回归模型。
+
+    该模型不预测 3D gaze ray，而是直接预测屏幕归一化坐标。
+    运行时可跳过 ray-plane intersection，用于建立可工作的 ML baseline。
+    """
+
+    def __init__(
+        self,
+        num_channels: list[int] | None = None,
+        head_pose_dim: int = 3,
+        fusion_dim: int = 128,
+        dropout: float = 0.3,
+    ):
+        super().__init__()
+        if num_channels is None:
+            num_channels = [32, 64, 128, 256]
+
+        assert len(num_channels) == 4, "需要恰好 4 层卷积通道配置"
+
+        self.eye_features = nn.Sequential(
+            nn.Conv2d(3, num_channels[0], kernel_size=3, padding=1),
+            nn.BatchNorm2d(num_channels[0]),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+            nn.Conv2d(num_channels[0], num_channels[1], kernel_size=3, padding=1),
+            nn.BatchNorm2d(num_channels[1]),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+            nn.Conv2d(num_channels[1], num_channels[2], kernel_size=3, padding=1),
+            nn.BatchNorm2d(num_channels[2]),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+            nn.Conv2d(num_channels[2], num_channels[3], kernel_size=3, padding=1),
+            nn.BatchNorm2d(num_channels[3]),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+        )
+        self.eye_pool = nn.AdaptiveAvgPool2d(1)
+
+        feat_dim = num_channels[3] * 2 + head_pose_dim
+        self.fusion = nn.Sequential(
+            nn.Linear(feat_dim, fusion_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(fusion_dim, 2),
+            nn.Sigmoid(),
+        )
+
+    def _extract_eye_features(self, eye_img: torch.Tensor) -> torch.Tensor:
+        x = self.eye_features(eye_img)
+        x = self.eye_pool(x)
+        return x.view(x.size(0), -1)
+
+    def forward(
+        self,
+        left_eye: torch.Tensor,
+        right_eye: torch.Tensor,
+        head_pose: torch.Tensor,
+    ) -> torch.Tensor:
+        left_feat = self._extract_eye_features(left_eye)
+        right_feat = self._extract_eye_features(right_eye)
+        fused = torch.cat([left_feat, right_feat, head_pose], dim=1)
+        return self.fusion(fused)

@@ -24,9 +24,10 @@ from src.tracker.pipeline import SystemConfig, TrackerPipeline, TrackerResult
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run finite live tracker diagnostics.")
     parser.add_argument("--config", default="configs/system_config.yaml")
-    parser.add_argument("--backend", choices=["classic", "deep"], default=None)
+    parser.add_argument("--backend", choices=["classic", "deep_pog", "deep"], default=None)
     parser.add_argument("--deep-space", choices=["head", "camera"], default=None)
     parser.add_argument("--deep-pose-input", choices=["live", "zero"], default=None)
+    parser.add_argument("--deep-ray-origin", choices=["face_translation", "zero_origin"], default=None)
     parser.add_argument("--smoother", choices=["kalman", "ema", "none"], default=None)
     parser.add_argument("--frames", type=int, default=300)
     parser.add_argument("--interval", type=float, default=0.2)
@@ -80,6 +81,8 @@ def main() -> int:
         config.deep_gaze_space = args.deep_space
     if args.deep_pose_input is not None:
         config.deep_pose_input = args.deep_pose_input
+    if args.deep_ray_origin is not None:
+        config.deep_ray_origin = args.deep_ray_origin
     if args.smoother is not None:
         config.smoother_type = args.smoother
 
@@ -101,6 +104,7 @@ def main() -> int:
         "[diagnose] starting "
         f"backend={config.normalized_backend} frames={args.frames} "
         f"deep_space={config.deep_gaze_space} pose_input={config.normalized_deep_pose_input} "
+        f"ray_origin={config.normalized_deep_ray_origin} "
         f"smoother={config.normalized_smoother_type} "
         f"calibration={config.calibration_path}"
     )

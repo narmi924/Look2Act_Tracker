@@ -156,12 +156,12 @@ class SettingsPage(QWidget):
     
     config_changed = pyqtSignal(object)  # SystemConfig
     
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: Optional[QWidget] = None, config_path: Path | str | None = None):
         super().__init__(parent)
         
         # 当前配置
         self.config: SystemConfig = SystemConfig()
-        self.config_path = Path("configs/system_config.yaml")
+        self.config_path = Path(config_path) if config_path is not None else Path("configs/system_config.yaml")
         
         # 控件引用
         self.camera_index_spin: Optional[SpinBox] = None
@@ -177,6 +177,8 @@ class SettingsPage(QWidget):
         self.onnx_path_edit: Optional[LineEdit] = None
         self.deep_gaze_space_combo: Optional[ComboBox] = None
         self.deep_pose_input_combo: Optional[ComboBox] = None
+        self.deep_ray_origin_combo: Optional[ComboBox] = None
+        self.deep_eye_input_mode_combo: Optional[ComboBox] = None
         
         self.screen_w_mm_spin: Optional[DoubleSpinBox] = None
         self.screen_h_mm_spin: Optional[DoubleSpinBox] = None
@@ -501,6 +503,36 @@ class SettingsPage(QWidget):
         deep_pose_row.addWidget(deep_pose_hint)
         deep_pose_row.addStretch(1)
         layout.addLayout(deep_pose_row)
+
+        deep_origin_row = QHBoxLayout()
+        deep_origin_label = BodyLabel(tx("Deep 射线原点：", "Ray Origin:"))
+        deep_origin_label.setFixedWidth(200)
+        self.deep_ray_origin_combo = ComboBox()
+        self.deep_ray_origin_combo.addItems(["face_translation", "zero_origin"])
+        self.deep_ray_origin_combo.setCurrentText("face_translation")
+        self.deep_ray_origin_combo.setFixedWidth(150)
+        deep_origin_hint = BodyLabel(tx("用于诊断 runtime 几何原点误差", "Diagnoses runtime ray-origin mismatch"))
+        deep_origin_hint.setStyleSheet("color: #888; font-size: 12px;")
+        deep_origin_row.addWidget(deep_origin_label)
+        deep_origin_row.addWidget(self.deep_ray_origin_combo)
+        deep_origin_row.addWidget(deep_origin_hint)
+        deep_origin_row.addStretch(1)
+        layout.addLayout(deep_origin_row)
+
+        deep_eye_row = QHBoxLayout()
+        deep_eye_label = BodyLabel(tx("Deep 眼部输入：", "Eye Input:"))
+        deep_eye_label.setFixedWidth(200)
+        self.deep_eye_input_mode_combo = ComboBox()
+        self.deep_eye_input_mode_combo.addItems(["normal", "swap", "flip", "swap_flip"])
+        self.deep_eye_input_mode_combo.setCurrentText("normal")
+        self.deep_eye_input_mode_combo.setFixedWidth(150)
+        deep_eye_hint = BodyLabel(tx("用于诊断左右眼顺序和水平镜像契约", "Diagnoses left/right eye order and horizontal mirror contract"))
+        deep_eye_hint.setStyleSheet("color: #888; font-size: 12px;")
+        deep_eye_row.addWidget(deep_eye_label)
+        deep_eye_row.addWidget(self.deep_eye_input_mode_combo)
+        deep_eye_row.addWidget(deep_eye_hint)
+        deep_eye_row.addStretch(1)
+        layout.addLayout(deep_eye_row)
         
         return card
     
@@ -625,10 +657,10 @@ class SettingsPage(QWidget):
         backend_label = BodyLabel(tx("追踪模式：", "Backend:"))
         backend_label.setFixedWidth(200)
         self.backend_combo = ComboBox()
-        self.backend_combo.addItems(["classic", "deep"])
+        self.backend_combo.addItems(["classic", "deep_pog", "deep"])
         self.backend_combo.setCurrentText("classic")
         self.backend_combo.setFixedWidth(150)
-        backend_hint = BodyLabel(tx("classic 用于流畅体验，deep 用于研究模型", "classic is for smooth experience; deep is for research"))
+        backend_hint = BodyLabel(tx("classic 用于体验，deep_pog 用于可演示 ML，deep 用于 3D 研究", "classic for UX; deep_pog for demo ML; deep for 3D research"))
         backend_hint.setStyleSheet("color: #888; font-size: 12px;")
         backend_row.addWidget(backend_label)
         backend_row.addWidget(self.backend_combo)
@@ -754,6 +786,10 @@ class SettingsPage(QWidget):
             self.deep_gaze_space_combo.setCurrentText(self.config.deep_gaze_space)
         if self.deep_pose_input_combo is not None:
             self.deep_pose_input_combo.setCurrentText(self.config.normalized_deep_pose_input)
+        if self.deep_ray_origin_combo is not None:
+            self.deep_ray_origin_combo.setCurrentText(self.config.normalized_deep_ray_origin)
+        if self.deep_eye_input_mode_combo is not None:
+            self.deep_eye_input_mode_combo.setCurrentText(self.config.normalized_deep_eye_input_mode)
         if self.backend_combo is not None:
             self.backend_combo.setCurrentText(self.config.normalized_backend)
         
@@ -822,6 +858,12 @@ class SettingsPage(QWidget):
         if self.deep_pose_input_combo is not None:
             value = self.deep_pose_input_combo.currentText()
             self.config.deep_pose_input = value if value in {"live", "zero"} else "live"
+        if self.deep_ray_origin_combo is not None:
+            value = self.deep_ray_origin_combo.currentText()
+            self.config.deep_ray_origin = value if value in {"face_translation", "zero_origin"} else "face_translation"
+        if self.deep_eye_input_mode_combo is not None:
+            value = self.deep_eye_input_mode_combo.currentText()
+            self.config.deep_eye_input_mode = value if value in {"normal", "swap", "flip", "swap_flip"} else "normal"
         
         # 几何设置
         if self.screen_w_mm_spin is not None:
@@ -911,6 +953,8 @@ class SettingsPage(QWidget):
                     'onnx_path': self.config.onnx_path,
                     'deep_gaze_space': self.config.deep_gaze_space,
                     'deep_pose_input': self.config.deep_pose_input,
+                    'deep_ray_origin': self.config.deep_ray_origin,
+                    'deep_eye_input_mode': self.config.deep_eye_input_mode,
                 },
                 'geometry': {
                     'screen_w_mm': self.config.screen_w_mm,
@@ -919,9 +963,9 @@ class SettingsPage(QWidget):
                     'cam_above_screen_mm': self.config.cam_above_screen_mm,
                 },
                 'calibration': {
-                    'num_points': 25 if self.config.normalized_backend == 'classic' else 9,
+                    'num_points': self.config.effective_calibration_num_points,
                     'save_path': self.config.calibration_path,
-                    'max_residual_px': 300.0,
+                    'max_residual_px': self.config.calibration_max_residual_px,
                 },
                 'smoother': {
                     'type': self.config.smoother_type,

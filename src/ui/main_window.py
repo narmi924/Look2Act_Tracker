@@ -41,9 +41,10 @@ class MainWindow(FluentWindow):
     - 按 Esc 键返回主页（或退出）
     """
     
-    def __init__(self) -> None:
+    def __init__(self, config_path: Path | str | None = None) -> None:
         super().__init__()
         self.setWindowTitle(f"Look2Act Tracker - {tx('视线驱动交互系统', 'Gaze-Driven Interaction System')}")
+        self.config_path = Path(config_path) if config_path is not None else Path("configs/system_config.yaml")
         
         # TrackerPipeline 单例（延迟初始化）
         self.tracker: Optional[TrackerPipeline] = None
@@ -53,8 +54,8 @@ class MainWindow(FluentWindow):
         self.page_home = HomePage()
         self.page_camera = CameraPage()
         self.page_calibration = CalibrationPage()
-        self.page_tracking = TrackingPage()
-        self.page_settings = SettingsPage()
+        self.page_tracking = TrackingPage(config_path=self.config_path)
+        self.page_settings = SettingsPage(config_path=self.config_path)
 
         # 设置 objectName 供 FluentWindow 路由标识
         self.page_home.setObjectName("HomePage")
@@ -90,7 +91,7 @@ class MainWindow(FluentWindow):
         # 读取窗口模式配置（参照 Eye_Touch 的 setup_fullscreen_window）
         window_mode = 'adaptive'  # 默认自适应模式
         try:
-            with open("configs/system_config.yaml", 'r', encoding='utf-8') as f:
+            with self.config_path.open('r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)
                 window_mode = data.get('ui', {}).get('window_mode', 'adaptive')
         except Exception:
@@ -162,11 +163,10 @@ class MainWindow(FluentWindow):
             return True
         
         # 加载系统配置
-        config_path = Path("configs/system_config.yaml")
-        if config_path.exists():
+        if self.config_path.exists():
             try:
-                self.tracker_config = SystemConfig.from_yaml(str(config_path))
-                print(f"[MAIN_WINDOW] 系统配置已加载：{config_path}")
+                self.tracker_config = SystemConfig.from_yaml(str(self.config_path))
+                print(f"[MAIN_WINDOW] 系统配置已加载：{self.config_path}")
             except Exception as e:
                 print(f"[MAIN_WINDOW] 加载配置失败：{e}，使用默认配置")
                 self.tracker_config = SystemConfig()

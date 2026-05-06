@@ -1,0 +1,369 @@
+{
+  "synthetic_projection": {
+    "max_norm_error": 1.1102230246251565e-16,
+    "passes": true
+  },
+  "processed": {
+    "rows": 5018,
+    "pose": {
+      "head_yaw": {
+        "count": 5018,
+        "mean": -7.033636921638712,
+        "std": 14.478338092371756,
+        "min": -32.254415824552154,
+        "p50": -9.642173620103925,
+        "max": 36.76669184031055
+      },
+      "head_pitch": {
+        "count": 5018,
+        "mean": -122.1739976588459,
+        "std": 118.1698453132734,
+        "min": -179.9989743992768,
+        "p50": -172.57914556934395,
+        "max": 179.99953136691977
+      },
+      "head_roll": {
+        "count": 5018,
+        "mean": 7.759647610225273,
+        "std": 37.241948341514096,
+        "min": -179.95291894558272,
+        "p50": 0.5778033028367184,
+        "max": 179.9861998
+      },
+      "abs_gt_90_ratio": {
+        "head_yaw": 0.0,
+        "head_pitch": 0.9998007174172977,
+        "head_roll": 0.045237146273415706
+      }
+    },
+    "gaze_z": {
+      "count": 5018,
+      "mean": 0.9842532129804571,
+      "std": 0.01423658804394861,
+      "min": 0.9068334551405794,
+      "p50": 0.9884760717042322,
+      "max": 0.9994575361105636
+    },
+    "implied_screen_distance_mm": {
+      "count": 5018,
+      "mean": 903.0134631547711,
+      "std": 232.1885035647352,
+      "min": 447.4177135616001,
+      "p50": 925.2821883700917,
+      "max": 1322.5643173499261
+    },
+    "approx_inverse_local_z": {
+      "count": 5018,
+      "mean": -0.8945059354999627,
+      "std": 0.13750382761364913,
+      "min": -0.9996116067534598,
+      "p50": -0.9407650371180025,
+      "max": 0.5458897892111498
+    },
+    "approx_inverse_local_z_negative_ratio": 0.9998007174172977,
+    "approx_rotated_z": {
+      "count": 5018,
+      "mean": -0.9241214592799718,
+      "std": 0.11769065596983311,
+      "min": -0.9999832879073645,
+      "p50": -0.9631474320972258,
+      "max": 0.7848521007745562
+    },
+    "projection_variants": {
+      "camera_space_zero_origin": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 1.0,
+        "mean_pixel_error": 294.3836682077728,
+        "median_pixel_error": 297.6565578637084,
+        "p95_pixel_error": 550.5162306163961,
+        "mean_norm_error": 0.2365677933214066
+      },
+      "camera_space_implied_screen_distance": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 1.0,
+        "mean_pixel_error": 4.9368538754804305e-12,
+        "median_pixel_error": 1.7985612998927536e-13,
+        "p95_pixel_error": 7.946255345065179e-13,
+        "mean_norm_error": 4.540217597566957e-15
+      },
+      "camera_space_face_translation_z500": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 0.0,
+        "mean_pixel_error": 717.2686594819111,
+        "median_pixel_error": 729.1962520023391,
+        "p95_pixel_error": 1098.4246179997053,
+        "mean_norm_error": 0.5763579870902399
+      },
+      "approx_head_rotation_applied": {
+        "valid_ratio": 0.00019928258270227183,
+        "in_screen_ratio": 0.0,
+        "mean_pixel_error": 3058.0761670530874,
+        "median_pixel_error": 3058.0761670530874,
+        "p95_pixel_error": 3058.0761670530874,
+        "mean_norm_error": 2.217212435871802
+      },
+      "approx_inverse_head_local_projected": {
+        "valid_ratio": 0.00019928258270227183,
+        "in_screen_ratio": 0.0,
+        "mean_pixel_error": 3218.314571703828,
+        "median_pixel_error": 3218.314571703828,
+        "p95_pixel_error": 3218.314571703828,
+        "mean_norm_error": 2.073752589588576
+      },
+      "z_flipped_camera_space": {
+        "valid_ratio": 0.0
+      }
+    },
+    "distance_variants": {
+      "fixed_500mm": {
+        "projection": {
+          "valid_ratio": 1.0,
+          "in_screen_ratio": 1.0,
+          "mean_pixel_error": 294.3836682077728,
+          "median_pixel_error": 297.6565578637084,
+          "p95_pixel_error": 550.5162306163961,
+          "mean_norm_error": 0.2365677933214066
+        },
+        "topology": {
+          "available": true,
+          "points": 74,
+          "prediction_extent": {
+            "width": 0.4495152906841598,
+            "height": 0.463662918589431,
+            "area": 0.20842357162919398
+          },
+          "target_extent": {
+            "width": 0.6410506370826011,
+            "height": 0.6410496719775071,
+            "area": 0.4109453006227734
+          },
+          "pred_to_target_area_ratio": 0.5071808129046257,
+          "corr": {
+            "pred_x_vs_target_x": 0.9788025194183664,
+            "pred_y_vs_target_y": 0.8894859936102419,
+            "pred_x_vs_target_y": -0.002448921308853674,
+            "pred_y_vs_target_x": 0.008113918517688676
+          },
+          "monotonic": {
+            "rows_pred_x_increases_with_target_x": 0.95,
+            "cols_pred_y_increases_with_target_y": 0.8852459016393442
+          }
+        }
+      },
+      "fixed_720mm": {
+        "projection": {
+          "valid_ratio": 1.0,
+          "in_screen_ratio": 0.9722997210043842,
+          "mean_pixel_error": 186.5312367837816,
+          "median_pixel_error": 164.5067662994932,
+          "p95_pixel_error": 414.35899621386767,
+          "mean_norm_error": 0.14986069922738002
+        },
+        "topology": {
+          "available": true,
+          "points": 74,
+          "prediction_extent": {
+            "width": 0.64730201858519,
+            "height": 0.6676746027687808,
+            "area": 0.43218711813029664
+          },
+          "target_extent": {
+            "width": 0.6410506370826011,
+            "height": 0.6410496719775071,
+            "area": 0.4109453006227734
+          },
+          "pred_to_target_area_ratio": 1.0516901336390319,
+          "corr": {
+            "pred_x_vs_target_x": 0.9788025194183666,
+            "pred_y_vs_target_y": 0.8894859936102418,
+            "pred_x_vs_target_y": -0.0024489213088536303,
+            "pred_y_vs_target_x": 0.008113918517688657
+          },
+          "monotonic": {
+            "rows_pred_x_increases_with_target_x": 0.95,
+            "cols_pred_y_increases_with_target_y": 0.8852459016393442
+          }
+        }
+      },
+      "fixed_900mm": {
+        "projection": {
+          "valid_ratio": 1.0,
+          "in_screen_ratio": 0.894380231167796,
+          "mean_pixel_error": 171.34694166603362,
+          "median_pixel_error": 113.7069584645389,
+          "p95_pixel_error": 631.0879946132861,
+          "mean_norm_error": 0.13766230686129088
+        },
+        "topology": {
+          "available": true,
+          "points": 74,
+          "prediction_extent": {
+            "width": 0.8091275232314876,
+            "height": 0.8345932534609759,
+            "area": 0.6752923720785886
+          },
+          "target_extent": {
+            "width": 0.6410506370826011,
+            "height": 0.6410496719775071,
+            "area": 0.4109453006227734
+          },
+          "pred_to_target_area_ratio": 1.6432658338109873,
+          "corr": {
+            "pred_x_vs_target_x": 0.9788025194183659,
+            "pred_y_vs_target_y": 0.8894859936102417,
+            "pred_x_vs_target_y": -0.0024489213088536668,
+            "pred_y_vs_target_x": 0.00811391851768861
+          },
+          "monotonic": {
+            "rows_pred_x_increases_with_target_x": 0.95,
+            "cols_pred_y_increases_with_target_y": 0.8852459016393442
+          }
+        }
+      },
+      "dataset_median_distance": {
+        "projection": {
+          "valid_ratio": 1.0,
+          "in_screen_ratio": 0.8826225587883619,
+          "mean_pixel_error": 175.09207978573906,
+          "median_pixel_error": 107.00414854779105,
+          "p95_pixel_error": 666.8777569576015,
+          "mean_norm_error": 0.14066145967444751
+        },
+        "topology": {
+          "available": true,
+          "points": 74,
+          "prediction_extent": {
+            "width": 0.8318569837401145,
+            "height": 0.8580380799569849,
+            "area": 0.7137649691271767
+          },
+          "target_extent": {
+            "width": 0.6410506370826011,
+            "height": 0.6410496719775071,
+            "area": 0.4109453006227734
+          },
+          "pred_to_target_area_ratio": 1.7368855856131962,
+          "corr": {
+            "pred_x_vs_target_x": 0.9788025194183664,
+            "pred_y_vs_target_y": 0.8894859936102419,
+            "pred_x_vs_target_y": -0.0024489213088536256,
+            "pred_y_vs_target_x": 0.008113918517688641
+          },
+          "monotonic": {
+            "rows_pred_x_increases_with_target_x": 0.95,
+            "cols_pred_y_increases_with_target_y": 0.8852459016393442
+          }
+        }
+      },
+      "session_median_distance": {
+        "projection": {
+          "valid_ratio": 1.0,
+          "in_screen_ratio": 0.9762853726584296,
+          "mean_pixel_error": 35.99498316880651,
+          "median_pixel_error": 4.5504901214039295,
+          "p95_pixel_error": 31.3631348668037,
+          "mean_norm_error": 0.02882487130985506
+        },
+        "topology": {
+          "available": true,
+          "points": 74,
+          "prediction_extent": {
+            "width": 0.9576578968671046,
+            "height": 0.7567367913150472,
+            "area": 0.7246949640527292
+          },
+          "target_extent": {
+            "width": 0.6410506370826011,
+            "height": 0.6410496719775071,
+            "area": 0.4109453006227734
+          },
+          "pred_to_target_area_ratio": 1.763482787014425,
+          "corr": {
+            "pred_x_vs_target_x": 0.9922188870449759,
+            "pred_y_vs_target_y": 0.9662683550068986,
+            "pred_x_vs_target_y": -0.0028305743406896156,
+            "pred_y_vs_target_x": 0.0036534641826282653
+          },
+          "monotonic": {
+            "rows_pred_x_increases_with_target_x": 0.9666666666666667,
+            "cols_pred_y_increases_with_target_y": 0.9180327868852459
+          }
+        }
+      },
+      "user_median_distance": {
+        "projection": {
+          "valid_ratio": 1.0,
+          "in_screen_ratio": 0.9762853726584296,
+          "mean_pixel_error": 35.99498316880651,
+          "median_pixel_error": 4.5504901214039295,
+          "p95_pixel_error": 31.3631348668037,
+          "mean_norm_error": 0.02882487130985506
+        },
+        "topology": {
+          "available": true,
+          "points": 74,
+          "prediction_extent": {
+            "width": 0.9576578968671046,
+            "height": 0.7567367913150472,
+            "area": 0.7246949640527292
+          },
+          "target_extent": {
+            "width": 0.6410506370826011,
+            "height": 0.6410496719775071,
+            "area": 0.4109453006227734
+          },
+          "pred_to_target_area_ratio": 1.763482787014425,
+          "corr": {
+            "pred_x_vs_target_x": 0.9922188870449759,
+            "pred_y_vs_target_y": 0.9662683550068986,
+            "pred_x_vs_target_y": -0.0028305743406896156,
+            "pred_y_vs_target_x": 0.0036534641826282653
+          },
+          "monotonic": {
+            "rows_pred_x_increases_with_target_x": 0.9666666666666667,
+            "cols_pred_y_increases_with_target_y": 0.9180327868852459
+          }
+        }
+      },
+      "oracle_implied_distance": {
+        "projection": {
+          "valid_ratio": 1.0,
+          "in_screen_ratio": 1.0,
+          "mean_pixel_error": 4.936769635379542e-12,
+          "median_pixel_error": 1.7985612998927536e-13,
+          "p95_pixel_error": 7.946255345065179e-13,
+          "mean_norm_error": 4.5402329284252896e-15
+        },
+        "topology": {
+          "available": true,
+          "points": 74,
+          "prediction_extent": {
+            "width": 0.6410506370826015,
+            "height": 0.6410496719776483,
+            "area": 0.4109453006228641
+          },
+          "target_extent": {
+            "width": 0.6410506370826011,
+            "height": 0.6410496719775071,
+            "area": 0.4109453006227734
+          },
+          "pred_to_target_area_ratio": 1.0000000000002207,
+          "corr": {
+            "pred_x_vs_target_x": 0.9999999999999998,
+            "pred_y_vs_target_y": 1.0,
+            "pred_x_vs_target_y": -2.753621358876802e-07,
+            "pred_y_vs_target_x": -2.75362135902845e-07
+          },
+          "monotonic": {
+            "rows_pred_x_increases_with_target_x": 1.0,
+            "cols_pred_y_increases_with_target_y": 1.0
+          }
+        }
+      }
+    },
+    "retraining_gate": {
+      "head_local_allowed": false,
+      "reason": "Stored Euler/PnP convention is not proven safe: inverse local z is negative for almost all samples."
+    }
+  }
+}

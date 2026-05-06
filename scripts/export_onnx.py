@@ -18,7 +18,7 @@ import torch
 # 将 src 加入路径
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from models.gaze_net import GazeNet, GazeNetV2
+from models.gaze_net import GazeNet, GazeNetPoG, GazeNetV2
 
 
 def export_to_onnx(
@@ -40,13 +40,20 @@ def export_to_onnx(
         config = checkpoint.get("config", {})
         print(f"  - 模型版本: {model_version}")
         print(f"  - Epoch: {checkpoint.get('epoch', 'N/A')}")
-        print(f"  - Best val angle: {checkpoint.get('best_val_angle', 'N/A')}")
+        print(f"  - Best val metric: {checkpoint.get('best_val_metric', checkpoint.get('best_val_angle', 'N/A'))}")
 
     # 构建模型
     model_cfg = config.get("model", {})
     channels = model_cfg.get("channels", [32, 64, 128, 256])
 
-    if model_version == "v2":
+    if model_version == "pog_v1":
+        model = GazeNetPoG(
+            num_channels=channels,
+            head_pose_dim=model_cfg.get("head_pose_dim", 3),
+            fusion_dim=model_cfg.get("fusion_dim", 128),
+            dropout=model_cfg.get("dropout", 0.3),
+        )
+    elif model_version == "v2":
         model = GazeNetV2(
             num_channels=channels,
             head_pose_dim=model_cfg.get("head_pose_dim", 3),
@@ -66,8 +73,8 @@ def export_to_onnx(
     print(f"\n导出 ONNX 模型: {output_path}")
     print(f"  - Opset version: {opset_version}")
 
-    if model_version == "v2":
-        # V2：三个输入
+    if model_version in {"v2", "pog_v1"}:
+        # V2/PoG：三个输入
         dummy_left = torch.randn(1, 3, 128, 128)
         dummy_right = torch.randn(1, 3, 128, 128)
         dummy_pose = torch.randn(1, 3)
@@ -115,7 +122,7 @@ def export_to_onnx(
 
         session = ort.InferenceSession(output_path, providers=['CPUExecutionProvider'])
 
-        if model_version == "v2":
+        if model_version in {"v2", "pog_v1"}:
             test_left = np.random.randn(1, 3, 128, 128).astype(np.float32)
             test_right = np.random.randn(1, 3, 128, 128).astype(np.float32)
             test_pose = np.random.randn(1, 3).astype(np.float32)

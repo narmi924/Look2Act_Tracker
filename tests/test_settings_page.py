@@ -9,6 +9,7 @@ import pytest
 import yaml
 import numpy as np
 
+from main import parse_args, validate_config_path
 from src.tracker.pipeline import SystemConfig
 from src.ui.settings_page import (
     detect_supported_camera_resolutions,
@@ -32,8 +33,11 @@ def test_system_config_default_values():
     assert config.use_onnx is False
     assert config.normalized_backend == "classic"
     assert config.calibration_path == "calibration_classic.json"
+    assert config.effective_calibration_num_points == 25
+    assert config.effective_calibration_method == "polynomial"
     assert config.deep_gaze_space == "head"
     assert config.normalized_deep_pose_input == "live"
+    assert config.normalized_deep_eye_input_mode == "normal"
     assert config.normalized_smoother_type == "kalman"
     assert config.screen_w_mm == 344.0
     assert config.screen_h_mm == 194.0
@@ -44,13 +48,22 @@ def test_system_config_default_values():
 def test_system_config_backend_paths():
     """测试 tracker backend 与校准文件路径分离。"""
     classic = SystemConfig(tracker_backend="classic")
+    deep_pog = SystemConfig(tracker_backend="deep_pog")
     deep = SystemConfig(tracker_backend="deep")
+    deep_25 = SystemConfig(tracker_backend="deep", calibration_num_points=25, calibration_save_path="custom_deep.json")
     unknown = SystemConfig(tracker_backend="bad")
 
     assert classic.normalized_backend == "classic"
     assert classic.calibration_path == "calibration_classic.json"
+    assert deep_pog.normalized_backend == "deep_pog"
+    assert deep_pog.calibration_path == "calibration_deep_pog.json"
     assert deep.normalized_backend == "deep"
     assert deep.calibration_path == "calibration_deep.json"
+    assert deep.effective_calibration_num_points == 9
+    assert deep.effective_calibration_method == "affine"
+    assert deep_25.calibration_path == "custom_deep.json"
+    assert deep_25.effective_calibration_num_points == 25
+    assert deep_25.effective_calibration_method == "polynomial"
     assert unknown.normalized_backend == "classic"
     assert unknown.calibration_path == "calibration_classic.json"
 
@@ -61,6 +74,29 @@ def test_system_config_smoother_type_normalization():
     assert SystemConfig(smoother_type="ema").normalized_smoother_type == "ema"
     assert SystemConfig(smoother_type="none").normalized_smoother_type == "none"
     assert SystemConfig(smoother_type="bad").normalized_smoother_type == "kalman"
+
+
+def test_main_config_argument_selects_experiment_yaml():
+    args = parse_args(["--config", "configs/experiments/system_deep_camera_zero_720.yaml"])
+
+    assert args.config == "configs/experiments/system_deep_camera_zero_720.yaml"
+
+
+def test_startup_config_validation_rejects_bash_escaped_partial_file(tmp_path):
+    bad_config = tmp_path / "configsexperimentssystem_deep_camera_zero_720.yaml"
+    bad_config.write_text("ui:\n  language: zh\n", encoding="utf-8")
+
+    ok, message = validate_config_path(bad_config)
+
+    assert ok is False
+    assert "配置文件不完整" in message
+
+
+def test_startup_config_validation_accepts_experiment_yaml():
+    ok, message = validate_config_path(Path("configs/experiments/system_deep_camera_zero_720.yaml"))
+
+    assert ok is True
+    assert message == ""
 
 
 def test_resolution_format_parse_and_sort():
@@ -122,6 +158,13 @@ def test_system_config_deep_pose_input_normalization():
     assert SystemConfig(deep_pose_input="bad").normalized_deep_pose_input == "live"
 
 
+def test_system_config_deep_ray_origin_normalization():
+    """测试 deep ray origin 归一化。"""
+    assert SystemConfig(deep_ray_origin="face_translation").normalized_deep_ray_origin == "face_translation"
+    assert SystemConfig(deep_ray_origin="zero_origin").normalized_deep_ray_origin == "zero_origin"
+    assert SystemConfig(deep_ray_origin="bad").normalized_deep_ray_origin == "face_translation"
+
+
 def test_system_config_from_yaml():
     """测试从 YAML 文件加载配置。"""
     # 创建临时 YAML 文件
@@ -144,10 +187,17 @@ def test_system_config_from_yaml():
             'onnx_path': 'models/custom.onnx',
             'deep_gaze_space': 'camera',
             'deep_pose_input': 'zero',
+            'deep_ray_origin': 'zero_origin',
+            'deep_eye_input_mode': 'swap_flip',
         },
         'geometry': {
             'screen_w_mm': 400.0,
             'screen_h_mm': 250.0,
+        },
+        'calibration': {
+            'num_points': 25,
+            'save_path': 'calibration_deep.json',
+            'max_residual_px': 240.0,
         },
         'smoother': {
             'alpha': 0.5,
@@ -179,6 +229,11 @@ def test_system_config_from_yaml():
         assert config.onnx_path == 'models/custom.onnx'
         assert config.deep_gaze_space == 'camera'
         assert config.deep_pose_input == 'zero'
+        assert config.deep_ray_origin == 'zero_origin'
+        assert config.normalized_deep_eye_input_mode == 'swap_flip'
+        assert config.calibration_num_points == 25
+        assert config.calibration_path == 'calibration_deep.json'
+        assert config.calibration_max_residual_px == 240.0
         
         # 验证几何配置
         assert config.screen_w_mm == 400.0
@@ -209,6 +264,7 @@ def test_system_config_yaml_round_trip():
         use_onnx=False,
         deep_gaze_space='camera',
         deep_pose_input='zero',
+        deep_ray_origin='zero_origin',
         screen_w_mm=500.0,
         screen_h_mm=300.0,
         smoother_alpha=0.7,
@@ -236,6 +292,7 @@ def test_system_config_yaml_round_trip():
             'onnx_path': original_config.onnx_path,
             'deep_gaze_space': original_config.deep_gaze_space,
             'deep_pose_input': original_config.deep_pose_input,
+            'deep_ray_origin': original_config.deep_ray_origin,
         },
         'geometry': {
             'screen_w_mm': original_config.screen_w_mm,
@@ -269,6 +326,7 @@ def test_system_config_yaml_round_trip():
         assert loaded_config.use_onnx == original_config.use_onnx
         assert loaded_config.deep_gaze_space == original_config.deep_gaze_space
         assert loaded_config.deep_pose_input == original_config.deep_pose_input
+        assert loaded_config.deep_ray_origin == original_config.deep_ray_origin
         assert loaded_config.screen_w_mm == original_config.screen_w_mm
         assert loaded_config.screen_h_mm == original_config.screen_h_mm
         assert loaded_config.smoother_alpha == original_config.smoother_alpha

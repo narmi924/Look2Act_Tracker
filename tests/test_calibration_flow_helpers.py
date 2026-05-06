@@ -1,7 +1,8 @@
-from src.tracker.pipeline import TrackerResult
+from src.tracker.pipeline import SystemConfig, TrackerResult
 from src.ui.calibration_page import (
     CalibrationPage,
     CalibrationFullscreenWidget,
+    calibration_module_for_config,
     calibration_path_for_backend,
     min_samples_per_calibration_point,
     min_valid_points_for_calibration,
@@ -48,6 +49,7 @@ class FakeCalibrator:
 
 def test_calibration_path_is_backend_specific():
     assert calibration_path_for_backend("classic").name == "calibration_classic.json"
+    assert calibration_path_for_backend("deep_pog").name == "calibration_deep_pog.json"
     assert calibration_path_for_backend("deep").name == "calibration_deep.json"
     assert calibration_path_for_backend("unknown").name == "calibration_classic.json"
 
@@ -61,6 +63,19 @@ def test_min_valid_points_for_calibration():
 def test_min_samples_per_calibration_point():
     assert min_samples_per_calibration_point(45) == 15
     assert min_samples_per_calibration_point(12) == 6
+
+
+def test_deep_experiment_config_uses_25_point_polynomial_calibration():
+    config = SystemConfig(
+        tracker_backend="deep",
+        calibration_num_points=25,
+        calibration_save_path="calibration_deep.json",
+    )
+
+    calibrator = calibration_module_for_config(config)
+
+    assert calibrator.num_points == 25
+    assert calibrator.method.value == "polynomial"
 
 
 def test_calibration_finished_stays_on_result_actions():
@@ -117,3 +132,34 @@ def test_calibration_sampling_discards_initial_transition_frames():
     widget._on_sampling_tick()
 
     assert widget.current_samples == [(0.25, 0.5)]
+
+
+def test_calibration_sampling_prefers_raw_point_over_smoothed_point():
+    class FakeTracker:
+        def get_latest_result(self):
+            return TrackerResult(
+                gaze_point=(900.0, 900.0),
+                raw_point=(100.0, 200.0),
+                valid=True,
+                fps=30.0,
+                face_detected=True,
+                backend="deep",
+            )
+
+    class FakeTimer:
+        def stop(self):
+            pass
+
+    widget = CalibrationFullscreenWidget.__new__(CalibrationFullscreenWidget)
+    widget.tracker = FakeTracker()
+    widget.current_samples = []
+    widget.sampling_ticks = 10
+    widget.discard_initial_frames = 10
+    widget.sampling_frames = 45
+    widget.max_sampling_ticks = 165
+    widget.sampling_timer = FakeTimer()
+    widget.update = lambda: None
+
+    widget._on_sampling_tick()
+
+    assert widget.current_samples == [(100.0, 200.0)]

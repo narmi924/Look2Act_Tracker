@@ -25,7 +25,7 @@ import yaml
 # 将 src 加入路径
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from models.gaze_net import GazeNet, GazeNetV2
+from models.gaze_net import GazeNet, GazeNetPoG, GazeNetV2
 from models.losses import angular_loss
 from data.dataset import GazeDataset
 
@@ -48,7 +48,15 @@ def build_model(config: dict) -> nn.Module:
     channels = model_cfg.get("channels", [32, 64, 128, 256])
     version = model_cfg.get("version", "v1")
 
-    if version == "v2":
+    if version == "pog_v1":
+        model = GazeNetPoG(
+            num_channels=channels,
+            head_pose_dim=model_cfg.get("head_pose_dim", 3),
+            fusion_dim=model_cfg.get("fusion_dim", 128),
+            dropout=model_cfg.get("dropout", 0.3),
+        )
+        logger.info("模型: GazeNetPoG (双眼 + head pose -> 2D PoG)")
+    elif version == "v2":
         model = GazeNetV2(
             num_channels=channels,
             head_pose_dim=model_cfg.get("head_pose_dim", 3),
@@ -99,6 +107,8 @@ def build_scheduler(optimizer: torch.optim.Optimizer, config: dict):
 def load_split_data(
     processed_dir: Path, split: str, augment: bool = False,
     model_version: str = "v2",
+    target_mode: str = "gaze3d",
+    head_pose_mode: str = "stored",
 ) -> GazeDataset | None:
     """加载指定划分的数据集。"""
     split_dir = processed_dir / split
@@ -112,8 +122,29 @@ def load_split_data(
     logger.info(f"{split} 数据: {len(df)} 样本")
     return GazeDataset(
         df, image_root=split_dir, augment=augment,
-        model_version=model_version,
+        model_version="v2" if model_version == "pog_v1" else model_version,
+        target_mode=target_mode,
+        head_pose_mode=head_pose_mode,
     )
+
+
+def target_mode_for_model(model_version: str) -> str:
+    """Return the dataset target mode for a model version."""
+    return "pog2d" if model_version == "pog_v1" else "gaze3d"
+
+
+def target_key_for_mode(target_mode: str) -> str:
+    return "pog" if target_mode == "pog2d" else "gaze"
+
+
+def compute_training_loss(
+    preds: torch.Tensor,
+    targets: torch.Tensor,
+    target_mode: str,
+) -> torch.Tensor:
+    if target_mode == "pog2d":
+        return nn.functional.smooth_l1_loss(preds, targets)
+    return angular_loss(preds, targets)
 
 
 def train_one_epoch(
@@ -122,6 +153,7 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     model_version: str = "v2",
+    target_mode: str = "gaze3d",
 ) -> float:
     """训练一个 epoch，返回平均损失。"""
     model.train()
@@ -129,11 +161,11 @@ def train_one_epoch(
     num_batches = 0
 
     for batch in loader:
-        gaze_targets = batch["gaze"].to(device)
+        targets = batch[target_key_for_mode(target_mode)].to(device)
 
         optimizer.zero_grad()
 
-        if model_version == "v2":
+        if model_version in {"v2", "pog_v1"}:
             left_eye = batch["left_eye"].to(device)
             right_eye = batch["right_eye"].to(device)
             head_pose = batch["head_pose"].to(device)
@@ -142,7 +174,7 @@ def train_one_epoch(
             eye_imgs = batch["eye_img"].to(device)
             preds = model(eye_imgs)
 
-        loss = angular_loss(preds, gaze_targets)
+        loss = compute_training_loss(preds, targets, target_mode)
         loss.backward()
         optimizer.step()
 
@@ -158,17 +190,23 @@ def validate(
     loader: DataLoader,
     device: torch.device,
     model_version: str = "v2",
+    target_mode: str = "gaze3d",
+    screen_w: int = 1920,
+    screen_h: int = 1080,
 ) -> tuple[float, float]:
-    """在验证集上评估，返回 (平均损失, 平均角度误差/度)。"""
+    """在验证集上评估，返回 (平均损失, 主要指标)。
+
+    3D gaze 模式的主要指标是角度误差（度），PoG 模式是像素误差。
+    """
     model.eval()
     total_loss = 0.0
-    total_angle_deg = 0.0
+    total_metric = 0.0
     num_batches = 0
 
     for batch in loader:
-        gaze_targets = batch["gaze"].to(device)
+        targets = batch[target_key_for_mode(target_mode)].to(device)
 
-        if model_version == "v2":
+        if model_version in {"v2", "pog_v1"}:
             left_eye = batch["left_eye"].to(device)
             right_eye = batch["right_eye"].to(device)
             head_pose = batch["head_pose"].to(device)
@@ -177,16 +215,21 @@ def validate(
             eye_imgs = batch["eye_img"].to(device)
             preds = model(eye_imgs)
 
-        loss = angular_loss(preds, gaze_targets)
-        angle_deg = np.degrees(loss.item())
+        loss = compute_training_loss(preds, targets, target_mode)
+        if target_mode == "pog2d":
+            dx = (preds[:, 0] - targets[:, 0]) * screen_w
+            dy = (preds[:, 1] - targets[:, 1]) * screen_h
+            metric = torch.sqrt(dx * dx + dy * dy).mean().item()
+        else:
+            metric = np.degrees(loss.item())
 
         total_loss += loss.item()
-        total_angle_deg += angle_deg
+        total_metric += metric
         num_batches += 1
 
     avg_loss = total_loss / max(num_batches, 1)
-    avg_angle = total_angle_deg / max(num_batches, 1)
-    return avg_loss, avg_angle
+    avg_metric = total_metric / max(num_batches, 1)
+    return avg_loss, avg_metric
 
 
 def main():
@@ -210,6 +253,9 @@ def main():
     log_cfg = config.get("logging", {})
 
     model_version = model_cfg.get("version", "v1")
+    target_mode = data_cfg.get("target_mode", target_mode_for_model(model_version))
+    head_pose_mode = data_cfg.get("head_pose_mode", "stored")
+    metric_name = "val_pixel_error_px" if target_mode == "pog2d" else "val_angle_error"
 
     # 设备配置
     device_name = train_cfg.get("device", "cpu")
@@ -254,16 +300,16 @@ def main():
 
     # 恢复训练
     start_epoch = 0
-    best_val_angle = float("inf")
+    best_val_metric = float("inf")
     if args.resume and Path(args.resume).exists():
         ckpt = torch.load(args.resume, map_location=device, weights_only=False)
         model.load_state_dict(ckpt["model_state_dict"])
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         start_epoch = ckpt.get("epoch", 0) + 1
-        best_val_angle = ckpt.get("best_val_angle", float("inf"))
+        best_val_metric = ckpt.get("best_val_metric", ckpt.get("best_val_angle", float("inf")))
         logger.info(
             f"从 epoch {start_epoch} 恢复训练，"
-            f"最佳验证角度误差: {best_val_angle:.2f}°"
+            f"最佳验证指标: {best_val_metric:.2f}"
         )
 
     # 加载数据
@@ -274,9 +320,11 @@ def main():
 
     train_ds = load_split_data(
         processed_dir, "train", augment=augment, model_version=model_version,
+        target_mode=target_mode, head_pose_mode=head_pose_mode,
     )
     val_ds = load_split_data(
         processed_dir, "val", augment=False, model_version=model_version,
+        target_mode=target_mode, head_pose_mode=head_pose_mode,
     )
 
     if train_ds is None:
@@ -308,7 +356,7 @@ def main():
     log_csv_path = log_dir / "training_log.csv"
     csv_file = open(log_csv_path, "w", newline="", encoding="utf-8")
     csv_writer = csv.writer(csv_file)
-    csv_writer.writerow(["epoch", "train_loss", "val_loss", "val_angle_error"])
+    csv_writer.writerow(["epoch", "train_loss", "val_loss", metric_name])
 
     logger.info(f"开始训练: {epochs} epochs, batch_size={batch_size}")
 
@@ -317,15 +365,15 @@ def main():
         t0 = time.time()
 
         train_loss = train_one_epoch(
-            model, train_loader, optimizer, device, model_version,
+            model, train_loader, optimizer, device, model_version, target_mode,
         )
 
         # 验证
         val_loss = 0.0
-        val_angle = 0.0
+        val_metric = 0.0
         if val_loader is not None:
-            val_loss, val_angle = validate(
-                model, val_loader, device, model_version,
+            val_loss, val_metric = validate(
+                model, val_loader, device, model_version, target_mode,
             )
 
         # 学习率调度
@@ -341,7 +389,7 @@ def main():
                 f"Epoch {epoch+1}/{epochs} | "
                 f"train_loss={train_loss:.4f} | "
                 f"val_loss={val_loss:.4f} | "
-                f"val_angle={val_angle:.2f}° | "
+                f"{metric_name}={val_metric:.2f} | "
                 f"lr={lr:.6f} | "
                 f"time={elapsed:.1f}s"
             )
@@ -351,25 +399,28 @@ def main():
             epoch + 1,
             f"{train_loss:.6f}",
             f"{val_loss:.6f}",
-            f"{val_angle:.4f}",
+            f"{val_metric:.4f}",
         ])
         csv_file.flush()
 
         # 保存最优模型
-        if val_angle < best_val_angle:
-            best_val_angle = val_angle
+        if val_metric < best_val_metric:
+            best_val_metric = val_metric
             best_path = ckpt_dir / "best_model.pth"
             torch.save({
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
-                "best_val_angle": best_val_angle,
+                "best_val_angle": best_val_metric if target_mode == "gaze3d" else None,
+                "best_val_metric": best_val_metric,
+                "target_mode": target_mode,
+                "metric_name": metric_name,
                 "config": config,
                 "model_version": model_version,
             }, best_path)
             logger.info(
                 f"保存最优模型: {best_path} "
-                f"(val_angle={best_val_angle:.2f}°)"
+                f"({metric_name}={best_val_metric:.2f})"
             )
 
     csv_file.close()
@@ -380,12 +431,15 @@ def main():
         "epoch": epochs - 1,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
-        "best_val_angle": best_val_angle,
+        "best_val_angle": best_val_metric if target_mode == "gaze3d" else None,
+        "best_val_metric": best_val_metric,
+        "target_mode": target_mode,
+        "metric_name": metric_name,
         "config": config,
         "model_version": model_version,
     }, final_path)
 
-    logger.info(f"训练完成。最佳验证角度误差: {best_val_angle:.2f}°")
+    logger.info(f"训练完成。最佳验证指标 {metric_name}: {best_val_metric:.2f}")
     logger.info(f"训练日志: {log_csv_path}")
     logger.info(f"最优模型: {ckpt_dir / 'best_model.pth'}")
     logger.info(f"最终模型: {final_path}")
