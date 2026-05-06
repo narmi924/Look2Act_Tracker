@@ -1,0 +1,44 @@
+# 10 epoch smoke experiment: direct PoG with linear output and ordinary point regression.
+model:
+  name: "GazeNetPoG"
+  version: "pog_v1"
+  channels: [32, 64, 128, 256]
+  input_size: 128
+  output_dim: 2
+  head_pose_dim: 3
+  fusion_dim: 128
+  dropout: 0.3
+  output_activation: "linear"
+
+loss:
+  topology_weight: 0.0
+  topology_epsilon: 0.03
+  topology_margin: 0.01
+
+training:
+  batch_size: 64
+  learning_rate: 0.0007
+  epochs: 10
+  optimizer: "Adam"
+  scheduler: "CosineAnnealingLR"
+  weight_decay: 0.0001
+  device: "xpu"
+  use_ipex: true
+
+data:
+  dataset_raw_dir: "dataset_raw"
+  dataset_processed_dir: "dataset_processed"
+  target_mode: "pog2d"
+  head_pose_mode: "zero"
+  balanced_targets: true
+  target_balance_decimals: 4
+  augmentation: true
+  num_workers: 4
+
+checkpoint:
+  save_dir: "checkpoints/experiments/deep_pog_linear_base_e10"
+  save_best_only: true
+
+logging:
+  log_dir: "logs/experiments/deep_pog_linear_base_e10"
+  log_interval: 1
