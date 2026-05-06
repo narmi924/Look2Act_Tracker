@@ -67,6 +67,10 @@ class TrackerResult:
 @dataclass
 class SystemConfig:
     """系统配置。"""
+    # 界面配置
+    language: str = "bilingual"
+    window_mode: str = "adaptive"  # "fullscreen" 或 "adaptive"
+
     # 摄像头配置
     camera_index: int = 0
     camera_width: int = 640
@@ -94,9 +98,6 @@ class SystemConfig:
     screen_distance_mm: float = 500.0
     cam_above_screen_mm: float = 5.0
     
-    # 界面配置
-    window_mode: str = "adaptive"  # "fullscreen" 或 "adaptive"
-    
     # 平滑配置
     smoother_alpha: float = 0.3
     smoother_type: str = "kalman"  # classic 默认 Kalman，deep 默认使用 EMA
@@ -111,6 +112,7 @@ class SystemConfig:
             data = yaml.safe_load(f)
         
         return cls(
+            language=data.get('ui', {}).get('language', 'bilingual'),
             camera_index=data.get('camera', {}).get('index', 0),
             camera_width=data.get('camera', {}).get('width', 640),
             camera_height=data.get('camera', {}).get('height', 480),

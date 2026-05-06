@@ -11,6 +11,8 @@ import cv2
 import numpy as np
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
+from src.ui.i18n import tx
+
 
 @dataclass(frozen=True)
 class Resolution:
@@ -52,7 +54,7 @@ class _CaptureWorker(QObject):
 
         cap = cv2.VideoCapture(self._camera_index, cv2.CAP_DSHOW)
         if not cap.isOpened():
-            msg = f"摄像头打开失败 / Failed to open camera: index={self._camera_index}"
+            msg = tx(f"摄像头打开失败：index={self._camera_index}", f"Failed to open camera: index={self._camera_index}")
             print(f"[CAMERA] {msg}")
             try:
                 self.error.emit(msg)
@@ -67,7 +69,7 @@ class _CaptureWorker(QObject):
         while self._running:
             ok, frame = cap.read()
             if not ok or frame is None:
-                err = "读取帧失败 / Failed to read frame"
+                err = tx("读取帧失败", "Failed to read frame")
                 print(f"[CAMERA] {err}")
                 try:
                     self.error.emit(err)

@@ -32,6 +32,7 @@ from qfluentwidgets import BodyLabel, CardWidget, PrimaryPushButton, PushButton
 
 from src.ui.camera_stream import CameraStream, Resolution
 from src.ui.fluent_theme import PALETTE
+from src.ui.i18n import tx, tx_button
 from src.vision.face_detector import FaceDetector
 
 
@@ -83,15 +84,15 @@ class CameraPage(QWidget):
     def _init_ui(self) -> None:
         """初始化 UI 布局。"""
         # 标题
-        title = QLabel("摄像头预览 / Camera Preview")
+        title = QLabel(tx("摄像头预览", "Camera Preview"))
         title.setStyleSheet("font-size: 32px; font-weight: 900;")
         
         # 控制按钮
-        self.start_btn = PrimaryPushButton("启动预览\nStart Preview")
+        self.start_btn = PrimaryPushButton(tx_button("启动预览", "Start Preview"))
         self.start_btn.setFixedSize(160, 60)
         self.start_btn.clicked.connect(self._handle_start)  # type: ignore[arg-type]
         
-        self.stop_btn = PushButton("停止预览\nStop Preview")
+        self.stop_btn = PushButton(tx_button("停止预览", "Stop Preview"))
         self.stop_btn.setFixedSize(160, 60)
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self._handle_stop)  # type: ignore[arg-type]
@@ -105,7 +106,7 @@ class CameraPage(QWidget):
         top_bar.addWidget(self.stop_btn)
         
         # 预览窗口
-        self.preview_label = QLabel("点击启动预览开始\nClick Start Preview to begin")
+        self.preview_label = QLabel(tx_button("点击启动预览开始", "Click Start Preview to begin"))
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.preview_label.setMinimumSize(960, 540)
@@ -129,9 +130,9 @@ class CameraPage(QWidget):
         self.fps_value.setStyleSheet(f"font-weight: 900; color: {PALETTE['accent']};")
         
         # 检测状态
-        detect_label = BodyLabel("人脸检测 / Face Detection:")
+        detect_label = BodyLabel(tx("人脸检测：", "Face Detection:"))
         detect_label.setStyleSheet("font-weight: 600;")
-        self.detect_value = BodyLabel("未启动 / Not Started")
+        self.detect_value = BodyLabel(tx("未启动", "Not Started"))
         
         # 错误信息
         self.error_label = BodyLabel("")
@@ -157,7 +158,7 @@ class CameraPage(QWidget):
         """启动摄像头预览。"""
         try:
             self.error_label.setText("")
-            self.preview_label.setText("正在启动摄像头...\nStarting camera...")
+            self.preview_label.setText(tx_button("正在启动摄像头...", "Starting camera..."))
             
             # 初始化人脸检测器
             if self._detector is None:
@@ -182,9 +183,9 @@ class CameraPage(QWidget):
             print(f"[CAMERA_PAGE] 摄像头预览已启动: camera_index={self._camera_index}, resolution={self._resolution.label()}")
             
         except Exception as e:
-            error_msg = f"启动失败 / Start failed: {str(e)}"
+            error_msg = tx(f"启动失败：{str(e)}", f"Start failed: {str(e)}")
             self.error_label.setText(error_msg)
-            self.preview_label.setText("启动失败\nStart Failed")
+            self.preview_label.setText(tx_button("启动失败", "Start Failed"))
             print(f"[CAMERA_PAGE] 启动错误: {e!r}")
 
     def _handle_stop(self) -> None:
@@ -196,16 +197,16 @@ class CameraPage(QWidget):
         self.stop_btn.setEnabled(False)
         
         # 重置显示
-        self.preview_label.setText("预览已停止\nPreview Stopped")
+        self.preview_label.setText(tx_button("预览已停止", "Preview Stopped"))
         self.fps_value.setText("0.0")
-        self.detect_value.setText("未启动 / Not Started")
+        self.detect_value.setText(tx("未启动", "Not Started"))
         
         print("[CAMERA_PAGE] 摄像头预览已停止")
 
     def _on_error(self, msg: str) -> None:
         """处理摄像头错误。"""
-        self.error_label.setText(f"错误 / Error: {msg}")
-        self.detect_value.setText("错误 / Error")
+        self.error_label.setText(tx(f"错误：{msg}", f"Error: {msg}"))
+        self.detect_value.setText(tx("错误", "Error"))
         print(f"[CAMERA_PAGE] 摄像头错误: {msg}")
 
     def _on_frame(self, frame_bgr: object) -> None:
@@ -236,7 +237,7 @@ class CameraPage(QWidget):
                 result = self._detector.detect(frame_bgr)
                 
                 if result.detected:
-                    self.detect_value.setText("检测到 / Detected")
+                    self.detect_value.setText(tx("检测到", "Detected"))
                     
                     # 绘制人脸边界框
                     if result.face_bbox is not None:
@@ -260,11 +261,11 @@ class CameraPage(QWidget):
                             
                             cv2.circle(frame_bgr, (int(px), int(py)), 2, color, -1)
                 else:
-                    self.detect_value.setText("未检测到 / Not Detected")
+                    self.detect_value.setText(tx("未检测到", "Not Detected"))
                     
             except Exception as e:
                 print(f"[CAMERA_PAGE] 人脸检测错误: {e!r}")
-                self.detect_value.setText("检测错误 / Detection Error")
+                self.detect_value.setText(tx("检测错误", "Detection Error"))
         
         # 水平镜像翻转（用户习惯）
         frame_bgr_mirrored = cv2.flip(frame_bgr, 1)
