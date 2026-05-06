@@ -116,4 +116,6 @@ python main.py --config configs\experiments\system_deep_camera_zero_900.yaml
 
 2026-05-06 再更新：`swap` 在 1920x1080 摄像头配置下进一步改善，拓扑约为 `corr_x=0.855`、`corr_y=0.909`、`mono_x=0.85`、`mono_y=0.95`。`swap_live` 在轻微转头时仍会压缩上下方向，说明当前 live head pose 输入会破坏 runtime topology，不宜作为默认演示配置。另发现 EMA 配置会在校准阶段污染采样，因此已修复为：校准模式永远采 `raw_point`，pipeline 在校准模式下跳过 smoother；平滑只用于验证/交互。
 
+2026-05-06 最终阶段更新：修复校准采 raw 点后，`system_deep_camera_zero_720_pose_zero_swap_ema.yaml` 达到 residual 152.33 px，验证阶段可用。阶段总结见 `docs/research/3d_gaze_to_screen_stage_summary_2026-05-06.md`。此时可以认为 3D runtime 契约修复第一阶段完成：现有模型在正确 runtime 契约下能输出可校准的屏幕注视点。
+
 如果 720 mm 的实时 raw topology 明显优于旧 deep 链路，再进入 10 epoch smoke 重训；否则先继续排查实时 domain gap、camera crop、screen distance 估计和输入归一化。
