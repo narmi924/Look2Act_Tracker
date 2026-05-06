@@ -15,6 +15,7 @@ Training uses Intel XPU + Intel Extension for PyTorch (IPEX). Runtime inference 
 
 - All Look2Act Python commands must run in the `gaze-env` conda environment.
 - Prefer `conda run --no-capture-output -n gaze-env python ...` for Codex-run checks so output is visible and dependencies match the project.
+- The user normally runs commands in Git Bash, not PowerShell. User-facing commands should prefer forward slashes (`configs/experiments/foo.yaml`) or quoted Windows paths. Avoid backslashes in Git Bash examples because `\` is treated as an escape character.
 - Do not start long training, LOO evaluation, or long-running GUI sessions from Codex.
 - When training or long evaluation is required, provide the exact command and ask the user to run it in a separate terminal.
 - Common user-run commands live in `bin\常用命令.txt`.
@@ -37,7 +38,7 @@ Training uses Intel XPU + Intel Extension for PyTorch (IPEX). Runtime inference 
 
 Use these only for short checks unless the user asks otherwise:
 
-```powershell
+```bash
 conda run --no-capture-output -n gaze-env python -m pytest tests/test_calibration.py tests/test_smoother.py tests/test_tracker_pipeline.py
 conda run --no-capture-output -n gaze-env python -m pytest tests/test_classic_tracker.py
 conda run --no-capture-output -n gaze-env python scripts/audit_gaze_labels.py
@@ -49,7 +50,7 @@ conda run --no-capture-output -n gaze-env python scripts/analyze_tracker_diagnos
 
 Long commands for the user to run manually:
 
-```powershell
+```bash
 conda activate gaze-env
 python scripts/preprocess.py
 python scripts/train.py --config configs/train_config.yaml

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QDialog, QHBoxLayout, QVBoxLayout
 from qfluentwidgets import PrimaryPushButton, PushButton
@@ -9,9 +11,10 @@ from src.ui.i18n import save_language_config
 
 
 class LanguageSelectionDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, config_path: Path | str | None = None):
         super().__init__(parent)
         self.selected_language: str | None = None
+        self.config_path = Path(config_path) if config_path is not None else None
         self.setWindowTitle("")
         self.setModal(True)
         self.setFixedSize(560, 180)
@@ -57,7 +60,10 @@ class LanguageSelectionDialog(QDialog):
 
     def _select(self, language: str) -> None:
         self.selected_language = language
-        save_language_config(language)
+        if self.config_path is not None:
+            save_language_config(language, self.config_path)
+        else:
+            save_language_config(language)
         self.accept()
 
     def showEvent(self, event) -> None:

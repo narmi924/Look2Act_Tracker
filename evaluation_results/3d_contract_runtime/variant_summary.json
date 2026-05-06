@@ -1,0 +1,414 @@
+{
+  "num_samples": 1390,
+  "implied_screen_distance_mm": {
+    "median": 718.5053834240002,
+    "mean": 923.0981872701575,
+    "min": 500.0000000000001,
+    "max": 1835.4654664036486
+  },
+  "variants": {
+    "camera_no_rotation+zero_origin+fixed_500mm": {
+      "gaze_space": "camera_no_rotation",
+      "ray_origin": "zero_origin",
+      "distance": "fixed_500mm",
+      "projection": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 1.0,
+        "mean_pixel_error": 299.7428111608522,
+        "median_pixel_error": 259.28891922557796,
+        "p95_pixel_error": 662.5635577019383,
+        "mean_norm_error": 0.22137377467010969
+      },
+      "topology": {
+        "available": true,
+        "points": 71,
+        "prediction_extent": {
+          "width": 0.4228966862589377,
+          "height": 0.4154212407568971,
+          "area": 0.17568026611766815
+        },
+        "target_extent": {
+          "width": 0.6410506370826011,
+          "height": 0.6410496719775071,
+          "area": 0.4109453006227734
+        },
+        "pred_to_target_area_ratio": 0.4275027986727936,
+        "corr": {
+          "pred_x_vs_target_x": 0.6633417491126731,
+          "pred_y_vs_target_y": 0.7139068876281832,
+          "pred_x_vs_target_y": -0.02550510900349404,
+          "pred_y_vs_target_x": -0.04456714381066376
+        },
+        "monotonic": {
+          "rows_pred_x_increases_with_target_x": 0.8245614035087719,
+          "cols_pred_y_increases_with_target_y": 0.7586206896551724
+        }
+      }
+    },
+    "camera_no_rotation+face_translation+fixed_500mm": {
+      "gaze_space": "camera_no_rotation",
+      "ray_origin": "face_translation",
+      "distance": "fixed_500mm",
+      "projection": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 0.9769784172661871,
+        "mean_pixel_error": 627.3771410280195,
+        "median_pixel_error": 644.5986931297327,
+        "p95_pixel_error": 945.4114296764758,
+        "mean_norm_error": 0.5015463459018166
+      },
+      "topology": {
+        "available": true,
+        "points": 71,
+        "prediction_extent": {
+          "width": 0.08457933725178762,
+          "height": 0.08308424815137944,
+          "area": 0.007027210644706734
+        },
+        "target_extent": {
+          "width": 0.6410506370826011,
+          "height": 0.6410496719775071,
+          "area": 0.4109453006227734
+        },
+        "pred_to_target_area_ratio": 0.017100111946911765,
+        "corr": {
+          "pred_x_vs_target_x": 0.6633417491126732,
+          "pred_y_vs_target_y": 0.713906887628183,
+          "pred_x_vs_target_y": -0.02550510900349398,
+          "pred_y_vs_target_x": -0.04456714381066373
+        },
+        "monotonic": {
+          "rows_pred_x_increases_with_target_x": 0.8245614035087719,
+          "cols_pred_y_increases_with_target_y": 0.7586206896551724
+        }
+      }
+    },
+    "head_space_with_rotation+zero_origin+fixed_500mm": {
+      "gaze_space": "head_space_with_rotation",
+      "ray_origin": "zero_origin",
+      "distance": "fixed_500mm",
+      "projection": {
+        "valid_ratio": 0.0
+      },
+      "topology": {
+        "available": false,
+        "points": 0
+      }
+    },
+    "head_space_with_rotation+face_translation+fixed_500mm": {
+      "gaze_space": "head_space_with_rotation",
+      "ray_origin": "face_translation",
+      "distance": "fixed_500mm",
+      "projection": {
+        "valid_ratio": 0.0
+      },
+      "topology": {
+        "available": false,
+        "points": 0
+      }
+    },
+    "camera_no_rotation+zero_origin+fixed_720mm": {
+      "gaze_space": "camera_no_rotation",
+      "ray_origin": "zero_origin",
+      "distance": "fixed_720mm",
+      "projection": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 1.0,
+        "mean_pixel_error": 216.47003682841424,
+        "median_pixel_error": 150.0411106327627,
+        "p95_pixel_error": 688.8096085777909,
+        "mean_norm_error": 0.14279784864794956
+      },
+      "topology": {
+        "available": true,
+        "points": 71,
+        "prediction_extent": {
+          "width": 0.6089712282128703,
+          "height": 0.5982065866899319,
+          "area": 0.3642905998215967
+        },
+        "target_extent": {
+          "width": 0.6410506370826011,
+          "height": 0.6410496719775071,
+          "area": 0.4109453006227734
+        },
+        "pred_to_target_area_ratio": 0.8864698033279048,
+        "corr": {
+          "pred_x_vs_target_x": 0.663341749112673,
+          "pred_y_vs_target_y": 0.7139068876281831,
+          "pred_x_vs_target_y": -0.025505109003494,
+          "pred_y_vs_target_x": -0.04456714381066366
+        },
+        "monotonic": {
+          "rows_pred_x_increases_with_target_x": 0.8245614035087719,
+          "cols_pred_y_increases_with_target_y": 0.7586206896551724
+        }
+      }
+    },
+    "camera_no_rotation+face_translation+fixed_720mm": {
+      "gaze_space": "camera_no_rotation",
+      "ray_origin": "face_translation",
+      "distance": "fixed_720mm",
+      "projection": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 1.0,
+        "mean_pixel_error": 589.058935837021,
+        "median_pixel_error": 605.3547799056541,
+        "p95_pixel_error": 885.248412530799,
+        "mean_norm_error": 0.4690078242782593
+      },
+      "topology": {
+        "available": true,
+        "points": 71,
+        "prediction_extent": {
+          "width": 0.12179424564257402,
+          "height": 0.11964131733798639,
+          "area": 0.014571623992863863
+        },
+        "target_extent": {
+          "width": 0.6410506370826011,
+          "height": 0.6410496719775071,
+          "area": 0.4109453006227734
+        },
+        "pred_to_target_area_ratio": 0.03545879213311619,
+        "corr": {
+          "pred_x_vs_target_x": 0.663341749112673,
+          "pred_y_vs_target_y": 0.7139068876281831,
+          "pred_x_vs_target_y": -0.025505109003494078,
+          "pred_y_vs_target_x": -0.044567143810663776
+        },
+        "monotonic": {
+          "rows_pred_x_increases_with_target_x": 0.8245614035087719,
+          "cols_pred_y_increases_with_target_y": 0.7586206896551724
+        }
+      }
+    },
+    "head_space_with_rotation+zero_origin+fixed_720mm": {
+      "gaze_space": "head_space_with_rotation",
+      "ray_origin": "zero_origin",
+      "distance": "fixed_720mm",
+      "projection": {
+        "valid_ratio": 0.0
+      },
+      "topology": {
+        "available": false,
+        "points": 0
+      }
+    },
+    "head_space_with_rotation+face_translation+fixed_720mm": {
+      "gaze_space": "head_space_with_rotation",
+      "ray_origin": "face_translation",
+      "distance": "fixed_720mm",
+      "projection": {
+        "valid_ratio": 0.0
+      },
+      "topology": {
+        "available": false,
+        "points": 0
+      }
+    },
+    "camera_no_rotation+zero_origin+fixed_900mm": {
+      "gaze_space": "camera_no_rotation",
+      "ray_origin": "zero_origin",
+      "distance": "fixed_900mm",
+      "projection": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 0.9093525179856116,
+        "mean_pixel_error": 296.3682127366372,
+        "median_pixel_error": 266.24497872328584,
+        "p95_pixel_error": 732.3200021988675,
+        "mean_norm_error": 0.20720481699976723
+      },
+      "topology": {
+        "available": true,
+        "points": 71,
+        "prediction_extent": {
+          "width": 0.7612140352660879,
+          "height": 0.7477582333624149,
+          "area": 0.5692040622212449
+        },
+        "target_extent": {
+          "width": 0.6410506370826011,
+          "height": 0.6410496719775071,
+          "area": 0.4109453006227734
+        },
+        "pred_to_target_area_ratio": 1.3851090676998514,
+        "corr": {
+          "pred_x_vs_target_x": 0.6633417491126729,
+          "pred_y_vs_target_y": 0.7139068876281828,
+          "pred_x_vs_target_y": -0.025505109003493953,
+          "pred_y_vs_target_x": -0.044567143810663755
+        },
+        "monotonic": {
+          "rows_pred_x_increases_with_target_x": 0.8245614035087719,
+          "cols_pred_y_increases_with_target_y": 0.7586206896551724
+        }
+      }
+    },
+    "camera_no_rotation+face_translation+fixed_900mm": {
+      "gaze_space": "camera_no_rotation",
+      "ray_origin": "face_translation",
+      "distance": "fixed_900mm",
+      "projection": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 1.0,
+        "mean_pixel_error": 557.9709016943734,
+        "median_pixel_error": 569.9217983675878,
+        "p95_pixel_error": 846.3048188191055,
+        "mean_norm_error": 0.4425500279821921
+      },
+      "topology": {
+        "available": true,
+        "points": 71,
+        "prediction_extent": {
+          "width": 0.15224280705321758,
+          "height": 0.149551646672483,
+          "area": 0.0227681624888498
+        },
+        "target_extent": {
+          "width": 0.6410506370826011,
+          "height": 0.6410496719775071,
+          "area": 0.4109453006227734
+        },
+        "pred_to_target_area_ratio": 0.05540436270799407,
+        "corr": {
+          "pred_x_vs_target_x": 0.663341749112673,
+          "pred_y_vs_target_y": 0.7139068876281828,
+          "pred_x_vs_target_y": -0.025505109003494036,
+          "pred_y_vs_target_x": -0.044567143810663755
+        },
+        "monotonic": {
+          "rows_pred_x_increases_with_target_x": 0.8245614035087719,
+          "cols_pred_y_increases_with_target_y": 0.7586206896551724
+        }
+      }
+    },
+    "head_space_with_rotation+zero_origin+fixed_900mm": {
+      "gaze_space": "head_space_with_rotation",
+      "ray_origin": "zero_origin",
+      "distance": "fixed_900mm",
+      "projection": {
+        "valid_ratio": 0.0
+      },
+      "topology": {
+        "available": false,
+        "points": 0
+      }
+    },
+    "head_space_with_rotation+face_translation+fixed_900mm": {
+      "gaze_space": "head_space_with_rotation",
+      "ray_origin": "face_translation",
+      "distance": "fixed_900mm",
+      "projection": {
+        "valid_ratio": 0.0
+      },
+      "topology": {
+        "available": false,
+        "points": 0
+      }
+    },
+    "camera_no_rotation+zero_origin+dataset_median": {
+      "gaze_space": "camera_no_rotation",
+      "ray_origin": "zero_origin",
+      "distance": "dataset_median",
+      "projection": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 1.0,
+        "mean_pixel_error": 216.21491635007015,
+        "median_pixel_error": 150.00966811462814,
+        "p95_pixel_error": 688.1787389931281,
+        "mean_norm_error": 0.14264145236352188
+      },
+      "topology": {
+        "available": true,
+        "points": 71,
+        "prediction_extent": {
+          "width": 0.6077070914184344,
+          "height": 0.5969647957450166,
+          "area": 0.3627797397014038
+        },
+        "target_extent": {
+          "width": 0.6410506370826011,
+          "height": 0.6410496719775071,
+          "area": 0.4109453006227734
+        },
+        "pred_to_target_area_ratio": 0.8827932553350133,
+        "corr": {
+          "pred_x_vs_target_x": 0.6633417491126729,
+          "pred_y_vs_target_y": 0.7139068876281833,
+          "pred_x_vs_target_y": -0.025505109003493974,
+          "pred_y_vs_target_x": -0.044567143810663776
+        },
+        "monotonic": {
+          "rows_pred_x_increases_with_target_x": 0.8245614035087719,
+          "cols_pred_y_increases_with_target_y": 0.7586206896551724
+        }
+      }
+    },
+    "camera_no_rotation+face_translation+dataset_median": {
+      "gaze_space": "camera_no_rotation",
+      "ray_origin": "face_translation",
+      "distance": "dataset_median",
+      "projection": {
+        "valid_ratio": 1.0,
+        "in_screen_ratio": 1.0,
+        "mean_pixel_error": 589.3181198565577,
+        "median_pixel_error": 605.6838329603747,
+        "p95_pixel_error": 885.6897754683218,
+        "mean_norm_error": 0.46922818209873923
+      },
+      "topology": {
+        "available": true,
+        "points": 71,
+        "prediction_extent": {
+          "width": 0.12154141828368681,
+          "height": 0.11939295914900329,
+          "area": 0.014511189588056141
+        },
+        "target_extent": {
+          "width": 0.6410506370826011,
+          "height": 0.6410496719775071,
+          "area": 0.4109453006227734
+        },
+        "pred_to_target_area_ratio": 0.035311730213400505,
+        "corr": {
+          "pred_x_vs_target_x": 0.6633417491126732,
+          "pred_y_vs_target_y": 0.7139068876281828,
+          "pred_x_vs_target_y": -0.025505109003494043,
+          "pred_y_vs_target_x": -0.04456714381066376
+        },
+        "monotonic": {
+          "rows_pred_x_increases_with_target_x": 0.8245614035087719,
+          "cols_pred_y_increases_with_target_y": 0.7586206896551724
+        }
+      }
+    },
+    "head_space_with_rotation+zero_origin+dataset_median": {
+      "gaze_space": "head_space_with_rotation",
+      "ray_origin": "zero_origin",
+      "distance": "dataset_median",
+      "projection": {
+        "valid_ratio": 0.0
+      },
+      "topology": {
+        "available": false,
+        "points": 0
+      }
+    },
+    "head_space_with_rotation+face_translation+dataset_median": {
+      "gaze_space": "head_space_with_rotation",
+      "ray_origin": "face_translation",
+      "distance": "dataset_median",
+      "projection": {
+        "valid_ratio": 0.0
+      },
+      "topology": {
+        "available": false,
+        "points": 0
+      }
+    }
+  },
+  "checkpoint": "checkpoints\\best_model.pth",
+  "model_version": "v2",
+  "split": "test"
+}
