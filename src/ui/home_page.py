@@ -127,7 +127,7 @@ class HomePage(QWidget):
         title_layout.addWidget(separator)
         
         # 说明文字
-        desc = CaptionLabel("请按照以下步骤完成视线追踪的准备和使用")
+        desc = CaptionLabel("请按照以下步骤完成视线追踪的准备和使用 / Follow these steps to prepare and use gaze tracking")
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc.setStyleSheet("""
             QLabel {
@@ -182,8 +182,8 @@ class HomePage(QWidget):
         cam_card = CardWidget()
         cam_card.setStyleSheet(card_style)
         cam_layout = QVBoxLayout(cam_card)
-        cam_layout.addWidget(TitleLabel("步骤 1：摄像头预览"))
-        cam_layout.addWidget(CaptionLabel("检查摄像头画面和人脸检测"))
+        cam_layout.addWidget(TitleLabel("步骤 1：摄像头预览 / Step 1: Camera Preview"))
+        cam_layout.addWidget(CaptionLabel("检查摄像头画面和人脸检测 / Check camera feed and face detection"))
         cam_layout.addStretch()
         cam_btn = PrimaryPushButton("开始预览 / Preview")
         cam_btn.setStyleSheet(btn_style)
@@ -194,8 +194,8 @@ class HomePage(QWidget):
         calib_card = CardWidget()
         calib_card.setStyleSheet(card_style)
         calib_layout = QVBoxLayout(calib_card)
-        calib_layout.addWidget(TitleLabel("步骤 2：视线校准"))
-        calib_layout.addWidget(CaptionLabel("注视校准点优化映射精度"))
+        calib_layout.addWidget(TitleLabel("步骤 2：视线校准 / Step 2: Gaze Calibration"))
+        calib_layout.addWidget(CaptionLabel("注视校准点优化映射精度 / Look at calibration points to improve mapping accuracy"))
         calib_layout.addStretch()
         calib_btn = PrimaryPushButton("开始校准 / Calibrate")
         calib_btn.setStyleSheet(btn_style)
@@ -206,8 +206,8 @@ class HomePage(QWidget):
         track_card = CardWidget()
         track_card.setStyleSheet(card_style)
         track_layout = QVBoxLayout(track_card)
-        track_layout.addWidget(TitleLabel("步骤 3：验证与交互"))
-        track_layout.addWidget(CaptionLabel("进入全屏验证和独立交互窗口"))
+        track_layout.addWidget(TitleLabel("步骤 3：验证与交互 / Step 3: Verification & Interaction"))
+        track_layout.addWidget(CaptionLabel("进入全屏验证和独立交互窗口 / Enter fullscreen verification and interaction"))
         track_layout.addStretch()
         track_btn = PrimaryPushButton("开始追踪 / Track")
         track_btn.setStyleSheet(btn_style)

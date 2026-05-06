@@ -42,7 +42,7 @@ class MainWindow(FluentWindow):
     
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Look2Act Tracker - 视线驱动交互系统")
+        self.setWindowTitle("Look2Act Tracker - 视线驱动交互系统 / Gaze-Driven Interaction System")
         
         # TrackerPipeline 单例（延迟初始化）
         self.tracker: Optional[TrackerPipeline] = None
@@ -63,11 +63,11 @@ class MainWindow(FluentWindow):
         self.page_settings.setObjectName("SettingsPage")
         
         # 添加页面到侧边导航栏
-        self.addSubInterface(self.page_home, FIF.HOME, '主页')
-        self.addSubInterface(self.page_camera, FIF.PHOTO, '预览')
-        self.addSubInterface(self.page_calibration, FIF.EDIT, '校准')
-        self.addSubInterface(self.page_tracking, FIF.VIEW, '追踪')
-        self.addSubInterface(self.page_settings, FIF.SETTING, '设置')
+        self.addSubInterface(self.page_home, FIF.HOME, '主页 / Home')
+        self.addSubInterface(self.page_camera, FIF.PHOTO, '预览 / Preview')
+        self.addSubInterface(self.page_calibration, FIF.EDIT, '校准 / Calibrate')
+        self.addSubInterface(self.page_tracking, FIF.VIEW, '追踪 / Track')
+        self.addSubInterface(self.page_settings, FIF.SETTING, '设置 / Settings')
         
         # 连接主页导航信号
         self.page_home.navigate_to_camera.connect(self.go_camera)
@@ -187,8 +187,8 @@ class MainWindow(FluentWindow):
             print(f"[MAIN_WINDOW] TrackerPipeline 创建失败：{e}")
             QMessageBox.critical(
                 self,
-                "初始化失败",
-                f"TrackerPipeline 初始化失败：{e}\n\n请检查模型文件和配置。"
+                "初始化失败 / Initialization Failed",
+                f"TrackerPipeline 初始化失败：{e}\n\n请检查模型文件和配置。\n\nTrackerPipeline initialization failed: {e}\n\nPlease check model files and settings."
             )
             return False
     
@@ -213,8 +213,8 @@ class MainWindow(FluentWindow):
         if self.tracker is not None and self.tracker.is_running():
             QMessageBox.information(
                 self,
-                "配置已变更",
-                "系统配置已更新。\n\n部分配置需要重启追踪才能生效。"
+                "配置已变更 / Settings Changed",
+                "系统配置已更新。\n\n部分配置需要重启追踪才能生效。\n\nSystem settings have been updated.\n\nSome changes require restarting tracking."
             )
 
     def _on_calibration_ready(self) -> None:
@@ -277,8 +277,8 @@ class MainWindow(FluentWindow):
             if not success:
                 QMessageBox.critical(
                     self,
-                    "启动失败",
-                    "TrackerPipeline 启动失败，无法进行校准。\n\n请检查摄像头和模型文件。"
+                    "启动失败 / Start Failed",
+                    "TrackerPipeline 启动失败，无法进行校准。\n\n请检查摄像头和模型文件。\n\nTrackerPipeline failed to start, so calibration cannot begin.\n\nPlease check the camera and model files."
                 )
                 return
         

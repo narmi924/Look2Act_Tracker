@@ -68,7 +68,7 @@ def format_resolution(width: int, height: int) -> str:
 def parse_resolution(text: str) -> tuple[int, int]:
     parts = text.lower().replace(" ", "").split("x")
     if len(parts) != 2:
-        raise ValueError(f"无效分辨率格式: {text}")
+        raise ValueError(f"无效分辨率格式 / Invalid resolution format: {text}")
     return int(parts[0]), int(parts[1])
 
 
@@ -207,7 +207,7 @@ class SettingsPage(QWidget):
         self.reset_btn.setFixedSize(160, 60)
         self.reset_btn.clicked.connect(self._handle_reset)
 
-        self.advanced_btn = PushButton("高级设置\nAdvanced")
+        self.advanced_btn = PushButton("高级设置\nAdvanced Settings")
         self.advanced_btn.setFixedSize(140, 60)
         self.advanced_btn.clicked.connect(self._toggle_advanced_settings)
         
@@ -279,7 +279,11 @@ class SettingsPage(QWidget):
         layout.addWidget(title)
         
         # 提示信息
-        hint = BodyLabel("💡 自适应模式：保留系统任务栏可见\n💡 全屏模式：覆盖任务栏（相当于独立应用形态）\n注意：设置将在下次启动时生效。")
+        hint = BodyLabel(
+            "自适应模式：保留系统任务栏可见 / Adaptive mode: keep the system taskbar visible\n"
+            "全屏模式：覆盖任务栏（独立应用形态） / Fullscreen mode: cover the taskbar like a standalone app\n"
+            "注意：设置将在下次启动时生效 / Note: this setting takes effect after restart"
+        )
         hint.setStyleSheet("color: #888; font-size: 13px; margin-bottom: 8px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -326,10 +330,10 @@ class SettingsPage(QWidget):
         self.camera_resolution_combo.addItems([format_resolution(w, h) for w, h in COMMON_CAMERA_RESOLUTIONS])
         self.camera_resolution_combo.setCurrentText("1280x720")
         self.camera_resolution_combo.setFixedWidth(150)
-        detect_resolution_btn = PushButton("检测支持分辨率\nDetect")
+        detect_resolution_btn = PushButton("检测分辨率\nDetect Resolution")
         detect_resolution_btn.setFixedWidth(150)
         detect_resolution_btn.clicked.connect(self._handle_detect_camera_resolutions)
-        resolution_hint = BodyLabel("先检测，再选择。Classic 会自动按实际帧尺寸适配。")
+        resolution_hint = BodyLabel("先检测，再选择。Classic 会自动按实际帧尺寸适配。 / Detect first, then choose. Classic adapts to the actual frame size.")
         resolution_hint.setStyleSheet("color: #888; font-size: 12px;")
         resolution_row.addWidget(resolution_label)
         resolution_row.addWidget(self.camera_resolution_combo)
@@ -431,7 +435,7 @@ class SettingsPage(QWidget):
         self.deep_gaze_space_combo.addItems(["head", "camera"])
         self.deep_gaze_space_combo.setCurrentText("head")
         self.deep_gaze_space_combo.setFixedWidth(150)
-        deep_space_hint = BodyLabel("head 为原链路，camera 用于跳过 PnP 旋转实验")
+        deep_space_hint = BodyLabel("head 为原链路，camera 用于跳过 PnP 旋转实验 / head is the original path; camera skips PnP rotation for experiments")
         deep_space_hint.setStyleSheet("color: #888; font-size: 12px;")
         deep_space_row.addWidget(deep_space_label)
         deep_space_row.addWidget(self.deep_gaze_space_combo)
@@ -446,7 +450,7 @@ class SettingsPage(QWidget):
         self.deep_pose_input_combo.addItems(["live", "zero"])
         self.deep_pose_input_combo.setCurrentText("live")
         self.deep_pose_input_combo.setFixedWidth(150)
-        deep_pose_hint = BodyLabel("zero 用于排查坏 head-pose 特征污染")
+        deep_pose_hint = BodyLabel("zero 用于排查坏 head-pose 特征污染 / zero helps isolate bad head-pose feature noise")
         deep_pose_hint.setStyleSheet("color: #888; font-size: 12px;")
         deep_pose_row.addWidget(deep_pose_label)
         deep_pose_row.addWidget(self.deep_pose_input_combo)
@@ -532,7 +536,7 @@ class SettingsPage(QWidget):
         self.smoother_type_combo.addItems(["kalman", "ema", "none"])
         self.smoother_type_combo.setCurrentText("kalman")
         self.smoother_type_combo.setFixedWidth(150)
-        type_hint = BodyLabel("classic 默认 Kalman；EMA/none 用于对照")
+        type_hint = BodyLabel("classic 默认 Kalman；EMA/none 用于对照 / classic defaults to Kalman; EMA/none are for comparison")
         type_hint.setStyleSheet("color: #888; font-size: 12px;")
         type_row.addWidget(type_label)
         type_row.addWidget(self.smoother_type_combo)
@@ -580,7 +584,7 @@ class SettingsPage(QWidget):
         self.backend_combo.addItems(["classic", "deep"])
         self.backend_combo.setCurrentText("classic")
         self.backend_combo.setFixedWidth(150)
-        backend_hint = BodyLabel("classic 用于流畅体验，deep 用于研究模型")
+        backend_hint = BodyLabel("classic 用于流畅体验，deep 用于研究模型 / classic is for smooth experience; deep is for research")
         backend_hint.setStyleSheet("color: #888; font-size: 12px;")
         backend_row.addWidget(backend_label)
         backend_row.addWidget(self.backend_combo)
@@ -609,7 +613,7 @@ class SettingsPage(QWidget):
             self.model_card.setVisible(self.advanced_visible)
         if self.geometry_card is not None:
             self.geometry_card.setVisible(self.advanced_visible)
-        self.advanced_btn.setText("隐藏高级\nAdvanced" if self.advanced_visible else "高级设置\nAdvanced")
+        self.advanced_btn.setText("隐藏高级\nHide Advanced" if self.advanced_visible else "高级设置\nAdvanced Settings")
     
     def _on_alpha_changed(self, value: int) -> None:
         """平滑系数滑块变化回调。"""
@@ -623,7 +627,7 @@ class SettingsPage(QWidget):
             self,
             "选择模型权重文件 / Select Model File",
             "checkpoints",
-            "PyTorch 模型 (*.pth *.pt);;所有文件 (*.*)"
+            "PyTorch 模型 / PyTorch Models (*.pth *.pt);;所有文件 / All Files (*.*)"
         )
         
         if file_path and self.model_path_edit is not None:
@@ -635,7 +639,7 @@ class SettingsPage(QWidget):
             self,
             "选择 ONNX 模型文件 / Select ONNX File",
             "checkpoints",
-            "ONNX 模型 (*.onnx);;所有文件 (*.*)"
+            "ONNX 模型 / ONNX Models (*.onnx);;所有文件 / All Files (*.*)"
         )
         
         if file_path and self.onnx_path_edit is not None:
@@ -656,8 +660,8 @@ class SettingsPage(QWidget):
         except Exception as e:
             QMessageBox.warning(
                 self,
-                "加载失败",
-                f"加载配置文件失败：{e}\n\n将使用默认配置。"
+                "加载失败 / Load Failed",
+                f"加载配置文件失败：{e}\n\n将使用默认配置。\n\nFailed to load config file: {e}\n\nDefault settings will be used."
             )
             print(f"[SETTINGS_PAGE] 加载配置失败: {e}")
     
@@ -799,20 +803,20 @@ class SettingsPage(QWidget):
                 if self.camera_resolution_combo is not None
                 else (self.config.camera_width, self.config.camera_height)
             )
-            self.status_label.setText("正在检测摄像头支持分辨率，请稍候...")
+            self.status_label.setText("正在检测摄像头支持分辨率，请稍候... / Detecting supported camera resolutions, please wait...")
             self.status_label.setStyleSheet("color: #FF9800; font-weight: 600;")
             detected = detect_supported_camera_resolutions(camera_index, backend)
             if not detected:
-                self.status_label.setText("未检测到可用分辨率，请确认摄像头未被其他程序占用。")
+                self.status_label.setText("未检测到可用分辨率，请确认摄像头未被其他程序占用。 / No usable resolution detected. Make sure the camera is not used by another app.")
                 self.status_label.setStyleSheet("color: #D32F2F; font-weight: 600;")
                 return
             selected = current if current in detected else detected[-1]
             self._set_resolution_options(detected, selected=selected)
             labels = ", ".join(format_resolution(w, h) for w, h in detected)
-            self.status_label.setText(f"✓ 已检测到支持分辨率：{labels}")
+            self.status_label.setText(f"✓ 已检测到支持分辨率 / Supported resolutions detected: {labels}")
             self.status_label.setStyleSheet("color: #4CAF50; font-weight: 600;")
         except Exception as e:
-            self.status_label.setText(f"✗ 检测失败: {e}")
+            self.status_label.setText(f"✗ 检测失败 / Detection failed: {e}")
             self.status_label.setStyleSheet("color: #D32F2F; font-weight: 600;")
     
     def _handle_save(self) -> None:
@@ -875,7 +879,7 @@ class SettingsPage(QWidget):
                 yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
             
             # 更新状态
-            self.status_label.setText(f"✓ 设置已保存到 {self.config_path}")
+            self.status_label.setText(f"✓ 设置已保存 / Settings saved to {self.config_path}")
             self.status_label.setStyleSheet("color: #4CAF50; font-weight: 600;")
             
             # 发出配置变更信号
@@ -884,8 +888,8 @@ class SettingsPage(QWidget):
             print(f"[SETTINGS_PAGE] 设置已保存: {self.config_path}")
             
         except Exception as e:
-            QMessageBox.critical(self, "保存失败", f"保存设置失败：{e}")
-            self.status_label.setText(f"✗ 保存失败: {e}")
+            QMessageBox.critical(self, "保存失败 / Save Failed", f"保存设置失败：{e}\n\nFailed to save settings: {e}")
+            self.status_label.setText(f"✗ 保存失败 / Save failed: {e}")
             self.status_label.setStyleSheet("color: #D32F2F; font-weight: 600;")
             print(f"[SETTINGS_PAGE] 保存失败: {e}")
     
@@ -893,7 +897,7 @@ class SettingsPage(QWidget):
         """恢复默认设置。"""
         reply = QMessageBox.question(
             self,
-            "确认恢复默认",
+            "确认恢复默认 / Confirm Reset",
             "确定要恢复所有设置为默认值吗？\n\nAre you sure you want to reset all settings to defaults?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
@@ -904,7 +908,7 @@ class SettingsPage(QWidget):
             self.config = SystemConfig()
             self._update_ui_from_config()
             
-            self.status_label.setText("✓ 已恢复默认设置（未保存）")
+            self.status_label.setText("✓ 已恢复默认设置（未保存） / Defaults restored (not saved)")
             self.status_label.setStyleSheet("color: #FF9800; font-weight: 600;")
             
             print("[SETTINGS_PAGE] 已恢复默认设置")

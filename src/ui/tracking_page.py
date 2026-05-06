@@ -220,7 +220,7 @@ class TrackingPage(QWidget):
         self.verify_btn.setEnabled(False)
         self.verify_btn.clicked.connect(self._open_verification_window)
 
-        self.dwell_btn = PushButton("启用点击\nDwell Click")
+        self.dwell_btn = PushButton("启用点击\nEnable Click")
         self.dwell_btn.setFixedSize(160, 60)
         self.dwell_btn.setEnabled(False)
         self.dwell_btn.clicked.connect(self._toggle_dwell_click)
@@ -373,7 +373,7 @@ class TrackingPage(QWidget):
         stage_title.setStyleSheet("font-size: 18px; font-weight: 600;")
 
         verify_row = QHBoxLayout()
-        verify_label = BodyLabel("Verification:")
+        verify_label = BodyLabel("验证 / Verification:")
         verify_label.setStyleSheet("font-weight: 600;")
         self.verify_status = BodyLabel("待校准 / Pending Calibration")
         verify_row.addWidget(verify_label)
@@ -382,7 +382,7 @@ class TrackingPage(QWidget):
         verify_row.addStretch(1)
 
         dwell_row = QHBoxLayout()
-        dwell_label = BodyLabel("Dwell Click:")
+        dwell_label = BodyLabel("停留点击 / Dwell Click:")
         dwell_label.setStyleSheet("font-weight: 600;")
         self.dwell_status = BodyLabel("关闭 / Off")
         dwell_row.addWidget(dwell_label)
@@ -391,7 +391,7 @@ class TrackingPage(QWidget):
         dwell_row.addStretch(1)
 
         launcher_row = QHBoxLayout()
-        launcher_label = BodyLabel("Interaction Stage:")
+        launcher_label = BodyLabel("交互窗口 / Interaction Stage:")
         launcher_label.setStyleSheet("font-weight: 600;")
         self.launcher_status = BodyLabel("未进入 / Not Open")
         launcher_row.addWidget(launcher_label)
@@ -400,7 +400,7 @@ class TrackingPage(QWidget):
         launcher_row.addStretch(1)
 
         progress_row = QHBoxLayout()
-        progress_label = BodyLabel("Dwell Progress:")
+        progress_label = BodyLabel("停留进度 / Dwell Progress:")
         progress_label.setStyleSheet("font-weight: 600;")
         self.dwell_progress_label = BodyLabel("0%")
         progress_row.addWidget(progress_label)
@@ -409,7 +409,8 @@ class TrackingPage(QWidget):
         progress_row.addStretch(1)
 
         self.interaction_hint = BodyLabel(
-            "Recommended workflow: load calibration, open the fullscreen verification stage, confirm the calibrated cursor, then enter the fullscreen interaction stage."
+            "推荐流程：加载校准，进入全屏验证，确认注视光标后进入全屏交互。 / "
+            "Recommended workflow: load calibration, open fullscreen verification, confirm the calibrated cursor, then enter fullscreen interaction."
         )
         self.interaction_hint.setWordWrap(True)
         self.interaction_hint.setStyleSheet("color: #666;")
@@ -494,7 +495,7 @@ class TrackingPage(QWidget):
             self.calib_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
             self._mark_verification_required("待验证 / Verification Required")
         except Exception as e:
-            QMessageBox.critical(self, "加载失败", f"加载校准参数失败：{e}")
+            QMessageBox.critical(self, "加载失败 / Load Failed", f"加载校准参数失败：{e}\n\nFailed to load calibration parameters: {e}")
 
     def _handle_start_tracking(self) -> None:
         try:
@@ -512,7 +513,7 @@ class TrackingPage(QWidget):
             if not self.tracker.is_running():
                 success = self.tracker.start()
                 if not success:
-                    self.error_label.setText("TrackerPipeline 启动失败，请检查摄像头和模型文件。")
+                    self.error_label.setText("TrackerPipeline 启动失败，请检查摄像头和模型文件。 / TrackerPipeline failed to start. Check the camera and model files.")
                     return
 
             if self.cursor_overlay is None:
@@ -525,7 +526,7 @@ class TrackingPage(QWidget):
             self.stop_btn.setEnabled(True)
             self._refresh_stage_controls()
         except Exception as e:
-            self.error_label.setText(f"启动失败：{e}")
+            self.error_label.setText(f"启动失败 / Start failed: {e}")
 
     def _handle_stop_tracking(self) -> None:
         self.update_timer.stop()
@@ -557,7 +558,11 @@ class TrackingPage(QWidget):
 
     def _open_verification_window(self) -> None:
         if self.calibrator is None or not self.calibrator.is_calibrated:
-            QMessageBox.information(self, "需要校准", "请先加载或完成校准，再进入验证阶段。")
+            QMessageBox.information(
+                self,
+                "需要校准 / Calibration Required",
+                "请先加载或完成校准，再进入验证阶段。\n\nPlease load or complete calibration before verification."
+            )
             return
 
         if self.tracker is None or not self.tracker.is_running():
@@ -611,7 +616,11 @@ class TrackingPage(QWidget):
 
     def _toggle_dwell_click(self) -> None:
         if not self._verification_passed:
-            QMessageBox.information(self, "先完成验证", "请先完成全屏验证，再启用点击交互。")
+            QMessageBox.information(
+                self,
+                "先完成验证 / Verification Required",
+                "请先完成全屏验证，再启用点击交互。\n\nPlease complete fullscreen verification before enabling dwell click."
+            )
             return
         self.dwell_enabled = not self.dwell_enabled
         self._reset_dwell_state()
@@ -625,7 +634,11 @@ class TrackingPage(QWidget):
 
     def _open_launcher_overlay(self) -> None:
         if not self._verification_passed:
-            QMessageBox.information(self, "先完成验证", "请先完成全屏验证，再进入交互阶段。")
+            QMessageBox.information(
+                self,
+                "先完成验证 / Verification Required",
+                "请先完成全屏验证，再进入交互阶段。\n\nPlease complete fullscreen verification before entering interaction."
+            )
             return
 
         if self.tracker is None or not self.tracker.is_running():
@@ -779,7 +792,7 @@ class TrackingPage(QWidget):
                 self.cursor_overlay.clear_gaze_point()
 
         if result.error_message:
-            self.error_label.setText(f"警告: {result.error_message}")
+            self.error_label.setText(f"警告 / Warning: {result.error_message}")
         elif not self.dwell_enabled:
             self.error_label.setText("")
 
@@ -816,7 +829,7 @@ class TrackingPage(QWidget):
     def _toggle_diagnostics(self) -> None:
         self.diagnostics_enabled = not self.diagnostics_enabled
         self.diagnostics_label.setVisible(self.diagnostics_enabled)
-        self.diagnostics_btn.setText("隐藏诊断\nDiagnostics" if self.diagnostics_enabled else "诊断\nDiagnostics")
+        self.diagnostics_btn.setText("隐藏诊断\nHide Diagnostics" if self.diagnostics_enabled else "诊断\nDiagnostics")
         if not self.diagnostics_enabled:
             self.diagnostics_label.setText("")
 
@@ -879,9 +892,9 @@ class TrackingPage(QWidget):
         progress = min((now - self._dwell_started_at) / self.dwell_ms, 1.0)
         if progress >= 1.0:
             if perform_left_click():
-                self.error_label.setText("信息: 已触发 dwell left click。")
+                self.error_label.setText("信息 / Info: 已触发停留左键点击。 / Dwell left click triggered.")
             else:
-                self.error_label.setText("警告: 当前平台不支持系统级左键点击。")
+                self.error_label.setText("警告 / Warning: 当前平台不支持系统级左键点击。 / System-level left click is not supported on this platform.")
             self._dwell_anchor = None
             self._dwell_started_at = 0.0
             self._dwell_cooldown_until = now + 800.0
@@ -943,11 +956,11 @@ class TrackingPage(QWidget):
         if self.dwell_enabled:
             self.dwell_status.setText("开启 / On")
             self.dwell_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
-            self.dwell_btn.setText("关闭点击\nDwell Click")
+            self.dwell_btn.setText("关闭点击\nDisable Click")
         else:
             self.dwell_status.setText("关闭 / Off")
             self.dwell_status.setStyleSheet("color: #888;")
-            self.dwell_btn.setText("启用点击\nDwell Click")
+            self.dwell_btn.setText("启用点击\nEnable Click")
 
         if self.interaction_overlay is not None:
             self.launcher_status.setText("运行中 / Open")
@@ -967,7 +980,7 @@ class TrackingPage(QWidget):
             self.launcher_btn.setText("交互窗口\nOpen Interaction")
 
     def _on_tracker_error(self, message: str) -> None:
-        self.error_label.setText(f"错误: {message}")
+        self.error_label.setText(f"错误 / Error: {message}")
 
     def closeEvent(self, event) -> None:
         self._handle_stop_tracking()

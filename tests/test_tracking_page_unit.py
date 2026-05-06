@@ -189,14 +189,14 @@ def test_fullscreen_stage_window_is_opaque_standalone_window(qapp):
     window.close()
 
 
-def test_interaction_launcher_uses_chinese_app_tiles(qapp):
+def test_interaction_launcher_uses_bilingual_app_tiles(qapp):
     overlay = InteractionLauncherOverlay()
 
     titles = [action.title for action in overlay._actions]
 
-    assert "浏览器" in titles
-    assert "五子棋" in titles
-    assert "退出" in titles
+    assert any("浏览器" in title and "Browser" in title for title in titles)
+    assert any("五子棋" in title and "Gomoku" in title for title in titles)
+    assert any("退出" in title and "Exit" in title for title in titles)
 
     overlay.close()
 

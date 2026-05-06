@@ -46,7 +46,7 @@ class GomokuWindow(QWidget):
         layout.setContentsMargins(36, 24, 36, 24)
 
         header = QHBoxLayout()
-        self.status_label = QLabel("X 落子")
+        self.status_label = QLabel("X 落子 / X Turn")
         self.status_label.setStyleSheet(
             """
             QLabel {
@@ -61,10 +61,10 @@ class GomokuWindow(QWidget):
             }
             """
         )
-        self.reset_button = QPushButton("重新开始")
-        self.close_button = QPushButton("关闭")
+        self.reset_button = QPushButton("重开\nRestart")
+        self.close_button = QPushButton("关闭\nClose")
         for button in (self.reset_button, self.close_button):
-            button.setFixedSize(110, 44)
+            button.setFixedSize(128, 52)
             button.setStyleSheet(
                 """
                 QPushButton {
@@ -228,10 +228,10 @@ class GomokuWindow(QWidget):
             return
         self.board[row][col] = 1
         if self._winner_from(row, col, 1):
-            self._finish_game("X 获胜", "🎉")
+            self._finish_game("X 获胜 / X Wins", "🎉")
             return
         if self._is_full():
-            self._finish_game("平局", "😐")
+            self._finish_game("平局 / Draw", "😐")
             return
         self._place_o()
 
@@ -242,9 +242,9 @@ class GomokuWindow(QWidget):
         row, col = move
         self.board[row][col] = 2
         if self._winner_from(row, col, 2):
-            self._finish_game("O 获胜", "😅")
+            self._finish_game("O 获胜 / O Wins", "😅")
         else:
-            self.status_label.setText("X 落子")
+            self.status_label.setText("X 落子 / X Turn")
 
     def _best_o_move(self) -> Optional[tuple[int, int]]:
         center = (self.board_size // 2, self.board_size // 2)
@@ -292,7 +292,7 @@ class GomokuWindow(QWidget):
         self._result_message = message
         self._result_emoji = emoji
         self._return_countdown_ms = 2000
-        self.status_label.setText(f"{message}，2秒后返回")
+        self.status_label.setText(f"{message}，2秒后返回 / returning in 2s")
         self._return_timer.start(250)
         self.update()
 
@@ -304,7 +304,7 @@ class GomokuWindow(QWidget):
             self.close()
             return
         seconds = max(1, math.ceil(self._return_countdown_ms / 1000.0))
-        self.status_label.setText(f"{self._result_message}，{seconds}秒后返回")
+        self.status_label.setText(f"{self._result_message}，{seconds}秒后返回 / returning in {seconds}s")
         self.update()
 
     def _draw_result_overlay(self, painter: QPainter) -> None:
@@ -336,7 +336,7 @@ class GomokuWindow(QWidget):
         painter.drawText(
             self.rect().adjusted(0, 410, 0, 0),
             Qt.AlignmentFlag.AlignHCenter,
-            f"{seconds} 秒后返回九宫格",
+            f"{seconds} 秒后返回九宫格 / Returning to launcher in {seconds}s",
         )
 
     def _reset_board(self) -> None:
@@ -348,7 +348,7 @@ class GomokuWindow(QWidget):
         self._result_message = ""
         self._result_emoji = ""
         self._return_countdown_ms = 0
-        self.status_label.setText("X 落子")
+        self.status_label.setText("X 落子 / X Turn")
         self.update()
 
     @staticmethod

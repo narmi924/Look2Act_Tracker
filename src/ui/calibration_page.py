@@ -306,8 +306,8 @@ class CalibrationFullscreenWidget(QWidget):
         painter.setFont(font)
         valid_points = len(getattr(self.calibrator, "_raw_points", []))
         progress_text = (
-            f"校准进度：{self.current_point_index + 1} / {len(self.calibration_points)}"
-            f"  有效点：{valid_points}"
+            f"校准进度 / Progress: {self.current_point_index + 1} / {len(self.calibration_points)}"
+            f"  有效点 / Valid: {valid_points}"
         )
         painter.drawText(self.width() // 2 - 100, 50, progress_text)
         
@@ -315,7 +315,7 @@ class CalibrationFullscreenWidget(QWidget):
         painter.setPen(QColor(150, 150, 150))
         font = QFont("Arial", 14)
         painter.setFont(font)
-        hint_text = "请注视红色圆点，保持头部稳定 | 按 ESC 取消校准"
+        hint_text = "请注视红色圆点，保持头部稳定 / Look at the red dot and keep your head stable | ESC 取消 / Cancel"
         painter.drawText(self.width() // 2 - 200, self.height() - 50, hint_text)
     
     def keyPressEvent(self, event) -> None:
@@ -465,8 +465,8 @@ class CalibrationPage(QWidget):
         if self.tracker is None:
             QMessageBox.warning(
                 self,
-                "错误",
-                "TrackerPipeline 未初始化。请先启动实时追踪。"
+                "错误 / Error",
+                "TrackerPipeline 未初始化。请先启动实时追踪。\n\nTrackerPipeline is not initialized. Please start real-time tracking first."
             )
             return
 
@@ -475,8 +475,8 @@ class CalibrationPage(QWidget):
         if not self.tracker.is_running():
             QMessageBox.warning(
                 self,
-                "错误",
-                "TrackerPipeline 未运行。请先启动实时追踪。"
+                "错误 / Error",
+                "TrackerPipeline 未运行。请先启动实时追踪。\n\nTrackerPipeline is not running. Please start real-time tracking first."
             )
             return
         
@@ -519,7 +519,7 @@ class CalibrationPage(QWidget):
     def _handle_save_calibration(self) -> None:
         """保存校准参数。"""
         if not self.calibrator.is_calibrated:
-            QMessageBox.warning(self, "错误", "没有可保存的校准数据。")
+            QMessageBox.warning(self, "错误 / Error", "没有可保存的校准数据。\n\nNo calibration data to save.")
             return
         
         save_path = self.calibration_path
@@ -532,7 +532,7 @@ class CalibrationPage(QWidget):
             self.calibration_ready.emit()
             
         except Exception as e:
-            QMessageBox.critical(self, "保存失败", f"保存校准参数失败：{e}")
+            QMessageBox.critical(self, "保存失败 / Save Failed", f"保存校准参数失败：{e}\n\nFailed to save calibration parameters: {e}")
             print(f"[CALIBRATION_PAGE] 保存失败：{e}")
     
     def _handle_load_calibration(self) -> None:
@@ -542,8 +542,8 @@ class CalibrationPage(QWidget):
         if not load_path.exists():
             QMessageBox.warning(
                 self,
-                "文件不存在",
-                f"校准文件不存在：{load_path.absolute()}\n\n请先进行校准并保存。"
+                "文件不存在 / File Not Found",
+                f"校准文件不存在：{load_path.absolute()}\n\n请先进行校准并保存。\n\nCalibration file not found: {load_path.absolute()}\n\nPlease calibrate and save first."
             )
             return
         
@@ -560,14 +560,14 @@ class CalibrationPage(QWidget):
             self.save_btn.setEnabled(True)
             
             MessageBox(
-                "加载成功",
-                f"校准参数已加载。残差：{self.calibration_residual:.2f} 像素",
+                "加载成功 / Loaded",
+                f"校准参数已加载。残差：{self.calibration_residual:.2f} 像素\n\nCalibration loaded. Residual: {self.calibration_residual:.2f} px",
                 self
             ).exec()
             print(f"[CALIBRATION_PAGE] 校准参数已加载：{load_path}")
             
         except Exception as e:
-            QMessageBox.critical(self, "加载失败", f"加载校准参数失败：{e}")
+            QMessageBox.critical(self, "加载失败 / Load Failed", f"加载校准参数失败：{e}\n\nFailed to load calibration parameters: {e}")
             print(f"[CALIBRATION_PAGE] 加载失败：{e}")
 
     def _show_default_actions(self) -> None:

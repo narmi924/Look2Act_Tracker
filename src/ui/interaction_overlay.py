@@ -219,12 +219,12 @@ class GazeVerificationWindow(FullscreenStageWindow):
         font = QFont("Arial", 20)
         painter.setFont(font)
         lines = [
-            f"Vector Length: {vector_length:.1f} pixels",
-            f"Accuracy: {'Excellent' if vector_length < 50 else 'Good' if vector_length < 100 else 'Needs Improvement'}",
-            "Enter: Confirm    Esc: Cancel",
+            f"向量长度 / Vector Length: {vector_length:.1f} px",
+            f"精度 / Accuracy: {'优秀 / Excellent' if vector_length < 50 else '良好 / Good' if vector_length < 100 else '需改进 / Needs Improvement'}",
+            "Enter: 确认 / Confirm    Esc: 取消 / Cancel",
         ]
         if self._target_point is None:
-            lines.append("Click screen to set target point")
+            lines.append("点击屏幕设置目标点 / Click screen to set target point")
 
         metrics = painter.fontMetrics()
         width = max(metrics.horizontalAdvance(line) for line in lines) + 28
@@ -374,14 +374,14 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._actions = [
-            LauncherAction(0, "浏览器", "🌐", "打开默认浏览器", launch_browser),
-            LauncherAction(1, "文件", "📁", "打开用户文件夹", launch_explorer),
-            LauncherAction(2, "记事本", "📝", "打开轻量编辑器", launch_notepad),
-            LauncherAction(3, "五子棋", "🎮", "进入凝视落子游戏", None),
-            LauncherAction(5, "放大镜", "🔍", "打开系统放大镜", launch_magnifier),
-            LauncherAction(6, "键盘", "⌨", "打开屏幕键盘", launch_osk),
-            LauncherAction(7, "返回", "⬅", "关闭交互页", None),
-            LauncherAction(8, "退出", "✕", "关闭交互页", None),
+            LauncherAction(0, "浏览器 / Browser", "🌐", "打开默认浏览器 / Open default browser", launch_browser),
+            LauncherAction(1, "文件 / Files", "📁", "打开用户文件夹 / Open user folder", launch_explorer),
+            LauncherAction(2, "记事本 / Notepad", "📝", "打开轻量编辑器 / Open lightweight editor", launch_notepad),
+            LauncherAction(3, "五子棋 / Gomoku", "🎮", "进入凝视落子游戏 / Play gaze board game", None),
+            LauncherAction(5, "放大镜 / Magnifier", "🔍", "打开系统放大镜 / Open system magnifier", launch_magnifier),
+            LauncherAction(6, "键盘 / Keyboard", "⌨", "打开屏幕键盘 / Open on-screen keyboard", launch_osk),
+            LauncherAction(7, "返回 / Return", "⬅", "关闭交互页 / Close interaction", None),
+            LauncherAction(8, "退出 / Exit", "✕", "关闭交互页 / Close interaction", None),
         ]
         self._cards: dict[int, LauncherRegionCard] = {}
         self._current_region: Optional[int] = None
@@ -419,7 +419,7 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
             self._cards[action.index] = card
             grid.addWidget(card, row, col)
 
-        center_hint = QLabel("注视任意区域\n保持3秒\n即可触发操作\n\n轨迹只显示在当前页面")
+        center_hint = QLabel("注视任意区域 / Look at any tile\n保持3秒 / Hold for 3 seconds\n即可触发操作 / Trigger action\n\n轨迹只显示在当前页面 / Trail stays on this page")
         center_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         center_hint.setStyleSheet(
             """
