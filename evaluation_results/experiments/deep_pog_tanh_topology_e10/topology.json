@@ -1,0 +1,39 @@
+{
+  "metrics": {
+    "num_samples": 1390,
+    "mean_pixel_error": 445.31222969079187,
+    "median_pixel_error": 448.0789794921875,
+    "p95_pixel_error": 700.8612274169922,
+    "mean_norm_error": 0.2930143574316376,
+    "median_norm_error": 0.32243604958057404
+  },
+  "topology": {
+    "available": true,
+    "points": 71,
+    "prediction_extent": {
+      "width": 0.04449102282524109,
+      "height": 0.020315706729888916,
+      "area": 0.0009038665718303918
+    },
+    "target_extent": {
+      "width": 0.6410506367683411,
+      "height": 0.6410496830940247,
+      "area": 0.41094530754756775
+    },
+    "pred_to_target_area_ratio": 0.0021994814278923657,
+    "mean_per_target_std": {
+      "x": 0.006608459632843733,
+      "y": 0.0036334029864519835
+    },
+    "corr": {
+      "pred_x_vs_target_x": 0.2154687823408133,
+      "pred_y_vs_target_y": 0.2932075892072874,
+      "pred_x_vs_target_y": -0.08064799680783268,
+      "pred_y_vs_target_x": -0.2293745648273556
+    },
+    "monotonic": {
+      "rows_pred_x_increases_with_target_x": 0.6491228070175439,
+      "cols_pred_y_increases_with_target_y": 0.6206896551724138
+    }
+  }
+}

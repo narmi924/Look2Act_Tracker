@@ -1,0 +1,8 @@
+{
+  "num_samples": 1390,
+  "mean_pixel_error": 246.119906895195,
+  "median_pixel_error": 170.23760986328125,
+  "p95_pixel_error": 720.6753143310547,
+  "mean_norm_error": 0.16789702768203058,
+  "median_norm_error": 0.10947028547525406
+}
