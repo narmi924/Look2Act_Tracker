@@ -35,6 +35,14 @@ class FaceDetectionResult:
     right_iris_center: Optional[tuple[float, float]] = None  # 右虹膜中心像素坐标
     left_eye_center: Optional[tuple[float, float]] = None    # 左眼眶中心像素坐标
     right_eye_center: Optional[tuple[float, float]] = None   # 右眼眶中心像素坐标
+    left_eye_width: Optional[float] = None
+    right_eye_width: Optional[float] = None
+    # Eye_Touch classic backend uses raw, non-resized eye ROIs and origins.
+    left_eye_roi: Optional[np.ndarray] = None
+    right_eye_roi: Optional[np.ndarray] = None
+    left_eye_origin: Optional[tuple[int, int]] = None
+    right_eye_origin: Optional[tuple[int, int]] = None
+    frame_size: Optional[tuple[int, int]] = None
 
 
 # MediaPipe 468 点中对应传统 68 点的近似映射索引
@@ -74,6 +82,9 @@ _PNP_INDICES = {
 _LEFT_EYE_INDICES = [33, 133, 160, 159, 158, 157, 173, 246, 161, 163, 144, 145, 153, 154, 155]
 _RIGHT_EYE_INDICES = [263, 362, 387, 386, 385, 384, 398, 466, 388, 390, 373, 374, 380, 381, 382]
 
+_EYETOUCH_LEFT_EYE_INDICES = [33, 133, 160, 159, 158, 157, 173, 155, 154, 153, 145, 144, 163, 7]
+_EYETOUCH_RIGHT_EYE_INDICES = [362, 263, 387, 386, 385, 384, 398, 382, 381, 380, 373, 374, 390, 249]
+
 # 虹膜关键点索引（refine_landmarks=True 时可用，共 10 个点）
 # 左虹膜：468（中心），469-472（周围 4 点）
 # 右虹膜：473（中心），474-477（周围 4 点）
@@ -101,6 +112,13 @@ def _empty_result() -> FaceDetectionResult:
         right_iris_center=None,
         left_eye_center=None,
         right_eye_center=None,
+        left_eye_width=None,
+        right_eye_width=None,
+        left_eye_roi=None,
+        right_eye_roi=None,
+        left_eye_origin=None,
+        right_eye_origin=None,
+        frame_size=None,
     )
 
 
@@ -194,14 +212,34 @@ class FaceDetector:
         # 裁剪左右眼
         left_crop = self._crop_eye(frame_bgr, best_lms, _LEFT_EYE_INDICES, w, h)
         right_crop = self._crop_eye(frame_bgr, best_lms, _RIGHT_EYE_INDICES, w, h)
+        left_roi, left_origin = self._extract_eye_roi(frame_bgr, best_lms, _EYETOUCH_LEFT_EYE_INDICES, w, h)
+        right_roi, right_origin = self._extract_eye_roi(frame_bgr, best_lms, _EYETOUCH_RIGHT_EYE_INDICES, w, h)
 
         # 提取虹膜和眼眶中心（refine_landmarks=True 时有 478 个点）
         left_iris_center = None
         right_iris_center = None
         left_eye_center = None
         right_eye_center = None
+        left_eye_width = None
+        right_eye_width = None
 
         if len(best_lms) > _RIGHT_IRIS_CENTER_IDX:
+            left_inner = np.array([
+                best_lms[_LEFT_EYE_INNER_IDX].x * w,
+                best_lms[_LEFT_EYE_INNER_IDX].y * h,
+            ], dtype=np.float64)
+            left_outer = np.array([
+                best_lms[_LEFT_EYE_OUTER_IDX].x * w,
+                best_lms[_LEFT_EYE_OUTER_IDX].y * h,
+            ], dtype=np.float64)
+            right_inner = np.array([
+                best_lms[_RIGHT_EYE_INNER_IDX].x * w,
+                best_lms[_RIGHT_EYE_INNER_IDX].y * h,
+            ], dtype=np.float64)
+            right_outer = np.array([
+                best_lms[_RIGHT_EYE_OUTER_IDX].x * w,
+                best_lms[_RIGHT_EYE_OUTER_IDX].y * h,
+            ], dtype=np.float64)
             # 虹膜中心
             left_iris_center = (
                 float(best_lms[_LEFT_IRIS_CENTER_IDX].x * w),
@@ -212,14 +250,18 @@ class FaceDetector:
                 float(best_lms[_RIGHT_IRIS_CENTER_IDX].y * h),
             )
             # 眼眶中心（内外眼角中点）
+            left_mid = (left_inner + left_outer) / 2.0
+            right_mid = (right_inner + right_outer) / 2.0
             left_eye_center = (
-                float((best_lms[_LEFT_EYE_INNER_IDX].x + best_lms[_LEFT_EYE_OUTER_IDX].x) / 2.0 * w),
-                float((best_lms[_LEFT_EYE_INNER_IDX].y + best_lms[_LEFT_EYE_OUTER_IDX].y) / 2.0 * h),
+                float(left_mid[0]),
+                float(left_mid[1]),
             )
             right_eye_center = (
-                float((best_lms[_RIGHT_EYE_INNER_IDX].x + best_lms[_RIGHT_EYE_OUTER_IDX].x) / 2.0 * w),
-                float((best_lms[_RIGHT_EYE_INNER_IDX].y + best_lms[_RIGHT_EYE_OUTER_IDX].y) / 2.0 * h),
+                float(right_mid[0]),
+                float(right_mid[1]),
             )
+            left_eye_width = float(np.linalg.norm(left_inner - left_outer))
+            right_eye_width = float(np.linalg.norm(right_inner - right_outer))
 
         return FaceDetectionResult(
             detected=True,
@@ -233,7 +275,44 @@ class FaceDetector:
             right_iris_center=right_iris_center,
             left_eye_center=left_eye_center,
             right_eye_center=right_eye_center,
+            left_eye_width=left_eye_width,
+            right_eye_width=right_eye_width,
+            left_eye_roi=left_roi,
+            right_eye_roi=right_roi,
+            left_eye_origin=left_origin,
+            right_eye_origin=right_origin,
+            frame_size=(w, h),
         )
+
+    def _extract_eye_roi(
+        self,
+        frame_bgr: np.ndarray,
+        lms,
+        eye_indices: list[int],
+        w: int,
+        h: int,
+    ) -> tuple[Optional[np.ndarray], Optional[tuple[int, int]]]:
+        """Extract Eye_Touch style raw eye ROI without resizing."""
+        pts = []
+        for idx in eye_indices:
+            if idx < len(lms):
+                pts.append([int(lms[idx].x * w), int(lms[idx].y * h)])
+        if not pts:
+            return None, None
+
+        pts_arr = np.array(pts, dtype=np.int32)
+        x, y, box_w, box_h = cv2.boundingRect(pts_arr)
+        x = max(0, x)
+        y = max(0, y)
+        box_w = max(0, min(box_w, w - x))
+        box_h = max(0, min(box_h, h - y))
+        if box_w <= 0 or box_h <= 0:
+            return None, (x, y)
+
+        roi = frame_bgr[y:y + box_h, x:x + box_w]
+        if roi is None or roi.size == 0:
+            return None, (x, y)
+        return roi, (x, y)
 
     def _extract_landmarks_68(self, lms, w: int, h: int) -> np.ndarray:
         """从 MediaPipe 468 点中提取 68 个关键点的像素坐标。"""

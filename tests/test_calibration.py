@@ -41,17 +41,23 @@ def raw_points(n: int = 9):
 
 def _points_have_spread(pts: list[tuple[float, float]]) -> bool:
     """检查点集是否有足够的分散度（非退化）。"""
-    if len(pts) < 2:
+    if len(pts) < 6:
         return False
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
-    # 确保点集在 X 和 Y 方向都有足够的分散度
-    # 并且至少有 3 个不同的点
     unique_pts = set(pts)
+    design = np.column_stack([
+        np.array(xs, dtype=np.float64),
+        np.array(ys, dtype=np.float64),
+        np.ones(len(pts), dtype=np.float64),
+    ])
+
+    # Ensure the affine system is determined enough to recover a unique matrix.
     return (
-        len(unique_pts) >= 3 and
-        (max(xs) - min(xs)) > 50.0 and 
-        (max(ys) - min(ys)) > 50.0
+        len(unique_pts) >= 6
+        and (max(xs) - min(xs)) > 50.0
+        and (max(ys) - min(ys)) > 50.0
+        and np.linalg.matrix_rank(design) == 3
     )
 
 
@@ -59,8 +65,7 @@ class TestAffineCalibrationFit:
     """Property 11: 仿射校准拟合精度
 
     对于任意已知的 2×3 仿射矩阵 A 和由 A 生成的 N 个校准点对（N ≥ 9），
-    CalibrationModule 拟合得到的仿射矩阵 A' 应与原始矩阵 A 近似相等
-    （允许元素误差 1e-3）。
+    CalibrationModule 应能通过 apply 恢复同一映射（允许误差 1e-3）。
 
     **Validates: Requirements 6.3**
     """
@@ -70,7 +75,7 @@ class TestAffineCalibrationFit:
     def test_affine_fit_recovers_matrix(
         self, A: np.ndarray, pts: list[tuple[float, float]]
     ):
-        """从已知仿射矩阵生成的校准点应能还原该矩阵。
+        """从已知仿射矩阵生成的校准点应能还原映射行为。
 
         **Validates: Requirements 6.3**
         """
@@ -87,11 +92,16 @@ class TestAffineCalibrationFit:
         # 残差应接近 0（因为数据完全符合仿射变换）
         assert residual < 1e-3, f"残差应接近 0，实际为 {residual}"
 
-        # 拟合矩阵应与原始矩阵近似
+        # 校准器会先归一化 raw 点再拟合，因此内部矩阵不等于 raw-space 的 A；
+        # 行为上应恢复同一仿射映射。
         assert cm.affine_matrix is not None
-        assert np.allclose(cm.affine_matrix, A, atol=1e-3), (
-            f"拟合矩阵与原始矩阵不一致:\n拟合: {cm.affine_matrix}\n原始: {A}"
-        )
+        for rx, ry in pts:
+            src = np.array([rx, ry, 1.0])
+            expected = A @ src
+            actual = cm.apply((rx, ry))
+            assert np.allclose(actual, expected, atol=1e-3), (
+                f"校准映射与目标不一致:\n实际: {actual}\n期望: {expected}"
+            )
 
 
 from src.calibration.serializer import save_calibration, load_calibration

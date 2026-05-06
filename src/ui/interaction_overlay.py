@@ -4,23 +4,21 @@ import os
 import subprocess
 import sys
 import webbrowser
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QPoint, QPointF, QRect, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPaintEvent, QPen
+from PyQt6.QtCore import QPoint, QPointF, QRect, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
     QGridLayout,
-    QHBoxLayout,
     QLabel,
     QVBoxLayout,
     QWidget,
 )
-
-from qfluentwidgets import BodyLabel, CardWidget, PushButton, TitleLabel
 
 
 if sys.platform == "win32":
@@ -69,11 +67,12 @@ class FullscreenStageWindow(QWidget):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self.setAutoFillBackground(True)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -85,19 +84,21 @@ class FullscreenStageWindow(QWidget):
 class GazeTrailOverlay(QWidget):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self._points: list[QPointF] = []
+        self._points: deque[QPointF] = deque(maxlen=30)
+        self._current_point: Optional[QPointF] = None
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("background: transparent;")
 
     def clear(self) -> None:
         self._points.clear()
+        self._current_point = None
         self.update()
 
     def update_gaze_point(self, x: float, y: float) -> None:
-        self._points.append(QPointF(x, y))
-        if len(self._points) > 28:
-            self._points.pop(0)
+        point = QPointF(x, y)
+        self._current_point = point
+        self._points.append(point)
         self.update()
 
     def paintEvent(self, event: QPaintEvent) -> None:
@@ -107,12 +108,23 @@ class GazeTrailOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        for idx in range(1, len(self._points)):
-            alpha = int(255 * idx / len(self._points))
-            pen = QPen(QColor(96, 165, 250, alpha), 4)
+        points = list(self._points)
+        for index in range(1, len(points)):
+            alpha = int(255 * (index / len(points)))
+            pen = QPen(QColor(100, 180, 255, alpha), 4)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
-            painter.drawLine(self._points[idx - 1], self._points[idx])
+            painter.drawLine(points[index - 1], points[index])
+
+        if self._current_point is not None:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(255, 0, 0, 100)))
+            painter.drawEllipse(self._current_point, 12, 12)
+            painter.setBrush(QBrush(QColor(255, 0, 0, 200)))
+            painter.drawEllipse(self._current_point, 8, 8)
+            painter.setBrush(QBrush(QColor(255, 255, 255, 255)))
+            painter.drawEllipse(self._current_point, 4, 4)
 
 
 class GazeVerificationWindow(FullscreenStageWindow):
@@ -122,63 +134,14 @@ class GazeVerificationWindow(FullscreenStageWindow):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._gaze_point: Optional[tuple[float, float]] = None
+        self._target_point: Optional[tuple[int, int]] = None
         self._target_points: list[tuple[float, float]] = []
 
         self._init_ui()
         self._build_reference_points()
 
     def _init_ui(self) -> None:
-        self.setStyleSheet("background-color: rgba(8, 15, 26, 244);")
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 28, 32, 28)
-        layout.setSpacing(16)
-
-        header = QHBoxLayout()
-        title_block = QVBoxLayout()
-
-        title = TitleLabel("Calibration Verification")
-        title.setStyleSheet("color: white; font-size: 30px; font-weight: 800;")
-        subtitle = BodyLabel(
-            "Visually inspect whether the calibrated cursor follows your gaze smoothly across the screen."
-        )
-        subtitle.setStyleSheet("color: rgba(255, 255, 255, 190); font-size: 15px;")
-
-        title_block.addWidget(title)
-        title_block.addWidget(subtitle)
-
-        self.status_label = QLabel("Move your gaze across the reference points, then press Enter to accept.")
-        self.status_label.setStyleSheet(
-            """
-            QLabel {
-                color: white;
-                background-color: rgba(255, 255, 255, 18);
-                border-radius: 12px;
-                padding: 12px 16px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            """
-        )
-
-        header.addLayout(title_block)
-        header.addStretch(1)
-        header.addWidget(self.status_label)
-        layout.addLayout(header)
-        layout.addStretch(1)
-
-        footer = QHBoxLayout()
-        footer.addStretch(1)
-
-        confirm = PushButton("Enter: Confirm")
-        confirm.clicked.connect(self._confirm)
-        cancel = PushButton("Esc: Cancel")
-        cancel.clicked.connect(self._cancel)
-
-        footer.addWidget(confirm)
-        footer.addSpacing(12)
-        footer.addWidget(cancel)
-        layout.addLayout(footer)
+        self.setStyleSheet("background-color: black;")
 
         self.trail_overlay = GazeTrailOverlay(self)
         self.trail_overlay.raise_()
@@ -210,6 +173,7 @@ class GazeVerificationWindow(FullscreenStageWindow):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._gaze_point = None
+        self._target_point = None
         self.trail_overlay.clear()
 
     def update_gaze_point(self, x: float, y: float) -> None:
@@ -224,21 +188,56 @@ class GazeVerificationWindow(FullscreenStageWindow):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         for index, (tx, ty) in enumerate(self._target_points, start=1):
-            painter.setPen(QPen(QColor(255, 255, 255, 200), 2))
-            painter.setBrush(QColor(239, 68, 68, 210))
-            painter.drawEllipse(int(tx - 16), int(ty - 16), 32, 32)
+            painter.setPen(QPen(QColor(255, 255, 255, 180), 2))
+            painter.setBrush(QColor(0, 0, 255, 220))
+            painter.drawEllipse(int(tx - 15), int(ty - 15), 30, 30)
             painter.setBrush(QColor(255, 255, 255, 255))
-            painter.drawEllipse(int(tx - 5), int(ty - 5), 10, 10)
-            painter.setPen(QPen(QColor(255, 255, 255, 170), 1))
-            painter.drawText(int(tx + 20), int(ty - 18), f"P{index}")
+            painter.drawEllipse(int(tx - 4), int(ty - 4), 8, 8)
 
-        if self._gaze_point is not None:
+        vector_length = 0.0
+        if self._target_point is not None:
+            tx, ty = self._target_point
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 255, 255))
+            painter.drawEllipse(tx - 15, ty - 15, 30, 30)
+
+        if self._gaze_point is not None and self._target_point is not None:
             gx, gy = self._gaze_point
-            painter.setPen(QPen(QColor(255, 255, 255, 220), 3))
-            painter.setBrush(QColor(245, 158, 11, 180))
-            painter.drawEllipse(int(gx - 16), int(gy - 16), 32, 32)
-            painter.setBrush(QColor(255, 255, 255, 255))
-            painter.drawEllipse(int(gx - 4), int(gy - 4), 8, 8)
+            tx, ty = self._target_point
+            painter.setPen(QPen(QColor(0, 255, 255), 3))
+            painter.drawLine(int(gx), int(gy), tx, ty)
+            vector_length = ((gx - tx) ** 2 + (gy - ty) ** 2) ** 0.5
+
+        self._draw_vector_info(painter, vector_length)
+
+    def mousePressEvent(self, event) -> None:
+        self._target_point = (int(event.position().x()), int(event.position().y()))
+        self.trail_overlay.clear()
+        self.update()
+
+    def _draw_vector_info(self, painter: QPainter, vector_length: float) -> None:
+        font = QFont("Arial", 20)
+        painter.setFont(font)
+        lines = [
+            f"向量长度 / Vector Length: {vector_length:.1f} px",
+            f"精度 / Accuracy: {'优秀 / Excellent' if vector_length < 50 else '良好 / Good' if vector_length < 100 else '需改进 / Needs Improvement'}",
+            "Enter: 确认 / Confirm    Esc: 取消 / Cancel",
+        ]
+        if self._target_point is None:
+            lines.append("点击屏幕设置目标点 / Click screen to set target point")
+
+        metrics = painter.fontMetrics()
+        width = max(metrics.horizontalAdvance(line) for line in lines) + 28
+        height = len(lines) * 32 + 22
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 210))
+        painter.drawRect(10, 10, width, height)
+
+        painter.setPen(QColor(255, 255, 255))
+        for idx, line in enumerate(lines):
+            color = QColor(100, 200, 255) if "Enter" in line else QColor(255, 255, 255)
+            painter.setPen(color)
+            painter.drawText(24, 42 + idx * 32, line)
 
     def keyPressEvent(self, event) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
@@ -262,13 +261,16 @@ class GazeVerificationWindow(FullscreenStageWindow):
 class LauncherAction:
     index: int
     title: str
+    icon: str
     subtitle: str
     callback: Optional[Callable[[], None]]
 
 
-class LauncherRegionCard(CardWidget):
-    def __init__(self, title: str, subtitle: str, parent: Optional[QWidget] = None):
+class LauncherRegionCard(QFrame):
+    def __init__(self, title: str, icon: str, subtitle: str, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        self.title = title
+        self.icon = icon
         self._progress = 0.0
         self._active = False
 
@@ -276,31 +278,55 @@ class LauncherRegionCard(CardWidget):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(10)
 
-        title_label = TitleLabel(title)
-        subtitle_label = BodyLabel(subtitle)
+        title_label = QLabel(f"{icon}\n{title}")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet(
+            """
+            QLabel {
+                background: transparent;
+                border: none;
+                color: #333333;
+                font-size: 24px;
+                font-weight: 600;
+                font-family: "Microsoft YaHei", "SimHei", Arial;
+            }
+            """
+        )
+        subtitle_label = QLabel(subtitle)
+        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle_label.setWordWrap(True)
-        subtitle_label.setStyleSheet("color: rgba(255, 255, 255, 185);")
+        subtitle_label.setStyleSheet(
+            """
+            QLabel {
+                background: transparent;
+                border: none;
+                color: #666666;
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "SimHei", Arial;
+            }
+            """
+        )
 
         layout.addStretch(1)
-        layout.addWidget(title_label, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(subtitle_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
+        layout.addWidget(subtitle_label)
         layout.addStretch(1)
 
         self._apply_style()
 
     def _apply_style(self) -> None:
-        border = "rgba(255, 255, 255, 95)"
-        background = "rgba(14, 23, 38, 205)"
+        border = "#E0E0E0"
+        background = "#FAF9F6"
         if self._active:
-            border = "rgba(245, 158, 11, 220)"
-            background = "rgba(23, 37, 84, 222)"
+            border = "#4CAF50"
+            background = "#F4FFF4"
 
         self.setStyleSheet(
             f"""
-            CardWidget {{
+            QFrame {{
                 background-color: {background};
                 border: 2px solid {border};
-                border-radius: 20px;
+                border-radius: 10px;
             }}
             """
         )
@@ -322,14 +348,14 @@ class LauncherRegionCard(CardWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        radius = min(self.width(), self.height()) // 7
-        center_x = self.width() - radius - 16
-        center_y = self.height() - radius - 16
+        radius = 20
+        center_x = self.width() - radius - 10
+        center_y = self.height() - radius - 10
 
-        painter.setPen(QPen(QColor(255, 255, 255, 60), 5))
+        painter.setPen(QPen(QColor(200, 200, 200), 4))
         painter.drawEllipse(center_x - radius, center_y - radius, radius * 2, radius * 2)
 
-        painter.setPen(QPen(QColor(245, 158, 11, 230), 5))
+        painter.setPen(QPen(QColor(76, 175, 80), 4))
         painter.drawArc(
             center_x - radius,
             center_y - radius,
@@ -343,85 +369,36 @@ class LauncherRegionCard(CardWidget):
 class InteractionLauncherOverlay(FullscreenStageWindow):
     closed = pyqtSignal()
     request_toggle_dwell = pyqtSignal()
+    request_open_gomoku = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._actions = [
-            LauncherAction(0, "Browser", "Open the default browser", launch_browser),
-            LauncherAction(1, "Explorer", "Open the user home folder", launch_explorer),
-            LauncherAction(2, "Notepad", "Open a lightweight editor", launch_notepad),
-            LauncherAction(3, "Keyboard", "Open the on-screen keyboard", launch_osk),
-            LauncherAction(5, "Magnifier", "Open the Windows magnifier", launch_magnifier),
-            LauncherAction(6, "Dwell Click", "Toggle dwell click on or off", None),
-            LauncherAction(7, "Return", "Close the interaction stage", None),
-            LauncherAction(8, "Exit", "Close the interaction stage", None),
+            LauncherAction(0, "浏览器 / Browser", "🌐", "打开默认浏览器 / Open default browser", launch_browser),
+            LauncherAction(1, "文件 / Files", "📁", "打开用户文件夹 / Open user folder", launch_explorer),
+            LauncherAction(2, "记事本 / Notepad", "📝", "打开轻量编辑器 / Open lightweight editor", launch_notepad),
+            LauncherAction(3, "五子棋 / Gomoku", "🎮", "进入凝视落子游戏 / Play gaze board game", None),
+            LauncherAction(5, "放大镜 / Magnifier", "🔍", "打开系统放大镜 / Open system magnifier", launch_magnifier),
+            LauncherAction(6, "键盘 / Keyboard", "⌨", "打开屏幕键盘 / Open on-screen keyboard", launch_osk),
+            LauncherAction(7, "返回 / Return", "⬅", "关闭交互页 / Close interaction", None),
+            LauncherAction(8, "退出 / Exit", "✕", "关闭交互页 / Close interaction", None),
         ]
         self._cards: dict[int, LauncherRegionCard] = {}
         self._current_region: Optional[int] = None
         self._region_enter_time = 0.0
         self._last_trigger_time = 0.0
-        self._dwell_ms = 1200.0
+        self._dwell_ms = 3000.0
+        self.trail_timer: Optional[QTimer] = None
 
         self._init_ui()
 
     def _init_ui(self) -> None:
-        self.setStyleSheet("background-color: rgba(6, 11, 18, 252);")
+        self.setStyleSheet("QWidget { background-color: #FAF9F6; }")
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(38, 28, 38, 28)
-        root.setSpacing(18)
-
-        header = QHBoxLayout()
-        title_block = QVBoxLayout()
-
-        title = TitleLabel("Look2Act Interaction Stage")
-        title.setStyleSheet("color: white; font-size: 30px; font-weight: 800;")
-        subtitle = BodyLabel(
-            "This is an independent full-screen interaction window. Hold gaze on a tile to trigger it."
-        )
-        subtitle.setStyleSheet("color: rgba(255, 255, 255, 190); font-size: 15px;")
-        title_block.addWidget(title)
-        title_block.addWidget(subtitle)
-
-        self.status_label = QLabel("Waiting for gaze focus.")
-        self.status_label.setStyleSheet(
-            """
-            QLabel {
-                color: white;
-                background-color: rgba(255, 255, 255, 16);
-                border-radius: 12px;
-                padding: 12px 16px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            """
-        )
-
-        close_button = PushButton("Close")
-        close_button.clicked.connect(self.close)
-
-        header.addLayout(title_block)
-        header.addStretch(1)
-        header.addWidget(self.status_label)
-        header.addSpacing(12)
-        header.addWidget(close_button)
-        root.addLayout(header)
-
-        board = QFrame()
-        board.setStyleSheet(
-            """
-            QFrame {
-                background-color: rgba(12, 20, 33, 220);
-                border: 1px solid rgba(255, 255, 255, 34);
-                border-radius: 28px;
-            }
-            """
-        )
-
-        grid = QGridLayout(board)
-        grid.setContentsMargins(28, 28, 28, 28)
-        grid.setHorizontalSpacing(24)
-        grid.setVerticalSpacing(24)
+        grid = QGridLayout(self)
+        grid.setContentsMargins(40, 40, 40, 40)
+        grid.setHorizontalSpacing(20)
+        grid.setVerticalSpacing(20)
 
         positions = {
             0: (0, 0),
@@ -438,46 +415,33 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
             if action.index not in positions:
                 continue
             row, col = positions[action.index]
-            card = LauncherRegionCard(action.title, action.subtitle)
+            card = LauncherRegionCard(action.title, action.icon, action.subtitle)
             self._cards[action.index] = card
             grid.addWidget(card, row, col)
 
-        center_card = CardWidget()
-        center_card.setStyleSheet(
+        center_hint = QLabel("注视任意区域 / Look at any tile\n保持3秒 / Hold for 3 seconds\n即可触发操作 / Trigger action\n\n轨迹只显示在当前页面 / Trail stays on this page")
+        center_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        center_hint.setStyleSheet(
             """
-            CardWidget {
-                background-color: rgba(255, 255, 255, 20);
-                border: 1px dashed rgba(255, 255, 255, 100);
-                border-radius: 18px;
+            QLabel {
+                background-color: transparent;
+                color: #999999;
+                font-size: 18px;
+                font-style: italic;
+                font-family: "Microsoft YaHei", "SimHei", Arial;
+                line-height: 1.4;
             }
             """
         )
-        center_layout = QVBoxLayout(center_card)
-        center_layout.setContentsMargins(20, 20, 20, 20)
-        center_layout.setSpacing(12)
-
-        center_title = TitleLabel("Flow")
-        center_title.setStyleSheet("color: white;")
-        center_text = BodyLabel(
-            "Calibration -> Verification -> Interaction.\n"
-            "This stage is isolated from the main window to keep the runtime path clean."
-        )
-        center_text.setWordWrap(True)
-        center_text.setStyleSheet("color: rgba(255, 255, 255, 190);")
-
-        center_layout.addWidget(center_title, alignment=Qt.AlignmentFlag.AlignCenter)
-        center_layout.addWidget(center_text)
-        center_layout.addStretch(1)
-        grid.addWidget(center_card, 1, 1)
+        grid.addWidget(center_hint, 1, 1)
 
         for row in range(3):
             grid.setRowStretch(row, 1)
         for col in range(3):
             grid.setColumnStretch(col, 1)
 
-        root.addWidget(board, 1)
-
         self.trail_overlay = GazeTrailOverlay(self)
+        self.trail_overlay.setGeometry(self.rect())
         self.trail_overlay.raise_()
 
     def resizeEvent(self, event) -> None:
@@ -489,6 +453,12 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
         super().showEvent(event)
         self.reset_progress()
         self.trail_overlay.clear()
+        self.trail_overlay.setGeometry(self.rect())
+        self.trail_overlay.raise_()
+        if self.trail_timer is None:
+            self.trail_timer = QTimer(self)
+            self.trail_timer.timeout.connect(self.trail_overlay.update)
+            self.trail_timer.start(10)
 
     def reset_progress(self) -> None:
         self._current_region = None
@@ -511,7 +481,6 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
                 card.set_progress(0.0, index == hovered_region)
 
         if hovered_region is None:
-            self.status_label.setText("Move gaze onto a launcher tile.")
             return
 
         progress = min((now - self._region_enter_time) / self._dwell_ms, 1.0)
@@ -519,9 +488,6 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
             card.set_progress(progress if index == hovered_region else 0.0, index == hovered_region)
 
         action = self._action_by_region(hovered_region)
-        if action is not None:
-            self.status_label.setText(f"Triggering {action.title}: {int(progress * 100)}%")
-
         if progress >= 1.0:
             self._trigger_region(hovered_region)
             self._last_trigger_time = now
@@ -534,6 +500,9 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
         super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
+        if self.trail_timer is not None:
+            self.trail_timer.stop()
+            self.trail_timer = None
         self.trail_overlay.clear()
         self.closed.emit()
         super().closeEvent(event)
@@ -557,10 +526,9 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
         if action is None:
             return
 
-        self.status_label.setText(f"Triggered: {action.title}")
-
-        if region_index == 6:
-            self.request_toggle_dwell.emit()
+        if region_index == 3:
+            self.request_open_gomoku.emit()
+            self.close()
             return
 
         if region_index in {7, 8}:

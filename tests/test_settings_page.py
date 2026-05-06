@@ -7,8 +7,15 @@ from pathlib import Path
 
 import pytest
 import yaml
+import numpy as np
 
 from src.tracker.pipeline import SystemConfig
+from src.ui.settings_page import (
+    detect_supported_camera_resolutions,
+    format_resolution,
+    parse_resolution,
+    sort_resolutions,
+)
 
 
 def test_system_config_default_values():
@@ -23,10 +30,96 @@ def test_system_config_default_values():
     assert config.checkpoint_path == "checkpoints/best_model.pth"
     assert config.use_ipex is False
     assert config.use_onnx is False
+    assert config.normalized_backend == "classic"
+    assert config.calibration_path == "calibration_classic.json"
+    assert config.deep_gaze_space == "head"
+    assert config.normalized_deep_pose_input == "live"
+    assert config.normalized_smoother_type == "kalman"
     assert config.screen_w_mm == 344.0
     assert config.screen_h_mm == 194.0
     assert config.smoother_alpha == 0.3
     assert config.target_fps == 30
+
+
+def test_system_config_backend_paths():
+    """测试 tracker backend 与校准文件路径分离。"""
+    classic = SystemConfig(tracker_backend="classic")
+    deep = SystemConfig(tracker_backend="deep")
+    unknown = SystemConfig(tracker_backend="bad")
+
+    assert classic.normalized_backend == "classic"
+    assert classic.calibration_path == "calibration_classic.json"
+    assert deep.normalized_backend == "deep"
+    assert deep.calibration_path == "calibration_deep.json"
+    assert unknown.normalized_backend == "classic"
+    assert unknown.calibration_path == "calibration_classic.json"
+
+
+def test_system_config_smoother_type_normalization():
+    """测试平滑器类型归一化。"""
+    assert SystemConfig(smoother_type="kalman").normalized_smoother_type == "kalman"
+    assert SystemConfig(smoother_type="ema").normalized_smoother_type == "ema"
+    assert SystemConfig(smoother_type="none").normalized_smoother_type == "none"
+    assert SystemConfig(smoother_type="bad").normalized_smoother_type == "kalman"
+
+
+def test_resolution_format_parse_and_sort():
+    assert format_resolution(1280, 720) == "1280x720"
+    assert parse_resolution("1920 x 1080") == (1920, 1080)
+    assert sort_resolutions([(1920, 1080), (640, 480), (640, 480)]) == [
+        (640, 480),
+        (1920, 1080),
+    ]
+
+
+def test_detect_supported_camera_resolutions_uses_actual_frame_size():
+    import cv2
+
+    class FakeCapture:
+        def __init__(self, *args):
+            self.width = 640
+            self.height = 480
+            self.released = False
+
+        def isOpened(self):
+            return True
+
+        def set(self, prop, value):
+            if prop == cv2.CAP_PROP_FRAME_WIDTH:
+                self.width = int(value)
+            elif prop == cv2.CAP_PROP_FRAME_HEIGHT:
+                self.height = int(value)
+
+        def get(self, prop):
+            if prop == cv2.CAP_PROP_FRAME_WIDTH:
+                return self.width
+            if prop == cv2.CAP_PROP_FRAME_HEIGHT:
+                return self.height
+            return 0
+
+        def read(self):
+            if (self.width, self.height) == (1920, 1080):
+                return True, np.zeros((720, 1280, 3), dtype=np.uint8)
+            return True, np.zeros((self.height, self.width, 3), dtype=np.uint8)
+
+        def release(self):
+            self.released = True
+
+    detected = detect_supported_camera_resolutions(
+        0,
+        "auto",
+        candidates=((640, 480), (1920, 1080)),
+        capture_factory=lambda *args: FakeCapture(*args),
+    )
+
+    assert detected == [(640, 480), (1280, 720)]
+
+
+def test_system_config_deep_pose_input_normalization():
+    """测试 deep pose input 归一化。"""
+    assert SystemConfig(deep_pose_input="live").normalized_deep_pose_input == "live"
+    assert SystemConfig(deep_pose_input="zero").normalized_deep_pose_input == "zero"
+    assert SystemConfig(deep_pose_input="bad").normalized_deep_pose_input == "live"
 
 
 def test_system_config_from_yaml():
@@ -49,6 +142,8 @@ def test_system_config_from_yaml():
             'use_ipex': True,
             'use_onnx': True,
             'onnx_path': 'models/custom.onnx',
+            'deep_gaze_space': 'camera',
+            'deep_pose_input': 'zero',
         },
         'geometry': {
             'screen_w_mm': 400.0,
@@ -56,6 +151,7 @@ def test_system_config_from_yaml():
         },
         'smoother': {
             'alpha': 0.5,
+            'type': 'ema',
         },
         'tracker': {
             'target_fps': 60,
@@ -81,6 +177,8 @@ def test_system_config_from_yaml():
         assert config.use_ipex is True
         assert config.use_onnx is True
         assert config.onnx_path == 'models/custom.onnx'
+        assert config.deep_gaze_space == 'camera'
+        assert config.deep_pose_input == 'zero'
         
         # 验证几何配置
         assert config.screen_w_mm == 400.0
@@ -88,6 +186,7 @@ def test_system_config_from_yaml():
         
         # 验证平滑配置
         assert config.smoother_alpha == 0.5
+        assert config.smoother_type == 'ema'
         
         # 验证追踪配置
         assert config.target_fps == 60
@@ -108,9 +207,12 @@ def test_system_config_yaml_round_trip():
         checkpoint_path='test_model.pth',
         use_ipex=True,
         use_onnx=False,
+        deep_gaze_space='camera',
+        deep_pose_input='zero',
         screen_w_mm=500.0,
         screen_h_mm=300.0,
         smoother_alpha=0.7,
+        smoother_type='none',
         target_fps=45,
     )
     
@@ -132,6 +234,8 @@ def test_system_config_yaml_round_trip():
             'use_ipex': original_config.use_ipex,
             'use_onnx': original_config.use_onnx,
             'onnx_path': original_config.onnx_path,
+            'deep_gaze_space': original_config.deep_gaze_space,
+            'deep_pose_input': original_config.deep_pose_input,
         },
         'geometry': {
             'screen_w_mm': original_config.screen_w_mm,
@@ -139,6 +243,7 @@ def test_system_config_yaml_round_trip():
         },
         'smoother': {
             'alpha': original_config.smoother_alpha,
+            'type': original_config.smoother_type,
         },
         'tracker': {
             'target_fps': original_config.target_fps,
@@ -162,9 +267,12 @@ def test_system_config_yaml_round_trip():
         assert loaded_config.checkpoint_path == original_config.checkpoint_path
         assert loaded_config.use_ipex == original_config.use_ipex
         assert loaded_config.use_onnx == original_config.use_onnx
+        assert loaded_config.deep_gaze_space == original_config.deep_gaze_space
+        assert loaded_config.deep_pose_input == original_config.deep_pose_input
         assert loaded_config.screen_w_mm == original_config.screen_w_mm
         assert loaded_config.screen_h_mm == original_config.screen_h_mm
         assert loaded_config.smoother_alpha == original_config.smoother_alpha
+        assert loaded_config.smoother_type == original_config.smoother_type
         assert loaded_config.target_fps == original_config.target_fps
         
     finally:

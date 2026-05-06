@@ -5,10 +5,10 @@
 设置页面（`src/ui/settings_page.py`）提供了 Look2Act Tracker 系统的配置界面，支持以下功能：
 
 1. **摄像头设置**：配置摄像头索引、分辨率、后端
-2. **模型设置**：配置模型路径、IPEX 优化、ONNX Runtime
-3. **几何设置**：配置屏幕物理尺寸
+2. **模型设置**：配置模型路径、IPEX 优化、ONNX Runtime（默认归入高级设置）
+3. **几何设置**：配置屏幕物理尺寸（默认归入高级设置）
 4. **平滑设置**：调节视线平滑系数
-5. **追踪设置**：配置目标帧率
+5. **追踪设置**：配置追踪模式和目标帧率
 
 ## 主要功能
 
@@ -34,6 +34,12 @@
   - 需要先导出 ONNX 模型
 - **ONNX 模型路径**：ONNX 模型文件路径（.onnx）
   - 默认：`checkpoints/gaze_net.onnx`
+- **Deep 坐标空间**：
+  - `head`：保留原始 deep 链路，模型输出先经头姿旋转到 camera space
+  - `camera`：实验模式，模型输出按 camera-space 直接使用，用于排查 PnP rotation 放大问题
+- **Deep 姿态输入**：
+  - `live`：把实时 PnP yaw/pitch/roll 输入 GazeNetV2
+  - `zero`：输入零姿态向量，用于排查训练/实时 head-pose 约定不一致造成的污染
 
 ### 3. 几何设置
 
@@ -44,6 +50,10 @@
 
 ### 4. 平滑设置
 
+- **平滑方式**：
+  - `kalman`：classic 默认，稳定性优先
+  - `ema`：指数滑动平均，用于和旧平滑路径对照
+  - `none`：禁用平滑，用于诊断延迟和原始输出
 - **平滑系数 Alpha**：控制视线平滑程度（范围：0.01 ~ 1.00）
   - 较小的值（如 0.1）：更平滑，但响应较慢
   - 较大的值（如 0.8）：响应快，但可能抖动
@@ -52,6 +62,9 @@
 
 ### 5. 追踪设置
 
+- **追踪模式**：
+  - `classic`：默认体验模式，使用经典图像处理特征和独立交互窗口
+  - `deep`：研究模式，使用深度模型链路
 - **目标帧率**：追踪系统的目标帧率（FPS）
   - 范围：10 ~ 60
   - 推荐值：30
@@ -99,20 +112,24 @@ model:
   use_ipex: false
   use_onnx: true
   onnx_path: checkpoints/gaze_net.onnx
+  deep_gaze_space: head
+  deep_pose_input: live
 
 geometry:
   screen_w_mm: 344.0
   screen_h_mm: 194.0
 
 calibration:
-  num_points: 9
-  save_path: calibration.json
-  max_residual_px: 50.0
+  num_points: 25
+  save_path: calibration_classic.json
+  max_residual_px: 300.0
 
 smoother:
+  type: kalman
   alpha: 0.3
 
 tracker:
+  backend: classic
   target_fps: 30
   timer_interval_ms: 33
 ```

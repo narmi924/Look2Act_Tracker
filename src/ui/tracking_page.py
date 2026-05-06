@@ -9,6 +9,7 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QBrush, QColor, QCursor, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -20,6 +21,7 @@ from qfluentwidgets import BodyLabel, CardWidget, PrimaryPushButton, PushButton
 
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
+from src.tracker.classic import EyeTouchScreenSmoother
 from src.tracker.pipeline import SystemConfig, TrackerPipeline
 from src.ui.fluent_theme import PALETTE
 from src.ui.interaction_overlay import (
@@ -27,6 +29,27 @@ from src.ui.interaction_overlay import (
     InteractionLauncherOverlay,
     perform_left_click,
 )
+from src.ui.gomoku_window import GomokuWindow
+
+
+class ScreenGazeStabilizer:
+    """Eye_Touch screen-space smoother used by the classic backend."""
+
+    def __init__(
+        self,
+        median_window: int = 5,
+        alpha: float = 0.18,
+        fast_alpha: float = 0.32,
+        fast_threshold_px: float = 140.0,
+        max_step_px: float = 75.0,
+    ):
+        self._smoother = EyeTouchScreenSmoother(history_len=60)
+
+    def reset(self) -> None:
+        self._smoother.reset()
+
+    def update(self, point: tuple[float, float]) -> tuple[float, float]:
+        return self._smoother.update(point)
 
 
 class GazeCursorOverlay(QWidget):
@@ -135,6 +158,7 @@ class TrackingPage(QWidget):
         self.cursor_overlay: Optional[GazeCursorOverlay] = None
         self.verification_window: Optional[GazeVerificationWindow] = None
         self.interaction_overlay: Optional[InteractionLauncherOverlay] = None
+        self.gomoku_window: Optional[GomokuWindow] = None
 
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_tracking_data)
@@ -146,14 +170,19 @@ class TrackingPage(QWidget):
         self._dwell_anchor: Optional[tuple[float, float]] = None
         self._dwell_started_at = 0.0
         self._dwell_cooldown_until = 0.0
+        self._reopen_launcher_after_gomoku = False
 
         self._verification_passed = False
+        self.diagnostics_enabled = False
+        self.show_cursor_overlay = False
+        self.screen_stabilizer = ScreenGazeStabilizer()
 
         self._init_ui()
         self._refresh_stage_controls()
 
     def set_calibrator(self, calibrator: CalibrationModule) -> None:
         self.calibrator = calibrator
+        self.screen_stabilizer.reset()
         if self.calibrator.is_calibrated:
             residual = self.calibrator.residual_mean
             self.calib_status.setText(f"已加载 / Loaded (残差: {residual:.2f} px)")
@@ -191,7 +220,7 @@ class TrackingPage(QWidget):
         self.verify_btn.setEnabled(False)
         self.verify_btn.clicked.connect(self._open_verification_window)
 
-        self.dwell_btn = PushButton("启用点击\nDwell Click")
+        self.dwell_btn = PushButton("启用点击\nEnable Click")
         self.dwell_btn.setFixedSize(160, 60)
         self.dwell_btn.setEnabled(False)
         self.dwell_btn.clicked.connect(self._toggle_dwell_click)
@@ -201,20 +230,24 @@ class TrackingPage(QWidget):
         self.launcher_btn.setEnabled(False)
         self.launcher_btn.clicked.connect(self._toggle_launcher_overlay)
 
-        top_bar = QHBoxLayout()
-        top_bar.addWidget(title)
-        top_bar.addStretch(1)
-        top_bar.addWidget(self.load_calib_btn)
-        top_bar.addSpacing(10)
-        top_bar.addWidget(self.verify_btn)
-        top_bar.addSpacing(10)
-        top_bar.addWidget(self.dwell_btn)
-        top_bar.addSpacing(10)
-        top_bar.addWidget(self.launcher_btn)
-        top_bar.addSpacing(10)
-        top_bar.addWidget(self.start_btn)
-        top_bar.addSpacing(10)
-        top_bar.addWidget(self.stop_btn)
+        self.diagnostics_btn = PushButton("诊断\nDiagnostics")
+        self.diagnostics_btn.setFixedSize(120, 60)
+        self.diagnostics_btn.clicked.connect(self._toggle_diagnostics)
+
+        title_row = QHBoxLayout()
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+
+        button_bar = QHBoxLayout()
+        button_bar.setSpacing(10)
+        button_bar.addWidget(self.load_calib_btn)
+        button_bar.addWidget(self.verify_btn)
+        button_bar.addWidget(self.dwell_btn)
+        button_bar.addWidget(self.launcher_btn)
+        button_bar.addWidget(self.diagnostics_btn)
+        button_bar.addWidget(self.start_btn)
+        button_bar.addWidget(self.stop_btn)
+        button_bar.addStretch(1)
 
         perf_card = CardWidget()
         perf_layout = QVBoxLayout(perf_card)
@@ -249,20 +282,24 @@ class TrackingPage(QWidget):
             ("smoothing", "平滑滤波 / Smoothing"),
         ]
 
-        timings_grid = QVBoxLayout()
-        timings_grid.setSpacing(6)
+        timings_grid = QGridLayout()
+        timings_grid.setHorizontalSpacing(18)
+        timings_grid.setVerticalSpacing(6)
 
-        for stage_key, stage_name in timing_stages:
-            row = QHBoxLayout()
+        for index, (stage_key, stage_name) in enumerate(timing_stages):
+            grid_row = index // 2
+            grid_col = (index % 2) * 2
             label = BodyLabel(f"{stage_name}:")
             label.setStyleSheet("font-size: 13px;")
             value = BodyLabel("0.00 ms")
             value.setStyleSheet("font-size: 13px; color: #666; font-family: 'Consolas', monospace;")
             self.timing_labels[stage_key] = value
-            row.addWidget(label)
-            row.addStretch(1)
-            row.addWidget(value)
-            timings_grid.addLayout(row)
+            timings_grid.addWidget(label, grid_row, grid_col)
+            timings_grid.addWidget(value, grid_row, grid_col + 1)
+        timings_grid.setColumnStretch(0, 1)
+        timings_grid.setColumnStretch(1, 0)
+        timings_grid.setColumnStretch(2, 1)
+        timings_grid.setColumnStretch(3, 0)
 
         perf_layout.addWidget(perf_title)
         perf_layout.addLayout(fps_row)
@@ -311,11 +348,19 @@ class TrackingPage(QWidget):
         self.error_label.setStyleSheet("color: #D32F2F; font-weight: 600; margin-top: 10px;")
         self.error_label.setWordWrap(True)
 
+        self.diagnostics_label = BodyLabel("")
+        self.diagnostics_label.setWordWrap(True)
+        self.diagnostics_label.setStyleSheet(
+            "color: #444; font-family: 'Consolas', monospace; font-size: 12px;"
+        )
+        self.diagnostics_label.hide()
+
         status_layout.addWidget(status_title)
         status_layout.addLayout(face_row)
         status_layout.addLayout(gaze_row)
         status_layout.addLayout(calib_row)
         status_layout.addWidget(self.error_label)
+        status_layout.addWidget(self.diagnostics_label)
 
         stage_card = CardWidget()
         stage_layout = QVBoxLayout(stage_card)
@@ -326,7 +371,7 @@ class TrackingPage(QWidget):
         stage_title.setStyleSheet("font-size: 18px; font-weight: 600;")
 
         verify_row = QHBoxLayout()
-        verify_label = BodyLabel("Verification:")
+        verify_label = BodyLabel("验证 / Verification:")
         verify_label.setStyleSheet("font-weight: 600;")
         self.verify_status = BodyLabel("待校准 / Pending Calibration")
         verify_row.addWidget(verify_label)
@@ -335,7 +380,7 @@ class TrackingPage(QWidget):
         verify_row.addStretch(1)
 
         dwell_row = QHBoxLayout()
-        dwell_label = BodyLabel("Dwell Click:")
+        dwell_label = BodyLabel("停留点击 / Dwell Click:")
         dwell_label.setStyleSheet("font-weight: 600;")
         self.dwell_status = BodyLabel("关闭 / Off")
         dwell_row.addWidget(dwell_label)
@@ -344,7 +389,7 @@ class TrackingPage(QWidget):
         dwell_row.addStretch(1)
 
         launcher_row = QHBoxLayout()
-        launcher_label = BodyLabel("Interaction Stage:")
+        launcher_label = BodyLabel("交互窗口 / Interaction Stage:")
         launcher_label.setStyleSheet("font-weight: 600;")
         self.launcher_status = BodyLabel("未进入 / Not Open")
         launcher_row.addWidget(launcher_label)
@@ -353,7 +398,7 @@ class TrackingPage(QWidget):
         launcher_row.addStretch(1)
 
         progress_row = QHBoxLayout()
-        progress_label = BodyLabel("Dwell Progress:")
+        progress_label = BodyLabel("停留进度 / Dwell Progress:")
         progress_label.setStyleSheet("font-weight: 600;")
         self.dwell_progress_label = BodyLabel("0%")
         progress_row.addWidget(progress_label)
@@ -362,7 +407,8 @@ class TrackingPage(QWidget):
         progress_row.addStretch(1)
 
         self.interaction_hint = BodyLabel(
-            "Recommended workflow: load calibration, open the fullscreen verification stage, confirm the calibrated cursor, then enter the fullscreen interaction stage."
+            "推荐流程：加载校准，进入全屏验证，确认注视光标后进入全屏交互。 / "
+            "Recommended workflow: load calibration, open fullscreen verification, confirm the calibrated cursor, then enter fullscreen interaction."
         )
         self.interaction_hint.setWordWrap(True)
         self.interaction_hint.setStyleSheet("color: #666;")
@@ -374,35 +420,81 @@ class TrackingPage(QWidget):
         stage_layout.addLayout(progress_row)
         stage_layout.addWidget(self.interaction_hint)
 
+        self.info_grid = QGridLayout()
+        self.info_grid.setHorizontalSpacing(16)
+        self.info_grid.setVerticalSpacing(16)
+        self.info_cards = [perf_card, status_card, stage_card]
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(40, 30, 40, 30)
         main_layout.setSpacing(20)
-        main_layout.addLayout(top_bar)
-        main_layout.addWidget(perf_card)
-        main_layout.addWidget(status_card)
-        main_layout.addWidget(stage_card)
+        main_layout.addLayout(title_row)
+        main_layout.addLayout(button_bar)
+        main_layout.addLayout(self.info_grid)
         main_layout.addStretch(1)
+        self._arrange_info_cards()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "info_grid"):
+            self._arrange_info_cards()
+
+    def _arrange_info_cards(self) -> None:
+        if not hasattr(self, "info_grid"):
+            return
+
+        while self.info_grid.count():
+            item = self.info_grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(self)
+
+        width = max(self.width(), 0)
+        if width >= 1450:
+            placements = [(0, 0, 1, 1), (0, 1, 1, 1), (0, 2, 1, 1)]
+            column_stretches = [2, 1, 1]
+        elif width >= 980:
+            placements = [(0, 0, 1, 2), (1, 0, 1, 1), (1, 1, 1, 1)]
+            column_stretches = [1, 1]
+        else:
+            placements = [(0, 0, 1, 1), (1, 0, 1, 1), (2, 0, 1, 1)]
+            column_stretches = [1]
+
+        for card, (row, col, row_span, col_span) in zip(self.info_cards, placements):
+            self.info_grid.addWidget(card, row, col, row_span, col_span)
+
+        for col in range(3):
+            stretch = column_stretches[col] if col < len(column_stretches) else 0
+            self.info_grid.setColumnStretch(col, stretch)
 
     def _handle_load_calibration(self) -> None:
-        load_path = Path("calibration.json")
+        if self.tracker_config is None:
+            config_path = Path("configs/system_config.yaml")
+            self.tracker_config = SystemConfig.from_yaml(str(config_path)) if config_path.exists() else SystemConfig()
+
+        load_path = Path(self.tracker_config.calibration_path)
 
         if not load_path.exists():
-            self.calib_status.setText("未加载 / Not Loaded (using raw output)")
+            self.calib_status.setText(f"未加载 / Not Loaded ({load_path.name})")
             self.calib_status.setStyleSheet("color: #FF9800; font-weight: 600;")
             self._mark_verification_required("待校准 / Pending Calibration")
             return
 
         try:
             if self.calibrator is None:
-                self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
+                if self.tracker_config.normalized_backend == "classic":
+                    self.calibrator = CalibrationModule(num_points=25, max_residual_px=300.0, method="polynomial")
+                else:
+                    self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
 
             load_calibration(self.calibrator, str(load_path))
+            self.screen_stabilizer.reset()
             residual = self.calibrator.residual_mean
             self.calib_status.setText(f"已加载 / Loaded (残差: {residual:.2f} px)")
             self.calib_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
             self._mark_verification_required("待验证 / Verification Required")
         except Exception as e:
-            QMessageBox.critical(self, "加载失败", f"加载校准参数失败：{e}")
+            QMessageBox.critical(self, "加载失败 / Load Failed", f"加载校准参数失败：{e}\n\nFailed to load calibration parameters: {e}")
 
     def _handle_start_tracking(self) -> None:
         try:
@@ -420,26 +512,29 @@ class TrackingPage(QWidget):
             if not self.tracker.is_running():
                 success = self.tracker.start()
                 if not success:
-                    self.error_label.setText("TrackerPipeline 启动失败，请检查摄像头和模型文件。")
+                    self.error_label.setText("TrackerPipeline 启动失败，请检查摄像头和模型文件。 / TrackerPipeline failed to start. Check the camera and model files.")
                     return
 
             if self.cursor_overlay is None:
                 self.cursor_overlay = GazeCursorOverlay()
 
-            self._restore_cursor_overlay_if_needed()
             self.update_timer.start(self.update_interval_ms)
+            self.screen_stabilizer.reset()
 
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
             self._refresh_stage_controls()
         except Exception as e:
-            self.error_label.setText(f"启动失败：{e}")
+            self.error_label.setText(f"启动失败 / Start failed: {e}")
 
     def _handle_stop_tracking(self) -> None:
         self.update_timer.stop()
+        self.screen_stabilizer.reset()
         self._close_verification_window()
         self._close_launcher_overlay()
+        self._close_gomoku_window()
         self._reset_dwell_state()
+        self._stop_tracker_runtime()
 
         if self.cursor_overlay is not None:
             self.cursor_overlay.hide()
@@ -462,7 +557,11 @@ class TrackingPage(QWidget):
 
     def _open_verification_window(self) -> None:
         if self.calibrator is None or not self.calibrator.is_calibrated:
-            QMessageBox.information(self, "需要校准", "请先加载或完成校准，再进入验证阶段。")
+            QMessageBox.information(
+                self,
+                "需要校准 / Calibration Required",
+                "请先加载或完成校准，再进入验证阶段。\n\nPlease load or complete calibration before verification."
+            )
             return
 
         if self.tracker is None or not self.tracker.is_running():
@@ -471,6 +570,7 @@ class TrackingPage(QWidget):
                 return
 
         self._close_launcher_overlay()
+        self._close_gomoku_window()
         self._reset_dwell_state()
 
         if self.cursor_overlay is not None:
@@ -493,25 +593,33 @@ class TrackingPage(QWidget):
             window.close()
 
     def _on_verification_passed(self) -> None:
+        self.verification_window = None
         self._verification_passed = True
         self.verify_status.setText("已通过 / Passed")
         self.verify_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
+        self._stop_tracker_runtime()
         self._restore_cursor_overlay_if_needed()
         self._refresh_stage_controls()
 
     def _on_verification_cancelled(self) -> None:
+        self.verification_window = None
         if self._verification_passed:
             self.verify_status.setText("已通过 / Passed")
             self.verify_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
         else:
             self.verify_status.setText("待验证 / Verification Required")
             self.verify_status.setStyleSheet("color: #FF9800; font-weight: 600;")
+        self._stop_tracker_runtime()
         self._restore_cursor_overlay_if_needed()
         self._refresh_stage_controls()
 
     def _toggle_dwell_click(self) -> None:
         if not self._verification_passed:
-            QMessageBox.information(self, "先完成验证", "请先完成全屏验证，再启用点击交互。")
+            QMessageBox.information(
+                self,
+                "先完成验证 / Verification Required",
+                "请先完成全屏验证，再启用点击交互。\n\nPlease complete fullscreen verification before enabling dwell click."
+            )
             return
         self.dwell_enabled = not self.dwell_enabled
         self._reset_dwell_state()
@@ -525,7 +633,11 @@ class TrackingPage(QWidget):
 
     def _open_launcher_overlay(self) -> None:
         if not self._verification_passed:
-            QMessageBox.information(self, "先完成验证", "请先完成全屏验证，再进入交互阶段。")
+            QMessageBox.information(
+                self,
+                "先完成验证 / Verification Required",
+                "请先完成全屏验证，再进入交互阶段。\n\nPlease complete fullscreen verification before entering interaction."
+            )
             return
 
         if self.tracker is None or not self.tracker.is_running():
@@ -541,6 +653,7 @@ class TrackingPage(QWidget):
 
         self.interaction_overlay = InteractionLauncherOverlay()
         self.interaction_overlay.request_toggle_dwell.connect(self._toggle_dwell_click)
+        self.interaction_overlay.request_open_gomoku.connect(self._open_gomoku_window)
         self.interaction_overlay.closed.connect(self._on_launcher_closed)
         self.interaction_overlay.show()
         self._refresh_stage_controls()
@@ -557,6 +670,51 @@ class TrackingPage(QWidget):
         self.interaction_overlay = None
         self._restore_cursor_overlay_if_needed()
         self._refresh_stage_controls()
+
+    def _open_gomoku_window(self) -> None:
+        self._close_launcher_overlay()
+        self._reset_dwell_state()
+        if self.cursor_overlay is not None:
+            self.cursor_overlay.hide()
+        if self.gomoku_window is None:
+            self.gomoku_window = GomokuWindow()
+            self.gomoku_window.closed.connect(self._on_gomoku_closed)
+            self.gomoku_window.return_to_launcher.connect(self._on_gomoku_return_to_launcher)
+        self.gomoku_window.show()
+        self._refresh_stage_controls()
+
+    def _close_gomoku_window(self) -> None:
+        if self.gomoku_window is not None:
+            window = self.gomoku_window
+            self.gomoku_window = None
+            window.close()
+        self._refresh_stage_controls()
+
+    def _on_gomoku_closed(self) -> None:
+        self.gomoku_window = None
+        self._restore_cursor_overlay_if_needed()
+        self._refresh_stage_controls()
+        if self._reopen_launcher_after_gomoku:
+            self._reopen_launcher_after_gomoku = False
+            QTimer.singleShot(0, self._open_launcher_overlay)
+
+    def _on_gomoku_return_to_launcher(self) -> None:
+        self._reopen_launcher_after_gomoku = True
+
+    def _stop_tracker_runtime(self) -> None:
+        self.update_timer.stop()
+        self.screen_stabilizer.reset()
+        if self.tracker is not None:
+            self.tracker.stop()
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.fps_value.setText("0.0")
+        for label in self.timing_labels.values():
+            label.setText("0.00 ms")
+        self.face_status.setText("未启动 / Not Started")
+        self.face_status.setStyleSheet("color: #888;")
+        self.gaze_status.setText("未启动 / Not Started")
+        self.gaze_status.setStyleSheet("color: #888;")
 
     def _update_tracking_data(self) -> None:
         if self.tracker is None or not self.tracker.is_running():
@@ -582,10 +740,25 @@ class TrackingPage(QWidget):
             self.gaze_status.setText("有效 / Valid")
             self.gaze_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
 
-            gaze_x, gaze_y = self._apply_calibration_and_clamp(*result.gaze_point)
+            (gaze_x, gaze_y), pre_clamp = self._apply_calibration_and_clamp_with_debug(*result.gaze_point)
+            clamped_point = (gaze_x, gaze_y)
+            if self._should_stabilize_screen_point(result):
+                gaze_x, gaze_y = self.screen_stabilizer.update(clamped_point)
+            else:
+                self.screen_stabilizer.reset()
+            result.calibrated_point = (gaze_x, gaze_y)
+            if isinstance(result.debug, dict):
+                result.debug["pre_clamp_point"] = pre_clamp
+                result.debug["clamped_point"] = clamped_point
+                result.debug["screen_stabilized_point"] = result.calibrated_point
 
             if self.verification_window is not None:
                 self.verification_window.update_gaze_point(gaze_x, gaze_y)
+                self.dwell_progress_label.setText("0%")
+                if self.cursor_overlay is not None:
+                    self.cursor_overlay.set_dwell_progress(0.0, False)
+            elif self.gomoku_window is not None:
+                self.gomoku_window.update_gaze_point(gaze_x, gaze_y)
                 self.dwell_progress_label.setText("0%")
                 if self.cursor_overlay is not None:
                     self.cursor_overlay.set_dwell_progress(0.0, False)
@@ -618,20 +791,86 @@ class TrackingPage(QWidget):
                 self.cursor_overlay.clear_gaze_point()
 
         if result.error_message:
-            self.error_label.setText(f"警告: {result.error_message}")
+            self.error_label.setText(f"警告 / Warning: {result.error_message}")
         elif not self.dwell_enabled:
             self.error_label.setText("")
 
+        if self.diagnostics_enabled:
+            self._update_diagnostics_label(result)
+
     def _apply_calibration_and_clamp(self, gaze_x: float, gaze_y: float) -> tuple[float, float]:
+        clamped, _ = self._apply_calibration_and_clamp_with_debug(gaze_x, gaze_y)
+        return clamped
+
+    def _apply_calibration_and_clamp_with_debug(
+        self,
+        gaze_x: float,
+        gaze_y: float,
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
         if self.calibrator is not None and self.calibrator.is_calibrated:
             gaze_x, gaze_y = self.calibrator.apply((gaze_x, gaze_y))
+        pre_clamp = (gaze_x, gaze_y)
 
         screen = QApplication.primaryScreen()
         if screen is not None:
             geo = screen.geometry()
             gaze_x = max(0.0, min(gaze_x, float(geo.width() - 1)))
             gaze_y = max(0.0, min(gaze_y, float(geo.height() - 1)))
-        return gaze_x, gaze_y
+        return (gaze_x, gaze_y), pre_clamp
+
+    def _should_stabilize_screen_point(self, result) -> bool:
+        if self.tracker_config is None:
+            return False
+        if self.tracker_config.normalized_smoother_type == "none":
+            return False
+        return result.backend == "classic"
+
+    def _toggle_diagnostics(self) -> None:
+        self.diagnostics_enabled = not self.diagnostics_enabled
+        self.diagnostics_label.setVisible(self.diagnostics_enabled)
+        self.diagnostics_btn.setText("隐藏诊断\nHide Diagnostics" if self.diagnostics_enabled else "诊断\nDiagnostics")
+        if not self.diagnostics_enabled:
+            self.diagnostics_label.setText("")
+
+    def _update_diagnostics_label(self, result) -> None:
+        tracker_diag = self.tracker.get_diagnostics() if self.tracker is not None else {}
+        raw = result.raw_point or result.gaze_point
+        calibrated = result.calibrated_point
+        calib_method = getattr(getattr(self.calibrator, "method", None), "value", "none")
+        calib_points = len(getattr(self.calibrator, "_raw_points", [])) if self.calibrator is not None else 0
+        lines = [
+            f"backend={result.backend} model={tracker_diag.get('model_version')} fps={result.fps:.1f}",
+            f"raw={self._fmt_point(raw)} calibrated={self._fmt_point(calibrated)}",
+            f"calib={calib_method} points={calib_points} path={tracker_diag.get('calibration_path')}",
+            f"onnx_inputs={tracker_diag.get('onnx_inputs', [])}",
+        ]
+        if isinstance(result.debug, dict):
+            lines.append(
+                "pre_clamp={} clamped={}".format(
+                    self._fmt_point(result.debug.get("pre_clamp_point")),
+                    self._fmt_point(result.debug.get("clamped_point")),
+                )
+            )
+            lines.append(f"screen_smooth={self._fmt_point(result.debug.get('screen_stabilized_point'))}")
+        head_pose = result.debug.get("head_pose") if isinstance(result.debug, dict) else None
+        if isinstance(head_pose, dict):
+            lines.append(
+                "head=({yaw:.1f},{pitch:.1f},{roll:.1f})".format(
+                    yaw=head_pose.get("yaw", 0.0),
+                    pitch=head_pose.get("pitch", 0.0),
+                    roll=head_pose.get("roll", 0.0),
+                )
+            )
+        if result.timings:
+            timing_text = " ".join(f"{k}={v:.1f}" for k, v in result.timings.items())
+            lines.append(timing_text)
+        self.diagnostics_label.setText("\n".join(lines))
+
+    @staticmethod
+    def _fmt_point(point: Optional[tuple[float, float]]) -> str:
+        if point is None:
+            return "None"
+        return f"({point[0]:.3f},{point[1]:.3f})"
 
     def _update_dwell_click(self, gaze_x: float, gaze_y: float) -> float:
         now = time.perf_counter() * 1000.0
@@ -652,9 +891,9 @@ class TrackingPage(QWidget):
         progress = min((now - self._dwell_started_at) / self.dwell_ms, 1.0)
         if progress >= 1.0:
             if perform_left_click():
-                self.error_label.setText("信息: 已触发 dwell left click。")
+                self.error_label.setText("信息 / Info: 已触发停留左键点击。 / Dwell left click triggered.")
             else:
-                self.error_label.setText("警告: 当前平台不支持系统级左键点击。")
+                self.error_label.setText("警告 / Warning: 当前平台不支持系统级左键点击。 / System-level left click is not supported on this platform.")
             self._dwell_anchor = None
             self._dwell_started_at = 0.0
             self._dwell_cooldown_until = now + 800.0
@@ -681,6 +920,7 @@ class TrackingPage(QWidget):
     def _restore_cursor_overlay_if_needed(self) -> None:
         if (
             self.cursor_overlay is not None
+            and self.show_cursor_overlay
             and self.tracker is not None
             and self.tracker.is_running()
             and self._no_fullscreen_stage_open()
@@ -688,16 +928,16 @@ class TrackingPage(QWidget):
             self.cursor_overlay.show()
 
     def _no_fullscreen_stage_open(self) -> bool:
-        return self.verification_window is None and self.interaction_overlay is None
+        return self.verification_window is None and self.interaction_overlay is None and self.gomoku_window is None
 
     def _refresh_stage_controls(self) -> None:
         tracker_running = self.tracker is not None and self.tracker.is_running()
         calibration_ready = self.calibrator is not None and self.calibrator.is_calibrated
         fullscreen_stage_open = not self._no_fullscreen_stage_open()
 
-        self.verify_btn.setEnabled(tracker_running and calibration_ready and self.interaction_overlay is None)
+        self.verify_btn.setEnabled(calibration_ready and self.interaction_overlay is None)
         self.dwell_btn.setEnabled(tracker_running and self._verification_passed and self.interaction_overlay is None and self.verification_window is None)
-        self.launcher_btn.setEnabled(tracker_running and self._verification_passed and self.verification_window is None)
+        self.launcher_btn.setEnabled(self._verification_passed and self.verification_window is None)
 
         if self.verification_window is not None:
             self.verify_status.setText("验证中 / Verifying")
@@ -715,16 +955,20 @@ class TrackingPage(QWidget):
         if self.dwell_enabled:
             self.dwell_status.setText("开启 / On")
             self.dwell_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
-            self.dwell_btn.setText("关闭点击\nDwell Click")
+            self.dwell_btn.setText("关闭点击\nDisable Click")
         else:
             self.dwell_status.setText("关闭 / Off")
             self.dwell_status.setStyleSheet("color: #888;")
-            self.dwell_btn.setText("启用点击\nDwell Click")
+            self.dwell_btn.setText("启用点击\nEnable Click")
 
         if self.interaction_overlay is not None:
             self.launcher_status.setText("运行中 / Open")
             self.launcher_status.setStyleSheet("color: #2196F3; font-weight: 600;")
             self.launcher_btn.setText("关闭交互\nClose Interaction")
+        elif self.gomoku_window is not None:
+            self.launcher_status.setText("五子棋 / Gomoku")
+            self.launcher_status.setStyleSheet("color: #2196F3; font-weight: 600;")
+            self.launcher_btn.setText("交互窗口\nOpen Interaction")
         elif fullscreen_stage_open:
             self.launcher_status.setText("等待中 / Stage Active")
             self.launcher_status.setStyleSheet("color: #888;")
@@ -735,7 +979,7 @@ class TrackingPage(QWidget):
             self.launcher_btn.setText("交互窗口\nOpen Interaction")
 
     def _on_tracker_error(self, message: str) -> None:
-        self.error_label.setText(f"错误: {message}")
+        self.error_label.setText(f"错误 / Error: {message}")
 
     def closeEvent(self, event) -> None:
         self._handle_stop_tracking()
@@ -750,4 +994,5 @@ class TrackingPage(QWidget):
 
         self._close_verification_window()
         self._close_launcher_overlay()
+        self._close_gomoku_window()
         super().closeEvent(event)

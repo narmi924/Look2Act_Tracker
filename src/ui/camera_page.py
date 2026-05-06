@@ -182,7 +182,7 @@ class CameraPage(QWidget):
             print(f"[CAMERA_PAGE] 摄像头预览已启动: camera_index={self._camera_index}, resolution={self._resolution.label()}")
             
         except Exception as e:
-            error_msg = f"启动失败: {str(e)}"
+            error_msg = f"启动失败 / Start failed: {str(e)}"
             self.error_label.setText(error_msg)
             self.preview_label.setText("启动失败\nStart Failed")
             print(f"[CAMERA_PAGE] 启动错误: {e!r}")
@@ -204,7 +204,7 @@ class CameraPage(QWidget):
 
     def _on_error(self, msg: str) -> None:
         """处理摄像头错误。"""
-        self.error_label.setText(f"错误: {msg}")
+        self.error_label.setText(f"错误 / Error: {msg}")
         self.detect_value.setText("错误 / Error")
         print(f"[CAMERA_PAGE] 摄像头错误: {msg}")
 

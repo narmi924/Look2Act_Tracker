@@ -51,6 +51,25 @@ def test_tracker_pipeline_initialization():
     assert pipeline.get_latest_frame() is None
 
 
+def test_tracker_stop_releases_resources_even_if_not_running():
+    class FakeCap:
+        def __init__(self):
+            self.released = False
+
+        def release(self):
+            self.released = True
+
+    config = SystemConfig()
+    pipeline = TrackerPipeline(model_path="", config=config)
+    cap = FakeCap()
+    pipeline.cap = cap
+
+    pipeline.stop()
+
+    assert cap.released
+    assert pipeline.cap is None
+
+
 def test_tracker_result_dataclass():
     """测试 TrackerResult 数据类。"""
     from tracker.pipeline import TrackerResult
