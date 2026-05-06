@@ -254,7 +254,7 @@ class SettingsPage(QWidget):
         scroll_layout.addWidget(self.geometry_card)
         scroll_layout.addWidget(smoother_card)
         scroll_layout.addWidget(tracker_card)
-        author_label = BodyLabel("作者 / Author: Imranjan Mamtimin / 依木热尼江·买买提明 · imranjan.cn")
+        author_label = BodyLabel("作者 / Author: 依木热尼江·买买提明 / Imranjan Mamtimin · imranjan.cn")
         author_label.setStyleSheet("color: #666; font-size: 13px; font-weight: 600; margin-top: 8px;")
         scroll_layout.addWidget(author_label)
         scroll_layout.addWidget(self.status_label)
