@@ -217,5 +217,45 @@ def test_gomoku_window_is_large_5x5_ox_board(qapp):
     window.close()
 
 
+def test_gomoku_window_emits_return_to_launcher_after_game_end(qapp):
+    window = GomokuWindow()
+    emitted = []
+    window.return_to_launcher.connect(lambda: emitted.append(True))
+
+    window._finish_game("X 获胜", "🎉")
+    window._on_return_tick()
+    window._on_return_tick()
+    window._on_return_tick()
+    window._on_return_tick()
+    window._on_return_tick()
+    window._on_return_tick()
+    window._on_return_tick()
+    window._on_return_tick()
+
+    assert emitted == [True]
+
+    window.close()
+
+
+def test_tracking_page_info_cards_use_responsive_grid(qapp):
+    page = TrackingPage()
+    page.resize(1600, 900)
+    page._arrange_info_cards()
+
+    assert page.info_grid.count() == 3
+    assert page.info_grid.itemAtPosition(0, 0).widget() is page.info_cards[0]
+    assert page.info_grid.itemAtPosition(0, 1).widget() is page.info_cards[1]
+    assert page.info_grid.itemAtPosition(0, 2).widget() is page.info_cards[2]
+
+    page.resize(850, 900)
+    page._arrange_info_cards()
+
+    assert page.info_grid.itemAtPosition(0, 0).widget() is page.info_cards[0]
+    assert page.info_grid.itemAtPosition(1, 0).widget() is page.info_cards[1]
+    assert page.info_grid.itemAtPosition(2, 0).widget() is page.info_cards[2]
+
+    page.close()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

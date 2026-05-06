@@ -9,6 +9,7 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QBrush, QColor, QCursor, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -169,6 +170,7 @@ class TrackingPage(QWidget):
         self._dwell_anchor: Optional[tuple[float, float]] = None
         self._dwell_started_at = 0.0
         self._dwell_cooldown_until = 0.0
+        self._reopen_launcher_after_gomoku = False
 
         self._verification_passed = False
         self.diagnostics_enabled = False
@@ -282,20 +284,24 @@ class TrackingPage(QWidget):
             ("smoothing", "平滑滤波 / Smoothing"),
         ]
 
-        timings_grid = QVBoxLayout()
-        timings_grid.setSpacing(6)
+        timings_grid = QGridLayout()
+        timings_grid.setHorizontalSpacing(18)
+        timings_grid.setVerticalSpacing(6)
 
-        for stage_key, stage_name in timing_stages:
-            row = QHBoxLayout()
+        for index, (stage_key, stage_name) in enumerate(timing_stages):
+            grid_row = index // 2
+            grid_col = (index % 2) * 2
             label = BodyLabel(f"{stage_name}:")
             label.setStyleSheet("font-size: 13px;")
             value = BodyLabel("0.00 ms")
             value.setStyleSheet("font-size: 13px; color: #666; font-family: 'Consolas', monospace;")
             self.timing_labels[stage_key] = value
-            row.addWidget(label)
-            row.addStretch(1)
-            row.addWidget(value)
-            timings_grid.addLayout(row)
+            timings_grid.addWidget(label, grid_row, grid_col)
+            timings_grid.addWidget(value, grid_row, grid_col + 1)
+        timings_grid.setColumnStretch(0, 1)
+        timings_grid.setColumnStretch(1, 0)
+        timings_grid.setColumnStretch(2, 1)
+        timings_grid.setColumnStretch(3, 0)
 
         perf_layout.addWidget(perf_title)
         perf_layout.addLayout(fps_row)
@@ -415,14 +421,51 @@ class TrackingPage(QWidget):
         stage_layout.addLayout(progress_row)
         stage_layout.addWidget(self.interaction_hint)
 
+        self.info_grid = QGridLayout()
+        self.info_grid.setHorizontalSpacing(16)
+        self.info_grid.setVerticalSpacing(16)
+        self.info_cards = [perf_card, status_card, stage_card]
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(40, 30, 40, 30)
         main_layout.setSpacing(20)
         main_layout.addLayout(top_bar)
-        main_layout.addWidget(perf_card)
-        main_layout.addWidget(status_card)
-        main_layout.addWidget(stage_card)
+        main_layout.addLayout(self.info_grid)
         main_layout.addStretch(1)
+        self._arrange_info_cards()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "info_grid"):
+            self._arrange_info_cards()
+
+    def _arrange_info_cards(self) -> None:
+        if not hasattr(self, "info_grid"):
+            return
+
+        while self.info_grid.count():
+            item = self.info_grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(self)
+
+        width = max(self.width(), 0)
+        if width >= 1450:
+            placements = [(0, 0, 1, 1), (0, 1, 1, 1), (0, 2, 1, 1)]
+            column_stretches = [2, 1, 1]
+        elif width >= 980:
+            placements = [(0, 0, 1, 2), (1, 0, 1, 1), (1, 1, 1, 1)]
+            column_stretches = [1, 1]
+        else:
+            placements = [(0, 0, 1, 1), (1, 0, 1, 1), (2, 0, 1, 1)]
+            column_stretches = [1]
+
+        for card, (row, col, row_span, col_span) in zip(self.info_cards, placements):
+            self.info_grid.addWidget(card, row, col, row_span, col_span)
+
+        for col in range(3):
+            stretch = column_stretches[col] if col < len(column_stretches) else 0
+            self.info_grid.setColumnStretch(col, stretch)
 
     def _handle_load_calibration(self) -> None:
         if self.tracker_config is None:
@@ -624,6 +667,7 @@ class TrackingPage(QWidget):
         if self.gomoku_window is None:
             self.gomoku_window = GomokuWindow()
             self.gomoku_window.closed.connect(self._on_gomoku_closed)
+            self.gomoku_window.return_to_launcher.connect(self._on_gomoku_return_to_launcher)
         self.gomoku_window.show()
         self._refresh_stage_controls()
 
@@ -638,6 +682,12 @@ class TrackingPage(QWidget):
         self.gomoku_window = None
         self._restore_cursor_overlay_if_needed()
         self._refresh_stage_controls()
+        if self._reopen_launcher_after_gomoku:
+            self._reopen_launcher_after_gomoku = False
+            QTimer.singleShot(0, self._open_launcher_overlay)
+
+    def _on_gomoku_return_to_launcher(self) -> None:
+        self._reopen_launcher_after_gomoku = True
 
     def _stop_tracker_runtime(self) -> None:
         self.update_timer.stop()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
@@ -17,6 +17,7 @@ class GomokuWindow(QWidget):
     """
 
     closed = pyqtSignal()
+    return_to_launcher = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -28,6 +29,11 @@ class GomokuWindow(QWidget):
         self._last_gaze: Optional[QPointF] = None
         self._dwell_ms = 900.0
         self._game_over = False
+        self._result_message = ""
+        self._result_emoji = ""
+        self._return_countdown_ms = 0
+        self._return_timer = QTimer(self)
+        self._return_timer.timeout.connect(self._on_return_tick)
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -162,6 +168,9 @@ class GomokuWindow(QWidget):
             painter.setBrush(QColor(255, 255, 255, 245))
             painter.drawEllipse(self._last_gaze, 4, 4)
 
+        if self._game_over:
+            self._draw_result_overlay(painter)
+
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self.close()
@@ -172,6 +181,7 @@ class GomokuWindow(QWidget):
         super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
+        self._return_timer.stop()
         self.closed.emit()
         super().closeEvent(event)
 
@@ -218,12 +228,10 @@ class GomokuWindow(QWidget):
             return
         self.board[row][col] = 1
         if self._winner_from(row, col, 1):
-            self._game_over = True
-            self.status_label.setText("X 获胜")
+            self._finish_game("X 获胜", "🎉")
             return
         if self._is_full():
-            self._game_over = True
-            self.status_label.setText("平局")
+            self._finish_game("平局", "😐")
             return
         self._place_o()
 
@@ -234,8 +242,7 @@ class GomokuWindow(QWidget):
         row, col = move
         self.board[row][col] = 2
         if self._winner_from(row, col, 2):
-            self._game_over = True
-            self.status_label.setText("O 获胜")
+            self._finish_game("O 获胜", "😅")
         else:
             self.status_label.setText("X 落子")
 
@@ -280,11 +287,67 @@ class GomokuWindow(QWidget):
     def _is_full(self) -> bool:
         return all(self.board[row][col] != 0 for row in range(self.board_size) for col in range(self.board_size))
 
+    def _finish_game(self, message: str, emoji: str) -> None:
+        self._game_over = True
+        self._result_message = message
+        self._result_emoji = emoji
+        self._return_countdown_ms = 2000
+        self.status_label.setText(f"{message}，2秒后返回")
+        self._return_timer.start(250)
+        self.update()
+
+    def _on_return_tick(self) -> None:
+        self._return_countdown_ms = max(0, self._return_countdown_ms - 250)
+        if self._return_countdown_ms <= 0:
+            self._return_timer.stop()
+            self.return_to_launcher.emit()
+            self.close()
+            return
+        seconds = max(1, math.ceil(self._return_countdown_ms / 1000.0))
+        self.status_label.setText(f"{self._result_message}，{seconds}秒后返回")
+        self.update()
+
+    def _draw_result_overlay(self, painter: QPainter) -> None:
+        overlay_rect = self.rect().adjusted(120, 120, -120, -120)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(250, 249, 246, 232))
+        painter.drawRoundedRect(overlay_rect, 24, 24)
+
+        seconds = math.ceil(max(0, self._return_countdown_ms) / 1000.0)
+        painter.setPen(QColor(38, 50, 56))
+
+        emoji_font = painter.font()
+        emoji_font.setPointSize(82)
+        emoji_font.setBold(True)
+        painter.setFont(emoji_font)
+        painter.drawText(self.rect().adjusted(0, 190, 0, 0), Qt.AlignmentFlag.AlignHCenter, self._result_emoji)
+
+        text_font = painter.font()
+        text_font.setPointSize(34)
+        text_font.setBold(True)
+        painter.setFont(text_font)
+        painter.drawText(self.rect().adjusted(0, 330, 0, 0), Qt.AlignmentFlag.AlignHCenter, self._result_message)
+
+        countdown_font = painter.font()
+        countdown_font.setPointSize(20)
+        countdown_font.setBold(False)
+        painter.setFont(countdown_font)
+        painter.setPen(QColor(84, 125, 93))
+        painter.drawText(
+            self.rect().adjusted(0, 410, 0, 0),
+            Qt.AlignmentFlag.AlignHCenter,
+            f"{seconds} 秒后返回九宫格",
+        )
+
     def _reset_board(self) -> None:
+        self._return_timer.stop()
         self.board = [[0 for _ in range(self.board_size)] for _ in range(self.board_size)]
         self.current_hover = None
         self._last_gaze = None
         self._game_over = False
+        self._result_message = ""
+        self._result_emoji = ""
+        self._return_countdown_ms = 0
         self.status_label.setText("X 落子")
         self.update()
 

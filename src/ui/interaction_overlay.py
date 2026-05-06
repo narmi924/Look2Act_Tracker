@@ -283,6 +283,8 @@ class LauncherRegionCard(QFrame):
         title_label.setStyleSheet(
             """
             QLabel {
+                background: transparent;
+                border: none;
                 color: #333333;
                 font-size: 24px;
                 font-weight: 600;
@@ -296,6 +298,8 @@ class LauncherRegionCard(QFrame):
         subtitle_label.setStyleSheet(
             """
             QLabel {
+                background: transparent;
+                border: none;
                 color: #666666;
                 font-size: 14px;
                 font-family: "Microsoft YaHei", "SimHei", Arial;
