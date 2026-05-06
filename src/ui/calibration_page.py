@@ -359,6 +359,7 @@ class CalibrationPage(QWidget):
     - 重新校准选项
     """
     calibration_ready = pyqtSignal()
+    return_home_requested = pyqtSignal()
     
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -428,10 +429,16 @@ class CalibrationPage(QWidget):
         self.load_btn = PushButton("加载校准\nLoad Calibration")
         self.load_btn.setFixedSize(160, 60)
         self.load_btn.clicked.connect(self._handle_load_calibration)
+
+        self.home_btn = PushButton("返回主页\nHome")
+        self.home_btn.setFixedSize(160, 60)
+        self.home_btn.clicked.connect(self.return_home_requested.emit)
+        self.home_btn.hide()
         
         button_layout.addWidget(self.start_btn)
         button_layout.addWidget(self.save_btn)
         button_layout.addWidget(self.load_btn)
+        button_layout.addWidget(self.home_btn)
         button_layout.addStretch(1)
         
         # 主布局
@@ -471,6 +478,7 @@ class CalibrationPage(QWidget):
         self.calibration_residual = 0.0
         self.residual_label.setText("残差 / Residual: N/A")
         self.save_btn.setEnabled(False)
+        self._show_default_actions()
     
     def _handle_start_calibration(self) -> None:
         """启动校准流程。"""
@@ -481,6 +489,8 @@ class CalibrationPage(QWidget):
                 "TrackerPipeline 未初始化。请先启动实时追踪。"
             )
             return
+
+        self._show_default_actions()
         
         if not self.tracker.is_running():
             QMessageBox.warning(
@@ -508,31 +518,19 @@ class CalibrationPage(QWidget):
         self.calibration_success = success
         self.calibration_residual = residual
         
-        # 更新 UI
         if success:
-            self.status_label.setText("校准成功 / Calibration Successful")
+            self.status_label.setText(
+                f"校准成功，请保存并进入验证 / Calibration successful, residual {residual:.2f}px"
+            )
             self.status_label.setStyleSheet("font-size: 14px; color: #4CAF50; font-weight: 600;")
         else:
-            self.status_label.setText("校准失败（残差过大）/ Calibration Failed (High Residual)")
+            self.status_label.setText(
+                f"校准失败，建议重新校准 / Calibration failed, residual {residual:.2f}px"
+            )
             self.status_label.setStyleSheet("font-size: 14px; color: #FF9800; font-weight: 600;")
         
         self.residual_label.setText(f"残差 / Residual: {residual:.2f} px")
-        self.save_btn.setEnabled(True)
-        
-        # 显示结果消息框
-        if success:
-            MessageBox(
-                "校准成功",
-                f"校准完成！平均残差：{residual:.2f} 像素\n\n请点击\"保存校准\"以保存校准参数。",
-                self
-            ).exec()
-            self.calibration_ready.emit()
-        else:
-            result = MessageBox(
-                "校准失败",
-                f"校准残差过大：{residual:.2f} 像素（阈值：{self.calibrator.max_residual_px:.0f} 像素）\n\n建议重新校准以获得更好的精度。",
-                self
-            ).exec()
+        self._show_result_actions(success)
     
     def _on_calibration_cancelled(self) -> None:
         """用户取消校准回调。"""
@@ -548,12 +546,10 @@ class CalibrationPage(QWidget):
         
         try:
             save_calibration(self.calibrator, str(save_path))
-            MessageBox(
-                "保存成功",
-                f"校准参数已保存到：{save_path.absolute()}",
-                self
-            ).exec()
+            self.status_label.setText(f"已保存，正在进入验证 / Saved to {save_path.name}")
+            self.status_label.setStyleSheet("font-size: 14px; color: #4CAF50; font-weight: 600;")
             print(f"[CALIBRATION_PAGE] 校准参数已保存：{save_path}")
+            self.calibration_ready.emit()
             
         except Exception as e:
             QMessageBox.critical(self, "保存失败", f"保存校准参数失败：{e}")
@@ -593,3 +589,19 @@ class CalibrationPage(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "加载失败", f"加载校准参数失败：{e}")
             print(f"[CALIBRATION_PAGE] 加载失败：{e}")
+
+    def _show_default_actions(self) -> None:
+        self.start_btn.setText("开始校准\nStart Calibration")
+        self.start_btn.setEnabled(True)
+        self.save_btn.setText("保存校准\nSave Calibration")
+        self.save_btn.setEnabled(self.calibrator.is_calibrated)
+        self.load_btn.show()
+        self.home_btn.hide()
+
+    def _show_result_actions(self, success: bool) -> None:
+        self.start_btn.setText("重新校准\nRecalibrate")
+        self.start_btn.setEnabled(True)
+        self.save_btn.setText("保存并进入验证\nSave & Verify")
+        self.save_btn.setEnabled(success and self.calibrator.is_calibrated)
+        self.load_btn.hide()
+        self.home_btn.show()

@@ -78,6 +78,7 @@ class MainWindow(FluentWindow):
         # 连接设置页面配置变更信号
         self.page_settings.config_changed.connect(self._on_config_changed)
         self.page_calibration.calibration_ready.connect(self._on_calibration_ready)
+        self.page_calibration.return_home_requested.connect(self.go_home)
         
         # 获取屏幕尺寸以便像 Eye_Touch 一样进行自适应全屏布局
         from PyQt6.QtWidgets import QApplication
@@ -217,7 +218,7 @@ class MainWindow(FluentWindow):
             )
 
     def _on_calibration_ready(self) -> None:
-        """校准成功后自动推进到追踪验证阶段。"""
+        """用户保存校准后进入独立验证阶段。"""
         self.go_tracking()
         self.page_tracking.start_verification_flow()
     

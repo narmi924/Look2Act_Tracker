@@ -10,9 +10,12 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 import pytest
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
 
-from src.ui.tracking_page import TrackingPage, GazeCursorOverlay
+from src.calibration.calibrator import CalibrationModule
+from src.ui.interaction_overlay import FullscreenStageWindow, InteractionLauncherOverlay
+from src.ui.tracking_page import GazeCursorOverlay, ScreenGazeStabilizer, TrackingPage
 
 
 @pytest.fixture(scope="module")
@@ -34,7 +37,6 @@ def test_gaze_cursor_overlay_creation(qapp):
     assert overlay.cursor_radius == 15
     
     # 验证窗口属性
-    from PyQt6.QtCore import Qt
     assert overlay.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     
     overlay.close()
@@ -118,6 +120,60 @@ def test_tracking_page_load_calibration_no_file(qapp):
     assert page.calibrator is None
     
     page.close()
+
+
+def test_stage_buttons_do_not_require_manual_tracker_start(qapp):
+    """验证/交互入口应能自己启动追踪，不要求先点背景页启动。"""
+    page = TrackingPage()
+    calibrator = CalibrationModule()
+    calibrator._calibrated = True
+    page.set_calibrator(calibrator)
+
+    assert page.tracker is None
+    assert page.verify_btn.isEnabled()
+
+    page._verification_passed = True
+    page._refresh_stage_controls()
+
+    assert page.launcher_btn.isEnabled()
+
+    page.close()
+
+
+def test_screen_gaze_stabilizer_limits_large_jumps():
+    """屏幕级稳定器应压住 classic 追踪的大跳变。"""
+    stabilizer = ScreenGazeStabilizer(max_step_px=75.0)
+
+    first = stabilizer.update((100.0, 100.0))
+    jumped = stabilizer.update((900.0, 100.0))
+
+    assert first == (100.0, 100.0)
+    assert 100.0 < jumped[0] < 900.0
+    assert jumped[0] - first[0] <= 75.0
+    assert jumped[1] == pytest.approx(100.0)
+
+
+def test_fullscreen_stage_window_is_opaque_standalone_window(qapp):
+    """新的验证/交互窗口应是独立深色窗口，而不是透明置顶 overlay。"""
+    window = FullscreenStageWindow()
+
+    assert not window.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    assert window.autoFillBackground()
+    assert window.windowFlags() & Qt.WindowType.Window
+
+    window.close()
+
+
+def test_interaction_launcher_uses_chinese_app_tiles(qapp):
+    overlay = InteractionLauncherOverlay()
+
+    titles = [action.title for action in overlay._actions]
+
+    assert "浏览器" in titles
+    assert "五子棋" in titles
+    assert "退出" in titles
+
+    overlay.close()
 
 
 if __name__ == "__main__":

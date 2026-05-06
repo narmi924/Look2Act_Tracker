@@ -30,6 +30,62 @@ from src.ui.interaction_overlay import (
 from src.ui.gomoku_window import GomokuWindow
 
 
+class ScreenGazeStabilizer:
+    """Screen-space smoother with median filtering and velocity gating."""
+
+    def __init__(
+        self,
+        median_window: int = 5,
+        alpha: float = 0.18,
+        fast_alpha: float = 0.32,
+        fast_threshold_px: float = 140.0,
+        max_step_px: float = 75.0,
+    ):
+        self.median_window = median_window
+        self.alpha = alpha
+        self.fast_alpha = fast_alpha
+        self.fast_threshold_px = fast_threshold_px
+        self.max_step_px = max_step_px
+        self._samples: list[tuple[float, float]] = []
+        self._stable: Optional[tuple[float, float]] = None
+
+    def reset(self) -> None:
+        self._samples.clear()
+        self._stable = None
+
+    def update(self, point: tuple[float, float]) -> tuple[float, float]:
+        self._samples.append(point)
+        if len(self._samples) > self.median_window:
+            self._samples.pop(0)
+
+        xs = sorted(p[0] for p in self._samples)
+        ys = sorted(p[1] for p in self._samples)
+        mid = len(self._samples) // 2
+        candidate = (xs[mid], ys[mid])
+
+        if self._stable is None:
+            self._stable = candidate
+            return candidate
+
+        dx = candidate[0] - self._stable[0]
+        dy = candidate[1] - self._stable[1]
+        dist = math.hypot(dx, dy)
+        if dist > self.max_step_px:
+            scale = self.max_step_px / dist
+            candidate = (
+                self._stable[0] + dx * scale,
+                self._stable[1] + dy * scale,
+            )
+            dist = self.max_step_px
+
+        alpha = self.fast_alpha if dist > self.fast_threshold_px else self.alpha
+        self._stable = (
+            self._stable[0] + (candidate[0] - self._stable[0]) * alpha,
+            self._stable[1] + (candidate[1] - self._stable[1]) * alpha,
+        )
+        return self._stable
+
+
 class GazeCursorOverlay(QWidget):
     """Fullscreen transparent overlay that draws the current gaze cursor."""
 
@@ -152,12 +208,14 @@ class TrackingPage(QWidget):
         self._verification_passed = False
         self.diagnostics_enabled = False
         self.show_cursor_overlay = False
+        self.screen_stabilizer = ScreenGazeStabilizer()
 
         self._init_ui()
         self._refresh_stage_controls()
 
     def set_calibrator(self, calibrator: CalibrationModule) -> None:
         self.calibrator = calibrator
+        self.screen_stabilizer.reset()
         if self.calibrator.is_calibrated:
             residual = self.calibrator.residual_mean
             self.calib_status.setText(f"已加载 / Loaded (残差: {residual:.2f} px)")
@@ -422,6 +480,7 @@ class TrackingPage(QWidget):
                     self.calibrator = CalibrationModule(num_points=9, max_residual_px=300.0, method="affine")
 
             load_calibration(self.calibrator, str(load_path))
+            self.screen_stabilizer.reset()
             residual = self.calibrator.residual_mean
             self.calib_status.setText(f"已加载 / Loaded (残差: {residual:.2f} px)")
             self.calib_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
@@ -452,6 +511,7 @@ class TrackingPage(QWidget):
                 self.cursor_overlay = GazeCursorOverlay()
 
             self.update_timer.start(self.update_interval_ms)
+            self.screen_stabilizer.reset()
 
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
@@ -461,6 +521,7 @@ class TrackingPage(QWidget):
 
     def _handle_stop_tracking(self) -> None:
         self.update_timer.stop()
+        self.screen_stabilizer.reset()
         self._close_verification_window()
         self._close_launcher_overlay()
         self._close_gomoku_window()
@@ -633,10 +694,16 @@ class TrackingPage(QWidget):
             self.gaze_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
 
             (gaze_x, gaze_y), pre_clamp = self._apply_calibration_and_clamp_with_debug(*result.gaze_point)
+            clamped_point = (gaze_x, gaze_y)
+            if self._should_stabilize_screen_point(result):
+                gaze_x, gaze_y = self.screen_stabilizer.update(clamped_point)
+            else:
+                self.screen_stabilizer.reset()
             result.calibrated_point = (gaze_x, gaze_y)
             if isinstance(result.debug, dict):
                 result.debug["pre_clamp_point"] = pre_clamp
-                result.debug["clamped_point"] = result.calibrated_point
+                result.debug["clamped_point"] = clamped_point
+                result.debug["screen_stabilized_point"] = result.calibrated_point
 
             if self.verification_window is not None:
                 self.verification_window.update_gaze_point(gaze_x, gaze_y)
@@ -704,6 +771,13 @@ class TrackingPage(QWidget):
             gaze_y = max(0.0, min(gaze_y, float(geo.height() - 1)))
         return (gaze_x, gaze_y), pre_clamp
 
+    def _should_stabilize_screen_point(self, result) -> bool:
+        if self.tracker_config is None:
+            return False
+        if self.tracker_config.normalized_smoother_type == "none":
+            return False
+        return result.backend == "classic"
+
     def _toggle_diagnostics(self) -> None:
         self.diagnostics_enabled = not self.diagnostics_enabled
         self.diagnostics_label.setVisible(self.diagnostics_enabled)
@@ -730,6 +804,7 @@ class TrackingPage(QWidget):
                     self._fmt_point(result.debug.get("clamped_point")),
                 )
             )
+            lines.append(f"screen_smooth={self._fmt_point(result.debug.get('screen_stabilized_point'))}")
         head_pose = result.debug.get("head_pose") if isinstance(result.debug, dict) else None
         if isinstance(head_pose, dict):
             lines.append(
@@ -813,9 +888,9 @@ class TrackingPage(QWidget):
         calibration_ready = self.calibrator is not None and self.calibrator.is_calibrated
         fullscreen_stage_open = not self._no_fullscreen_stage_open()
 
-        self.verify_btn.setEnabled(tracker_running and calibration_ready and self.interaction_overlay is None)
+        self.verify_btn.setEnabled(calibration_ready and self.interaction_overlay is None)
         self.dwell_btn.setEnabled(tracker_running and self._verification_passed and self.interaction_overlay is None and self.verification_window is None)
-        self.launcher_btn.setEnabled(tracker_running and self._verification_passed and self.verification_window is None)
+        self.launcher_btn.setEnabled(self._verification_passed and self.verification_window is None)
 
         if self.verification_window is not None:
             self.verify_status.setText("验证中 / Verifying")
