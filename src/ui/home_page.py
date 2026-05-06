@@ -111,6 +111,18 @@ class HomePage(QWidget):
             }
         """)
         title_layout.addWidget(sub_title)
+
+        credit = CaptionLabel("Imranjan Mamtimin / 依木热尼江·买买提明 · imranjan.cn")
+        credit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        credit.setStyleSheet("""
+            QLabel {
+                color: #452829;
+                font-size: 13px;
+                font-weight: 600;
+                margin: 0px;
+            }
+        """)
+        title_layout.addWidget(credit)
         
         # 分隔线
         separator = QFrame()
@@ -125,20 +137,6 @@ class HomePage(QWidget):
             }
         """)
         title_layout.addWidget(separator)
-        
-        # 说明文字
-        desc = CaptionLabel("请按照以下步骤完成视线追踪的准备和使用 / Follow these steps to prepare and use gaze tracking")
-        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc.setStyleSheet("""
-            QLabel {
-                color: #95A5A6;
-                font-size: 13px;
-                font-style: italic;
-                margin: 8px 0px 0px 0px;
-            }
-        """)
-        title_layout.addWidget(desc)
-        
         parent_layout.addWidget(title_frame)
     
     def _create_navigation_cards(self, parent_layout: QVBoxLayout) -> None:
