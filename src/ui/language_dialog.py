@@ -17,7 +17,7 @@ class LanguageSelectionDialog(QDialog):
         self.config_path = Path(config_path) if config_path is not None else None
         self.setWindowTitle("")
         self.setModal(True)
-        self.setFixedSize(560, 180)
+        self.setFixedSize(650, 180)
         self.setWindowFlags(
             Qt.WindowType.Dialog
             | Qt.WindowType.FramelessWindowHint
@@ -51,7 +51,7 @@ class LanguageSelectionDialog(QDialog):
         en_btn = PushButton("English")
         bilingual_btn = PushButton("双语 / Bilingual")
         for button in (zh_btn, en_btn, bilingual_btn):
-            button.setFixedSize(150, 72)
+            button.setFixedSize(180, 72)
             row.addWidget(button)
 
         zh_btn.clicked.connect(lambda: self._select("zh"))
