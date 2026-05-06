@@ -91,4 +91,6 @@ python main.py --config configs\experiments\system_deep_camera_zero_900.yaml
 
 建议先看 720 mm。验证时先关闭平滑，所以追踪会抖，但 raw topology 更真实。
 
+2026-05-06 追加：720 mm 实时 25 点校准已能跑通，但 raw topology 显示 `raw_y` 比 `raw_x` 更稳定，横向仍有明显折叠。因此新增 `configs/experiments/system_deep_camera_zero_720_pose_zero.yaml`，保持 camera-space + zero origin + 720 mm 不变，只把模型输入的 `head_pose` 置零，用于隔离实时 PnP 姿态特征污染。
+
 如果 720 mm 的实时 raw topology 明显优于旧 deep 链路，再进入 10 epoch smoke 重训；否则先继续排查实时 domain gap、camera crop、screen distance 估计和输入归一化。
