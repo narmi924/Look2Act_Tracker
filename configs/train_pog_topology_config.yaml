@@ -1,0 +1,60 @@
+# Look2Act Deep PoG 拓扑恢复训练配置
+# 目标：模型直接输出屏幕归一化注视点 [x, y]，并显式保持屏幕网格拓扑。
+# 训练：Intel XPU + IPEX；推理导出：ONNX Runtime CPU。
+# 使用方式：
+#   conda activate gaze-env
+#   python scripts/train.py --config configs/train_pog_topology_config.yaml
+
+model:
+  name: "GazeNetPoG"
+  version: "pog_v1"
+  channels: [32, 64, 128, 256]
+  input_size: 128
+  output_dim: 2
+  head_pose_dim: 3
+  fusion_dim: 128
+  dropout: 0.3
+  # linear 不用 sigmoid 压缩输出，训练目标仍是 [0,1] 屏幕点。
+  # runtime 会把输出映射到屏幕像素并在必要时 clamp。
+  output_activation: "linear"
+
+loss:
+  topology_weight: 0.35
+  topology_epsilon: 0.03
+  topology_margin: 0.01
+
+training:
+  batch_size: 64
+  learning_rate: 0.0007
+  epochs: 120
+  optimizer: "Adam"
+  scheduler: "CosineAnnealingLR"
+  weight_decay: 0.0001
+  device: "xpu"
+  use_ipex: true
+
+data:
+  dataset_raw_dir: "dataset_raw"
+  dataset_processed_dir: "dataset_processed"
+  target_mode: "pog2d"
+  head_pose_mode: "zero"
+  balanced_targets: true
+  target_balance_decimals: 4
+  augmentation: true
+  num_workers: 4
+
+evaluation:
+  metrics:
+    - "mean_pixel_error"
+    - "median_pixel_error"
+    - "p95_pixel_error"
+    - "topology_corr"
+    - "row_column_monotonic"
+
+checkpoint:
+  save_dir: "checkpoints/deep_pog_topology"
+  save_best_only: true
+
+logging:
+  log_dir: "logs/deep_pog_topology"
+  log_interval: 1

@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 import yaml
 
 # 将 src 加入路径
@@ -54,8 +54,12 @@ def build_model(config: dict) -> nn.Module:
             head_pose_dim=model_cfg.get("head_pose_dim", 3),
             fusion_dim=model_cfg.get("fusion_dim", 128),
             dropout=model_cfg.get("dropout", 0.3),
+            output_activation=model_cfg.get("output_activation", "sigmoid"),
         )
-        logger.info("模型: GazeNetPoG (双眼 + head pose -> 2D PoG)")
+        logger.info(
+            "模型: GazeNetPoG (双眼 + head pose -> 2D PoG, output=%s)",
+            model_cfg.get("output_activation", "sigmoid"),
+        )
     elif version == "v2":
         model = GazeNetV2(
             num_channels=channels,
@@ -141,10 +145,68 @@ def compute_training_loss(
     preds: torch.Tensor,
     targets: torch.Tensor,
     target_mode: str,
+    loss_cfg: dict | None = None,
 ) -> torch.Tensor:
     if target_mode == "pog2d":
-        return nn.functional.smooth_l1_loss(preds, targets)
+        base = nn.functional.smooth_l1_loss(preds, targets)
+        loss_cfg = loss_cfg or {}
+        topology_weight = float(loss_cfg.get("topology_weight", 0.0))
+        if topology_weight <= 0:
+            return base
+        return base + topology_weight * pog_topology_loss(
+            preds,
+            targets,
+            epsilon=float(loss_cfg.get("topology_epsilon", 0.03)),
+            margin=float(loss_cfg.get("topology_margin", 0.01)),
+        )
     return angular_loss(preds, targets)
+
+
+def pog_topology_loss(
+    preds: torch.Tensor,
+    targets: torch.Tensor,
+    epsilon: float = 0.03,
+    margin: float = 0.01,
+) -> torch.Tensor:
+    """Pairwise ordering loss for screen-point targets.
+
+    The direct PoG model must preserve the screen topology: if target A is
+    right/below target B, the predicted x/y should keep that ordering. This
+    term does not replace pixel regression; it only discourages collapsed raw
+    predictions that a calibration polynomial cannot repair.
+    """
+    if preds.shape[0] < 2:
+        return preds.new_tensor(0.0)
+
+    losses = []
+    for dim in (0, 1):
+        target_diff = targets[:, dim].unsqueeze(1) - targets[:, dim].unsqueeze(0)
+        pred_diff = preds[:, dim].unsqueeze(1) - preds[:, dim].unsqueeze(0)
+        mask = torch.abs(target_diff) > epsilon
+        if torch.any(mask):
+            signed_order = torch.sign(target_diff[mask])
+            losses.append(torch.relu(margin - signed_order * pred_diff[mask]).mean())
+
+    if not losses:
+        return preds.new_tensor(0.0)
+    return torch.stack(losses).mean()
+
+
+def build_balanced_target_sampler(dataset: GazeDataset, decimals: int = 4) -> WeightedRandomSampler | None:
+    """Build inverse-frequency sampler over normalized target grid cells."""
+    df = getattr(dataset, "labels_df", None)
+    if df is None or not {"norm_target_x", "norm_target_y"}.issubset(df.columns):
+        return None
+    targets = df[["norm_target_x", "norm_target_y"]].round(decimals)
+    counts = targets.value_counts()
+    weights = []
+    for _, row in targets.iterrows():
+        weights.append(1.0 / float(counts.loc[(row["norm_target_x"], row["norm_target_y"])]))
+    return WeightedRandomSampler(
+        weights=torch.as_tensor(weights, dtype=torch.double),
+        num_samples=len(weights),
+        replacement=True,
+    )
 
 
 def train_one_epoch(
@@ -154,6 +216,7 @@ def train_one_epoch(
     device: torch.device,
     model_version: str = "v2",
     target_mode: str = "gaze3d",
+    loss_cfg: dict | None = None,
 ) -> float:
     """训练一个 epoch，返回平均损失。"""
     model.train()
@@ -174,7 +237,7 @@ def train_one_epoch(
             eye_imgs = batch["eye_img"].to(device)
             preds = model(eye_imgs)
 
-        loss = compute_training_loss(preds, targets, target_mode)
+        loss = compute_training_loss(preds, targets, target_mode, loss_cfg)
         loss.backward()
         optimizer.step()
 
@@ -249,6 +312,7 @@ def main():
     train_cfg = config.get("training", {})
     data_cfg = config.get("data", {})
     model_cfg = config.get("model", {})
+    loss_cfg = config.get("loss", {})
     ckpt_cfg = config.get("checkpoint", {})
     log_cfg = config.get("logging", {})
 
@@ -331,8 +395,17 @@ def main():
         logger.error("训练数据不存在，请先运行 scripts/preprocess.py")
         sys.exit(1)
 
+    sampler = None
+    if target_mode == "pog2d" and data_cfg.get("balanced_targets", False):
+        sampler = build_balanced_target_sampler(
+            train_ds,
+            decimals=int(data_cfg.get("target_balance_decimals", 4)),
+        )
+        if sampler is not None:
+            logger.info("启用 PoG target 平衡采样")
+
     train_loader = DataLoader(
-        train_ds, batch_size=batch_size, shuffle=True,
+        train_ds, batch_size=batch_size, shuffle=sampler is None, sampler=sampler,
         num_workers=num_workers, pin_memory=False,
     )
     val_loader = None
@@ -365,7 +438,7 @@ def main():
         t0 = time.time()
 
         train_loss = train_one_epoch(
-            model, train_loader, optimizer, device, model_version, target_mode,
+            model, train_loader, optimizer, device, model_version, target_mode, loss_cfg,
         )
 
         # 验证

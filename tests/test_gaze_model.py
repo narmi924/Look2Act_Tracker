@@ -90,3 +90,17 @@ def test_gazenet_pog_outputs_normalized_screen_points():
     assert out.shape == (2, 2)
     assert torch.all(out >= 0.0)
     assert torch.all(out <= 1.0)
+
+
+def test_gazenet_pog_linear_output_keeps_screen_point_shape_without_sigmoid():
+    model = GazeNetPoG(num_channels=[8, 8, 8, 8], fusion_dim=16, dropout=0.0, output_activation="linear")
+    model.eval()
+    left = torch.rand(2, 3, 128, 128)
+    right = torch.rand(2, 3, 128, 128)
+    pose = torch.zeros(2, 3)
+
+    with torch.no_grad():
+        out = model(left, right, pose)
+
+    assert out.shape == (2, 2)
+    assert model.output_activation == "linear"

@@ -52,6 +52,7 @@ def export_to_onnx(
             head_pose_dim=model_cfg.get("head_pose_dim", 3),
             fusion_dim=model_cfg.get("fusion_dim", 128),
             dropout=model_cfg.get("dropout", 0.3),
+            output_activation=model_cfg.get("output_activation", "sigmoid"),
         )
     elif model_version == "v2":
         model = GazeNetV2(

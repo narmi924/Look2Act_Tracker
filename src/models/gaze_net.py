@@ -14,7 +14,7 @@ V2 (GazeNetV2)：
 PoG (GazeNetPoG)：
     双眼共享 CNN 特征提取 + head pose 融合
     输入同 V2
-    输出：(B, 2) 归一化屏幕坐标 [x, y]，范围 [0, 1]
+    输出：(B, 2) 归一化屏幕坐标 [x, y]
 """
 
 import torch
@@ -199,12 +199,16 @@ class GazeNetPoG(nn.Module):
         head_pose_dim: int = 3,
         fusion_dim: int = 128,
         dropout: float = 0.3,
+        output_activation: str = "sigmoid",
     ):
         super().__init__()
         if num_channels is None:
             num_channels = [32, 64, 128, 256]
 
         assert len(num_channels) == 4, "需要恰好 4 层卷积通道配置"
+        if output_activation not in {"sigmoid", "linear", "tanh01"}:
+            raise ValueError(f"不支持的 PoG 输出激活: {output_activation}")
+        self.output_activation = output_activation
 
         self.eye_features = nn.Sequential(
             nn.Conv2d(3, num_channels[0], kernel_size=3, padding=1),
@@ -232,7 +236,6 @@ class GazeNetPoG(nn.Module):
             nn.ReLU(inplace=True),
             nn.Dropout(dropout),
             nn.Linear(fusion_dim, 2),
-            nn.Sigmoid(),
         )
 
     def _extract_eye_features(self, eye_img: torch.Tensor) -> torch.Tensor:
@@ -249,4 +252,9 @@ class GazeNetPoG(nn.Module):
         left_feat = self._extract_eye_features(left_eye)
         right_feat = self._extract_eye_features(right_eye)
         fused = torch.cat([left_feat, right_feat, head_pose], dim=1)
-        return self.fusion(fused)
+        out = self.fusion(fused)
+        if self.output_activation == "sigmoid":
+            return torch.sigmoid(out)
+        if self.output_activation == "tanh01":
+            return (torch.tanh(out) + 1.0) * 0.5
+        return out

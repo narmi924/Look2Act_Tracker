@@ -42,6 +42,7 @@ def load_model(checkpoint_path: str, fallback_config: dict) -> GazeNetPoG:
         head_pose_dim=model_cfg.get("head_pose_dim", 3),
         fusion_dim=model_cfg.get("fusion_dim", 128),
         dropout=model_cfg.get("dropout", 0.3),
+        output_activation=model_cfg.get("output_activation", "sigmoid"),
     )
     state_dict = ckpt.get("model_state_dict", ckpt) if isinstance(ckpt, dict) else ckpt
     model.load_state_dict(state_dict)
@@ -142,11 +143,12 @@ def main() -> int:
     parser.add_argument("--output", default="evaluation_results/deep_pog")
     parser.add_argument("--screen-w", type=int, default=1920)
     parser.add_argument("--screen-h", type=int, default=1080)
+    parser.add_argument("--processed-dir", default=None)
     args = parser.parse_args()
 
     config = load_config(args.config)
     data_cfg = config.get("data", {})
-    test_dir = Path(data_cfg.get("dataset_processed_dir", "dataset_processed")) / "test"
+    test_dir = Path(args.processed_dir or data_cfg.get("dataset_processed_dir", "dataset_processed")) / "test"
     labels_path = test_dir / "labels.csv"
     if not labels_path.exists():
         logger.error("测试数据不存在: %s", labels_path)
@@ -156,7 +158,16 @@ def main() -> int:
         return 2
 
     df = pd.read_csv(labels_path)
-    dataset = GazeDataset(df, image_root=test_dir, model_version="v2", target_mode="pog2d")
+    ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    ckpt_config = ckpt.get("config", {}) if isinstance(ckpt, dict) else {}
+    data_cfg = ckpt_config.get("data", data_cfg)
+    dataset = GazeDataset(
+        df,
+        image_root=test_dir,
+        model_version="v2",
+        target_mode="pog2d",
+        head_pose_mode=data_cfg.get("head_pose_mode", "stored"),
+    )
     loader = DataLoader(dataset, batch_size=64, shuffle=False, num_workers=0)
     model = load_model(args.checkpoint, config)
     results = evaluate_pog(model, loader, screen_w=args.screen_w, screen_h=args.screen_h)
