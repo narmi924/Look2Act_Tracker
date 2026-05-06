@@ -23,16 +23,16 @@ dataset_raw/
 dataset_processed/
 
 # 模型权重
-checkpoints/*.pth
-checkpoints/*.onnx
-checkpoints/*.pt
+#checkpoints/*.pth
+#checkpoints/*.onnx
+#checkpoints/*.pt
 
 # 训练日志
-logs/*.csv
-logs/*.log
+#logs/*.csv
+#logs/*.log
 
 # 校准文件
-calibration.json
+#calibration.json
 
 # 系统文件
 Thumbs.db
@@ -52,3 +52,4 @@ paper-acm/
 
 # local commit note
 cm.txt
+prd.txt
