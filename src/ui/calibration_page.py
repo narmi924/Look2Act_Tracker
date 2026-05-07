@@ -48,20 +48,17 @@ from qfluentwidgets import (
 
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import save_calibration, load_calibration
+from src.runtime_paths import calibration_path_for_backend as runtime_calibration_path_for_backend
 from src.tracker.pipeline import TrackerPipeline, SystemConfig
 from src.ui.i18n import tx, tx_button
 
 
 def calibration_path_for_backend(backend: str) -> Path:
-    if backend == "deep":
-        return Path("calibration_deep.json")
-    if backend == "deep_pog":
-        return Path("calibration_deep_pog.json")
-    return Path("calibration_classic.json")
+    return runtime_calibration_path_for_backend(backend)
 
 
 def calibration_module_for_config(config: SystemConfig) -> CalibrationModule:
-    """Build calibration module from runtime config instead of hard-coded backend defaults."""
+    """根据当前运行配置创建校准模块。"""
     return CalibrationModule(
         num_points=config.effective_calibration_num_points,
         max_residual_px=config.calibration_max_residual_px,
@@ -70,14 +67,14 @@ def calibration_module_for_config(config: SystemConfig) -> CalibrationModule:
 
 
 def min_valid_points_for_calibration(num_points: int, method: str) -> int:
-    """Return the minimum usable point count before fitting calibration."""
+    """返回拟合校准参数所需的最少有效点数量。"""
     if method == "polynomial":
         return 4 if num_points >= 25 else 6
     return 3
 
 
 def min_samples_per_calibration_point(sampling_frames: int) -> int:
-    """Return the minimum successful samples needed to accept one target."""
+    """返回单个校准点可接受的最少有效样本数。"""
     return max(6, sampling_frames // 3)
 
 
@@ -313,7 +310,7 @@ class CalibrationFullscreenWidget(QWidget):
             if self.sampling_timer.isActive():
                 # 显示采样进度
                 progress = len(self.current_samples)
-                text = f"{progress}/{self.sampling_frames} (skip {self.discard_initial_frames})"
+                text = f"{progress}/{self.sampling_frames}"
                 painter.drawText(int(point.x - 40), int(point.y + 60), text)
         
         # 绘制进度信息（顶部中央）
@@ -460,12 +457,12 @@ class CalibrationPage(QWidget):
         self._configure_for_config(tracker.config)
 
     def _configure_for_backend(self, backend: str) -> None:
-        """Switch calibration strategy for the active tracker backend."""
+        """按当前追踪后端切换校准策略。"""
         config = SystemConfig(tracker_backend=backend)
         self._configure_for_config(config)
 
     def _configure_for_config(self, config: SystemConfig) -> None:
-        """Switch calibration strategy for the active tracker config."""
+        """按当前追踪配置切换校准策略。"""
         backend = config.normalized_backend
         backend = backend if backend in {"classic", "deep", "deep_pog"} else "classic"
         num_points = config.effective_calibration_num_points

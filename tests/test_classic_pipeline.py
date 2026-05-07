@@ -26,7 +26,7 @@ def _classic_face_result(**overrides):
     return SimpleNamespace(**data)
 
 
-def test_process_classic_result_uses_eyetouch_absolute_pupil_feature():
+def test_process_classic_result_uses_absolute_pupil_feature():
     pipeline = TrackerPipeline(
         model_path="",
         config=SystemConfig(tracker_backend="classic"),
@@ -40,7 +40,7 @@ def test_process_classic_result_uses_eyetouch_absolute_pupil_feature():
     assert result.backend == "classic"
     assert np.allclose(result.raw_point, (0.45, 0.3), atol=0.04)
     assert np.allclose(result.gaze_point, result.raw_point)
-    assert result.debug["feature_method"] == "eyetouch_pupil"
+    assert result.debug["feature_method"] == "classic_pupil"
 
 
 def test_process_classic_result_can_disable_smoothing():

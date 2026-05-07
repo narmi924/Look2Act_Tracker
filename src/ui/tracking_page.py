@@ -21,7 +21,7 @@ from qfluentwidgets import BodyLabel, CardWidget, PrimaryPushButton, PushButton
 
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
-from src.tracker.classic import EyeTouchScreenSmoother
+from src.tracker.classic import ClassicScreenSmoother
 from src.tracker.pipeline import SystemConfig, TrackerPipeline
 from src.ui.calibration_page import calibration_module_for_config
 from src.ui.fluent_theme import PALETTE
@@ -35,7 +35,7 @@ from src.ui.gomoku_window import GomokuWindow
 
 
 class ScreenGazeStabilizer:
-    """Eye_Touch screen-space smoother used by the classic backend."""
+    """Classic 后端使用的屏幕空间平滑器。"""
 
     def __init__(
         self,
@@ -45,7 +45,7 @@ class ScreenGazeStabilizer:
         fast_threshold_px: float = 140.0,
         max_step_px: float = 75.0,
     ):
-        self._smoother = EyeTouchScreenSmoother(history_len=60)
+        self._smoother = ClassicScreenSmoother(history_len=60)
 
     def reset(self) -> None:
         self._smoother.reset()
@@ -55,7 +55,7 @@ class ScreenGazeStabilizer:
 
 
 class GazeCursorOverlay(QWidget):
-    """Fullscreen transparent overlay that draws the current gaze cursor."""
+    """绘制当前注视点的全屏透明浮层。"""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)

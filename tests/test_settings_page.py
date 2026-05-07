@@ -10,6 +10,7 @@ import yaml
 import numpy as np
 
 from main import parse_args, validate_config_path
+from src.runtime_paths import app_data_dir
 from src.tracker.pipeline import SystemConfig
 from src.ui.settings_page import (
     detect_supported_camera_resolutions,
@@ -32,7 +33,8 @@ def test_system_config_default_values():
     assert config.use_ipex is False
     assert config.use_onnx is False
     assert config.normalized_backend == "classic"
-    assert config.calibration_path == "calibration_classic.json"
+    assert Path(config.calibration_path).name == "calibration_classic.json"
+    assert app_data_dir() in Path(config.calibration_path).parents
     assert config.effective_calibration_num_points == 25
     assert config.effective_calibration_method == "polynomial"
     assert config.deep_gaze_space == "head"
@@ -54,18 +56,18 @@ def test_system_config_backend_paths():
     unknown = SystemConfig(tracker_backend="bad")
 
     assert classic.normalized_backend == "classic"
-    assert classic.calibration_path == "calibration_classic.json"
+    assert Path(classic.calibration_path).name == "calibration_classic.json"
     assert deep_pog.normalized_backend == "deep_pog"
-    assert deep_pog.calibration_path == "calibration_deep_pog.json"
+    assert Path(deep_pog.calibration_path).name == "calibration_deep_pog.json"
     assert deep.normalized_backend == "deep"
-    assert deep.calibration_path == "calibration_deep.json"
+    assert Path(deep.calibration_path).name == "calibration_deep.json"
     assert deep.effective_calibration_num_points == 9
     assert deep.effective_calibration_method == "affine"
-    assert deep_25.calibration_path == "custom_deep.json"
+    assert Path(deep_25.calibration_path).name == "custom_deep.json"
     assert deep_25.effective_calibration_num_points == 25
     assert deep_25.effective_calibration_method == "polynomial"
     assert unknown.normalized_backend == "classic"
-    assert unknown.calibration_path == "calibration_classic.json"
+    assert Path(unknown.calibration_path).name == "calibration_classic.json"
 
 
 def test_system_config_smoother_type_normalization():
@@ -232,7 +234,7 @@ def test_system_config_from_yaml():
         assert config.deep_ray_origin == 'zero_origin'
         assert config.normalized_deep_eye_input_mode == 'swap_flip'
         assert config.calibration_num_points == 25
-        assert config.calibration_path == 'calibration_deep.json'
+        assert Path(config.calibration_path).name == 'calibration_deep.json'
         assert config.calibration_max_residual_px == 240.0
         
         # 验证几何配置

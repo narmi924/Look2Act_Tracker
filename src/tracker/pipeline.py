@@ -19,16 +19,16 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable, Optional
 
 import cv2
 import numpy as np
-import torch
 import yaml
 
 from src.geometry.coordinate import transform_gaze_to_camera
 from src.geometry.screen_geometry import ScreenGeometry
-from src.models.gaze_net import GazeNet, GazeNetPoG, GazeNetV2
+from src.runtime_paths import calibration_path_for_backend, resource_path, user_data_path
 from src.tracker.classic import (
     ClassicKalmanSmoother,
     absolute_pupil_point,
@@ -36,7 +36,6 @@ from src.tracker.classic import (
     fuse_eye_features,
 )
 from src.tracker.smoother import GazeSmoother
-from src.vision.face_detector import FaceDetector
 from src.vision.head_pose import HeadPoseEstimator
 
 
@@ -47,6 +46,37 @@ logger = logging.getLogger(__name__)
 def _print(msg: str):
     """输出消息。"""
     print(msg)
+
+
+class _UnavailableFaceDetector:
+    """仅在打包环境中 MediaPipe 初始化失败时使用的保护对象。"""
+
+    unavailable = True
+
+    def detect(self, frame_bgr: np.ndarray) -> SimpleNamespace:
+        return SimpleNamespace(
+            detected=False,
+            confidence=0.0,
+            face_bbox=None,
+            landmarks_68=None,
+            left_eye_crop=None,
+            right_eye_crop=None,
+            pnp_points_2d={},
+            left_iris_center=None,
+            right_iris_center=None,
+            left_eye_center=None,
+            right_eye_center=None,
+            left_eye_width=None,
+            right_eye_width=None,
+            left_eye_roi=None,
+            right_eye_roi=None,
+            left_eye_origin=None,
+            right_eye_origin=None,
+            frame_size=None,
+        )
+
+    def close(self) -> None:
+        return None
 
 
 @dataclass
@@ -117,6 +147,8 @@ class SystemConfig:
         """从 YAML 文件加载配置。"""
         with open(yaml_path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
+
+        calibration_save_path = data.get('calibration', {}).get('save_path', '')
         
         return cls(
             language=data.get('ui', {}).get('language', 'bilingual'),
@@ -138,7 +170,7 @@ class SystemConfig:
             deep_ray_origin=data.get('model', {}).get('deep_ray_origin', 'face_translation'),
             deep_eye_input_mode=data.get('model', {}).get('deep_eye_input_mode', 'normal'),
             calibration_num_points=data.get('calibration', {}).get('num_points', 0),
-            calibration_save_path=data.get('calibration', {}).get('save_path', ''),
+            calibration_save_path=str(user_data_path(Path("calibration") / calibration_save_path)) if calibration_save_path else '',
             calibration_max_residual_px=data.get('calibration', {}).get('max_residual_px', 300.0),
             screen_w_mm=data.get('geometry', {}).get('screen_w_mm', 344.0),
             screen_h_mm=data.get('geometry', {}).get('screen_h_mm', 194.0),
@@ -159,11 +191,7 @@ class SystemConfig:
     def calibration_path(self) -> str:
         if self.calibration_save_path:
             return self.calibration_save_path
-        if self.normalized_backend == "classic":
-            return "calibration_classic.json"
-        if self.normalized_backend == "deep_pog":
-            return "calibration_deep_pog.json"
-        return "calibration_deep.json"
+        return str(calibration_path_for_backend(self.normalized_backend))
 
     @property
     def effective_calibration_num_points(self) -> int:
@@ -221,7 +249,7 @@ class TrackerPipeline:
         
         # 子模块（在 initialize 中初始化）
         self.cap: Optional[cv2.VideoCapture] = None
-        self.face_detector: Optional[FaceDetector] = None
+        self.face_detector: Optional[object] = None
         self.head_pose_estimator: Optional[HeadPoseEstimator] = None
         self.gaze_model = None  # GazeNet 或 GazeNetV2
         self.model_version: str = "v1"  # 实际检测到的模型版本
@@ -298,13 +326,22 @@ class TrackerPipeline:
             )
             
             # 2. 初始化人脸检测器
-            self.face_detector = FaceDetector(
-                eye_crop_size=self.config.eye_crop_size,
-                min_detection_confidence=self.config.min_detection_confidence,
-                min_tracking_confidence=self.config.min_tracking_confidence,
-                refine_landmarks=self.config.normalized_backend == "classic",
-            )
-            _print("人脸检测器已初始化")
+            try:
+                from src.vision.face_detector import FaceDetector
+
+                self.face_detector = FaceDetector(
+                    eye_crop_size=self.config.eye_crop_size,
+                    min_detection_confidence=self.config.min_detection_confidence,
+                    min_tracking_confidence=self.config.min_tracking_confidence,
+                    refine_landmarks=self.config.normalized_backend == "classic",
+                )
+                _print("人脸检测器已初始化")
+            except Exception as e:
+                if not getattr(sys, "frozen", False):
+                    raise
+                self.face_detector = _UnavailableFaceDetector()
+                logger.warning("打包环境中的 MediaPipe 初始化失败，追踪链路进入界面保护模式：%s", e)
+                _print("人脸检测器不可用，已启用界面保护模式")
             
             # 3. 初始化头部姿态估计器
             self.head_pose_estimator = HeadPoseEstimator(
@@ -313,7 +350,10 @@ class TrackerPipeline:
             _print("头部姿态估计器已初始化")
             
             # 4. 加载视线模型（classic 后端不需要 CNN 权重）
-            if self.config.normalized_backend == "classic":
+            if getattr(self.face_detector, "unavailable", False):
+                self.model_version = f"{self.config.normalized_backend}_fallback"
+                print("界面保护模式已启用，跳过视线模型加载")
+            elif self.config.normalized_backend == "classic":
                 self.model_version = "classic"
                 print("使用 Classic Tracker（pupil/iris feature + calibration）")
             elif self.config.use_onnx:
@@ -321,7 +361,7 @@ class TrackerPipeline:
                 print("使用 ONNX Runtime 推理")
                 import onnxruntime as ort
                 
-                onnx_path = self.config.onnx_path
+                onnx_path = resource_path(self.config.onnx_path)
                 if not Path(onnx_path).exists():
                     print(f"错误：ONNX 模型文件不存在 {onnx_path}")
                     return False
@@ -352,13 +392,17 @@ class TrackerPipeline:
                 
             else:
                 # 使用 PyTorch
+                import torch
+                from src.models.gaze_net import GazeNet, GazeNetPoG, GazeNetV2
+
                 # 先加载 checkpoint 检测版本
                 detected_version = self.config.model_version
                 config_from_ckpt = {}
                 state_dict = None
                 
-                if Path(self.model_path).exists():
-                    checkpoint = torch.load(self.model_path, map_location='cpu', weights_only=False)
+                model_path = resource_path(self.model_path)
+                if model_path.exists():
+                    checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
                     if isinstance(checkpoint, dict):
                         if detected_version == "auto":
                             detected_version = checkpoint.get("model_version", "v1")
@@ -371,7 +415,7 @@ class TrackerPipeline:
                 else:
                     if detected_version == "auto":
                         detected_version = "pog_v1" if self.config.normalized_backend == "deep_pog" else "v1"
-                    print(f"警告：模型文件不存在 {self.model_path}，使用随机初始化权重")
+                    print(f"警告：模型文件不存在 {model_path}，使用随机初始化权重")
 
                 if self.config.normalized_backend == "deep_pog" and detected_version != "pog_v1":
                     print(f"错误：deep_pog 需要 pog_v1 checkpoint，但当前模型版本为 {detected_version}")
@@ -407,7 +451,7 @@ class TrackerPipeline:
                         self.gaze_model.load_state_dict(state_dict['model_state_dict'])
                     else:
                         self.gaze_model.load_state_dict(state_dict)
-                    print(f"视线模型已加载：{self.model_path}")
+                    print(f"视线模型已加载：{model_path}")
                 
                 self.gaze_model.eval()
                 
@@ -449,8 +493,7 @@ class TrackerPipeline:
                 camera_matrix=self.head_pose_estimator.camera_matrix,
             )
             
-            # Keep the online screen plane aligned with the training-time
-            # camera/screen geometry used for label generation.
+            # 保持运行时屏幕平面与训练标签生成时使用的相机/屏幕几何一致。
             screen_origin = np.array([
                 -self.config.screen_w_mm / 2.0,
                 self.config.cam_above_screen_mm,
@@ -478,8 +521,6 @@ class TrackerPipeline:
         except Exception as e:
             error_msg = f"初始化失败：{e}"
             self._notify_error(error_msg)
-            import traceback
-            traceback.print_exc()
             return False
     
     def process_frame(self, frame_bgr: np.ndarray) -> TrackerResult:
@@ -505,6 +546,17 @@ class TrackerPipeline:
         
         if not face_result.detected:
             self._no_face_count += 1
+
+            if getattr(self.face_detector, "unavailable", False):
+                return TrackerResult(
+                    gaze_point=None,
+                    valid=False,
+                    fps=self._calculate_fps(),
+                    timings=timings,
+                    error_message=None,
+                    face_detected=False,
+                    backend=backend,
+                )
             
             # 容错：返回上一帧有效结果
             if self._last_valid_result is not None:
@@ -598,9 +650,9 @@ class TrackerPipeline:
             left_rgb = cv2.cvtColor(left_eye, cv2.COLOR_BGR2RGB)
             right_rgb = cv2.cvtColor(right_eye, cv2.COLOR_BGR2RGB)
             
-            # 转换为张量并归一化
-            left_tensor = torch.from_numpy(left_rgb).permute(2, 0, 1).float() / 255.0
-            right_tensor = torch.from_numpy(right_rgb).permute(2, 0, 1).float() / 255.0
+            # 转换为 CHW float32 并归一化。ONNX 路径保持纯 numpy，避免打包 PyTorch。
+            left_chw = np.ascontiguousarray(left_rgb.transpose(2, 0, 1), dtype=np.float32) / 255.0
+            right_chw = np.ascontiguousarray(right_rgb.transpose(2, 0, 1), dtype=np.float32) / 255.0
             
             # 构建 head pose 向量 (yaw, pitch, roll)，单位：度
             if self.config.normalized_deep_pose_input == "zero":
@@ -611,32 +663,42 @@ class TrackerPipeline:
                 ], dtype=np.float32)
             
             if self.model_version in {"v2", "pog_v1"}:
-                left_batch = left_tensor.unsqueeze(0)
-                right_batch = right_tensor.unsqueeze(0)
-                pose_batch = torch.from_numpy(head_pose_vec).unsqueeze(0)
-                
                 if self.config.use_onnx:
+                    left_batch = np.expand_dims(left_chw, axis=0)
+                    right_batch = np.expand_dims(right_chw, axis=0)
+                    pose_batch = np.expand_dims(head_pose_vec, axis=0)
                     gaze_vector = self.onnx_session.run(
                         [self.onnx_output_name],
                         {
-                            'left_eye': left_batch.numpy(),
-                            'right_eye': right_batch.numpy(),
-                            'head_pose': pose_batch.numpy(),
+                            'left_eye': left_batch,
+                            'right_eye': right_batch,
+                            'head_pose': pose_batch,
                         }
                     )[0][0]
                 else:
+                    import torch
+
+                    left_batch = torch.from_numpy(left_chw).unsqueeze(0)
+                    right_batch = torch.from_numpy(right_chw).unsqueeze(0)
+                    pose_batch = torch.from_numpy(head_pose_vec).unsqueeze(0)
                     with torch.no_grad():
                         gaze_out = self.gaze_model(left_batch, right_batch, pose_batch)
                     gaze_vector = gaze_out[0].cpu().numpy()
             else:
-                batch = torch.stack([left_tensor, right_tensor], dim=0)
                 if self.config.use_onnx:
+                    batch = np.stack([left_chw, right_chw], axis=0)
                     gaze_vectors = self.onnx_session.run(
                         [self.onnx_output_name],
-                        {self.onnx_input_names[0]: batch.numpy()}
+                        {self.onnx_input_names[0]: batch}
                     )[0]
                     gaze_vector = gaze_vectors.mean(axis=0)
                 else:
+                    import torch
+
+                    batch = torch.stack(
+                        [torch.from_numpy(left_chw), torch.from_numpy(right_chw)],
+                        dim=0,
+                    )
                     with torch.no_grad():
                         gaze_vectors = self.gaze_model(batch)
                     gaze_vector = gaze_vectors.mean(dim=0).cpu().numpy()
@@ -672,7 +734,7 @@ class TrackerPipeline:
                 timings=timings,
             )
 
-        # 4. Convert the predicted 3D gaze vector into a raw screen-space point.
+        # 4. 将模型预测的 3D 视线向量转换为原始屏幕坐标。
         t0 = time.perf_counter()
         d = gaze_vector.astype(np.float64)
         norm_d = np.linalg.norm(d)
@@ -770,13 +832,13 @@ class TrackerPipeline:
         return result
 
     def _select_deep_ray_origin(self, face_translation: np.ndarray) -> np.ndarray:
-        """Select the 3D deep ray origin for geometry-contract experiments."""
+        """选择 Deep 链路的 3D 视线射线原点。"""
         if self.config.normalized_deep_ray_origin == "zero_origin":
             return np.zeros(3, dtype=np.float64)
         return np.asarray(face_translation, dtype=np.float64).flatten()
 
     def _compute_deep_ray(self, gaze_direction: np.ndarray, head_pose) -> tuple[np.ndarray, np.ndarray]:
-        """Compute a 3D gaze ray according to the configured gaze-space contract."""
+        """根据当前坐标空间配置计算 3D 视线射线。"""
         d = np.asarray(gaze_direction, dtype=np.float64).flatten()
         norm = np.linalg.norm(d)
         if norm > 1e-12:
@@ -795,7 +857,7 @@ class TrackerPipeline:
         left_eye: np.ndarray,
         right_eye: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Apply realtime eye-crop contract ablations before model inference."""
+        """在模型推理前应用实时眼部输入一致性配置。"""
         mode = self.config.normalized_deep_eye_input_mode
         left = left_eye
         right = right_eye
@@ -812,7 +874,7 @@ class TrackerPipeline:
         head_pose,
         timings: dict[str, float],
     ) -> TrackerResult:
-        """Map a direct PoG model output to screen pixels without 3D ray geometry."""
+        """将直接 PoG 模型输出映射为屏幕像素坐标。"""
         t0 = time.perf_counter()
         pog = np.asarray(output, dtype=np.float64).flatten()
         if pog.shape[0] < 2 or not np.all(np.isfinite(pog[:2])):
@@ -886,7 +948,7 @@ class TrackerPipeline:
         face_result,
         timings: dict[str, float],
     ) -> TrackerResult:
-        """Process a detected face with the Eye_Touch classic backend."""
+        """使用 Classic 后端处理已检测到的人脸结果。"""
         t0 = time.perf_counter()
         left_pupil = detect_pupil_centroid(getattr(face_result, "left_eye_roi", None))
         right_pupil = detect_pupil_centroid(getattr(face_result, "right_eye_roi", None))
@@ -901,7 +963,7 @@ class TrackerPipeline:
             right_abs,
             camera_width=int(frame_size[0]),
             camera_height=int(frame_size[1]),
-            method="eyetouch_pupil",
+            method="classic_pupil",
         )
         timings["classic_feature"] = (time.perf_counter() - t0) * 1000
 
@@ -1123,7 +1185,7 @@ class TrackerPipeline:
             self.classic_smoother.reset()
 
     def get_diagnostics(self) -> dict[str, object]:
-        """Return runtime diagnostics for UI/debug displays."""
+        """返回运行时诊断信息，供设置页和追踪页展示。"""
         diag: dict[str, object] = {
             "backend": self.config.normalized_backend,
             "model_version": self.model_version,

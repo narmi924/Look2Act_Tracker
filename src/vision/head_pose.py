@@ -1,7 +1,7 @@
 """头部姿态估计模块（基于 PnP 算法）。
 
 从 6 个面部关键点计算头部的旋转矩阵和欧拉角（yaw/pitch/roll）。
-复用 Gaze_Dataset_Collector_Project 中的 PnP 逻辑。
+用于将面部关键点转换为视线几何链路所需的头部姿态。
 
 输入：6 个 PnP 关键点像素坐标（nose_tip, chin, left_eye_outer,
      right_eye_outer, left_mouth, right_mouth）

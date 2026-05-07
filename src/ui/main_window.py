@@ -93,7 +93,7 @@ class MainWindow(FluentWindow):
             if hasattr(self.titleBar, 'setDoubleClickEnabled'):
                 self.titleBar.setDoubleClickEnabled(False)
         
-        # 导航栏行为设定 (参考 Eye_Touch 的紧凑折叠实现)
+        # 导航栏使用紧凑模式，减少全屏界面的横向占用。
         self.navigationInterface.setExpandWidth(130)
         try:
             if hasattr(self.navigationInterface, 'setCollapsible'):
@@ -111,7 +111,7 @@ class MainWindow(FluentWindow):
         print("[MAIN_WINDOW] 主窗口已初始化，窗口大小已自适应屏幕")
 
     def _apply_window_mode(self) -> None:
-        """Apply fullscreen or taskbar-aware window geometry from the active config."""
+        """根据当前配置应用全屏或任务栏避让窗口模式。"""
         from PyQt6.QtWidgets import QApplication
         import yaml
 
@@ -306,7 +306,7 @@ class MainWindow(FluentWindow):
         return True
 
     def _on_calibration_tracker_required(self) -> None:
-        """Initialize tracker when the user enters calibration from the sidebar."""
+        """用户从侧边栏进入校准页时初始化追踪管道。"""
         if self.go_calibration():
             QTimer.singleShot(0, self.page_calibration._handle_start_calibration)
     

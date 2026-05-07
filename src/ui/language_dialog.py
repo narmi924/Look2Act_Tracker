@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import os
 import shutil
-import sys
 from pathlib import Path
 
 import yaml
@@ -10,6 +8,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QDialog, QFrame, QHBoxLayout, QPushButton, QVBoxLayout
 from qfluentwidgets import BodyLabel, CaptionLabel, PrimaryPushButton, PushButton, TitleLabel
 
+from src.runtime_paths import app_base_dir, app_data_dir, user_config_path
 from src.ui.fluent_theme import PALETTE
 from src.ui.i18n import read_language_config, set_language
 
@@ -21,16 +20,11 @@ MODE_TEMPLATE_CONFIGS = {
 
 
 def user_config_root() -> Path:
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        return Path(appdata) / "Look2Act"
-    return Path.home() / "AppData" / "Roaming" / "Look2Act"
+    return app_data_dir()
 
 
 def application_base_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parents[2]
+    return app_base_dir()
 
 
 def template_config_path_for_mode(mode: str) -> Path:
@@ -42,8 +36,7 @@ def template_config_path_for_mode(mode: str) -> Path:
 
 
 def user_config_path_for_mode(mode: str) -> Path:
-    normalized = mode if mode in MODE_TEMPLATE_CONFIGS else "classic"
-    return user_config_root() / "configs" / f"{normalized}.yaml"
+    return user_config_path(mode)
 
 
 def ensure_user_config(mode: str) -> Path:

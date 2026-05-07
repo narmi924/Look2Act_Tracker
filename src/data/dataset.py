@@ -265,7 +265,7 @@ class GazeDataset(Dataset):
         ], dtype=torch.float32)
 
     def _empty_sample(self) -> dict:
-        """返回空样本（图像加载失败时的 fallback）。"""
+        """返回空样本，用于图像加载失败时的保护处理。"""
         if self.model_version in {"v2", "pog_v1"}:
             return {
                 "left_eye": torch.zeros(3, 128, 128, dtype=torch.float32),

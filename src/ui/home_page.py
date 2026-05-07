@@ -1,7 +1,7 @@
 """主页。
 
-参照 Eye_Touch 首页布局：标题区域 + 3 张水平排列的步骤卡片。
-卡片为摄像头预览、视线校准、实时追踪三个核心功能。
+主页使用标题区域和三张步骤卡片组织核心流程：摄像头预览、视线校准、
+验证与交互。
 
 主要功能：
 1. 显示系统标题和欢迎信息
@@ -38,7 +38,7 @@ class HomePage(QWidget):
     """主页。
     
     显示系统欢迎信息和功能导航。
-    参照 Eye_Touch 首页：标题区域 + 3 张水平等分的步骤卡片。
+    三张步骤卡片对应完整演示流程的三个入口。
     
     信号：
     - navigate_to_camera: 导航到摄像头预览页面
@@ -57,7 +57,7 @@ class HomePage(QWidget):
         self._init_ui()
     
     def _init_ui(self) -> None:
-        """初始化 UI 布局（参照 Eye_Touch 首页结构）。"""
+        """初始化主页布局。"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(25, 15, 25, 15)
         layout.setSpacing(12)
@@ -69,7 +69,7 @@ class HomePage(QWidget):
         self._create_navigation_cards(layout)
     
     def _create_title_area(self, parent_layout: QVBoxLayout) -> None:
-        """创建标题区域（参照 Eye_Touch 的 create_title_area）。"""
+        """创建产品标题和作者信息区域。"""
         title_frame = QFrame()
         title_frame.setObjectName("titleFrame")
         title_frame.setStyleSheet(f"""
@@ -145,7 +145,7 @@ class HomePage(QWidget):
         parent_layout.addWidget(title_frame)
     
     def _create_navigation_cards(self, parent_layout: QVBoxLayout) -> None:
-        """创建 3 张水平排列的导航卡片（参照 Eye_Touch 的 create_navigation_cards）。"""
+        """创建三张水平排列的流程导航卡片。"""
         frame = QFrame()
         cards_layout = QHBoxLayout(frame)
         cards_layout.setSpacing(25)

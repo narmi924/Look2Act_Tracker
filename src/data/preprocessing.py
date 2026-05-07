@@ -4,8 +4,7 @@
 工作目录：Look2Act_Tracker_Project/
 conda 环境：gaze-env
 
-复用 Gaze_Dataset_Collector_Project 中的 FaceMesh 关键点索引和裁剪逻辑，
-但简化为 Tracker 训练所需的接口。
+本模块保留训练和实时推理一致的 FaceMesh 关键点索引、眼部裁剪规则和几何标签算法。
 """
 from __future__ import annotations
 
@@ -19,8 +18,7 @@ from mediapipe.python.solutions import face_mesh as mp_face_mesh
 
 logger = logging.getLogger(__name__)
 
-# 眼部关键点索引（MediaPipe FaceMesh 468 点）
-# 与 Collector 项目保持一致
+# 眼部关键点索引（MediaPipe FaceMesh 468 点），需与实时检测模块保持一致。
 LEFT_EYE_INDICES = [
     33, 133, 160, 159, 158, 157, 173, 246, 161, 163, 144, 145, 153, 154, 155
 ]

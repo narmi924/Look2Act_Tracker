@@ -61,6 +61,11 @@ COMMON_CAMERA_RESOLUTIONS: tuple[tuple[int, int], ...] = (
     (1920, 1080),
 )
 
+CONTROL_WIDTH = 150
+LANGUAGE_CONTROL_WIDTH = 180
+PATH_BUTTON_WIDTH = 120
+SLIDER_WIDTH = 300
+
 
 def format_resolution(width: int, height: int) -> str:
     return f"{int(width)}x{int(height)}"
@@ -92,7 +97,7 @@ def probe_camera_resolution(
     height: int,
     capture_factory=None,
 ) -> Optional[tuple[int, int]]:
-    """Try a camera resolution and return the actual frame size if readable."""
+    """尝试打开指定摄像头分辨率，并返回实际可读取的帧尺寸。"""
     import cv2
 
     factory = capture_factory or cv2.VideoCapture
@@ -123,7 +128,7 @@ def detect_supported_camera_resolutions(
     candidates: tuple[tuple[int, int], ...] = COMMON_CAMERA_RESOLUTIONS,
     capture_factory=None,
 ) -> list[tuple[int, int]]:
-    """Probe common camera modes and return unique actual resolutions."""
+    """检测常见摄像头模式，并返回去重后的实际分辨率列表。"""
     detected: list[tuple[int, int]] = []
     for width, height in candidates:
         actual = probe_camera_resolution(
@@ -136,6 +141,13 @@ def detect_supported_camera_resolutions(
         if actual is not None:
             detected.append(actual)
     return sort_resolutions(detected)
+
+
+class DragOnlySlider(Slider):
+    """只允许拖拽调整数值，避免滚轮误触改变关键参数。"""
+
+    def wheelEvent(self, event) -> None:
+        event.accept()
 
 
 class SettingsPage(QWidget):
@@ -330,7 +342,7 @@ class SettingsPage(QWidget):
             language_label("en"),
             language_label("bilingual"),
         ])
-        self.language_combo.setFixedWidth(180)
+        self.language_combo.setFixedWidth(LANGUAGE_CONTROL_WIDTH)
         hint = BodyLabel(tx(
             "保存后下次启动生效",
             "Takes effect after saving and restarting",
@@ -362,7 +374,7 @@ class SettingsPage(QWidget):
         self.camera_index_spin = SpinBox()
         self.camera_index_spin.setRange(0, 10)
         self.camera_index_spin.setValue(0)
-        self.camera_index_spin.setFixedWidth(100)
+        self.camera_index_spin.setFixedWidth(CONTROL_WIDTH)
         index_row.addWidget(index_label)
         index_row.addWidget(self.camera_index_spin)
         index_row.addStretch(1)
@@ -375,9 +387,9 @@ class SettingsPage(QWidget):
         self.camera_resolution_combo = ComboBox()
         self.camera_resolution_combo.addItems([format_resolution(w, h) for w, h in COMMON_CAMERA_RESOLUTIONS])
         self.camera_resolution_combo.setCurrentText("1280x720")
-        self.camera_resolution_combo.setFixedWidth(150)
+        self.camera_resolution_combo.setFixedWidth(CONTROL_WIDTH)
         detect_resolution_btn = PushButton(tx_button("检测分辨率", "Detect Resolution"))
-        detect_resolution_btn.setFixedWidth(150)
+        detect_resolution_btn.setFixedWidth(CONTROL_WIDTH)
         detect_resolution_btn.clicked.connect(self._handle_detect_camera_resolutions)
         resolution_hint = BodyLabel(tx("先检测，再选择。Classic 会自动按实际帧尺寸适配。", "Detect first, then choose. Classic adapts to the actual frame size."))
         resolution_hint.setStyleSheet("color: #888; font-size: 12px;")
@@ -395,7 +407,7 @@ class SettingsPage(QWidget):
         self.camera_backend_combo = ComboBox()
         self.camera_backend_combo.addItems(["dshow", "auto"])
         self.camera_backend_combo.setCurrentText("dshow")
-        self.camera_backend_combo.setFixedWidth(150)
+        self.camera_backend_combo.setFixedWidth(CONTROL_WIDTH)
         backend_row.addWidget(backend_label)
         backend_row.addWidget(self.camera_backend_combo)
         backend_row.addStretch(1)
@@ -423,7 +435,7 @@ class SettingsPage(QWidget):
         self.model_path_edit.setPlaceholderText("checkpoints/best_model.pth")
         self.model_path_edit.setText("checkpoints/best_model.pth")
         browse_model_btn = PushButton(tx("浏览", "Browse"))
-        browse_model_btn.setFixedWidth(120)
+        browse_model_btn.setFixedWidth(PATH_BUTTON_WIDTH)
         browse_model_btn.clicked.connect(self._browse_model_path)
         model_path_row.addWidget(model_path_label)
         model_path_row.addWidget(self.model_path_edit, stretch=1)
@@ -466,7 +478,7 @@ class SettingsPage(QWidget):
         self.onnx_path_edit.setPlaceholderText("checkpoints/gaze_net.onnx")
         self.onnx_path_edit.setText("checkpoints/gaze_net.onnx")
         browse_onnx_btn = PushButton(tx("浏览", "Browse"))
-        browse_onnx_btn.setFixedWidth(120)
+        browse_onnx_btn.setFixedWidth(PATH_BUTTON_WIDTH)
         browse_onnx_btn.clicked.connect(self._browse_onnx_path)
         onnx_path_row.addWidget(onnx_path_label)
         onnx_path_row.addWidget(self.onnx_path_edit, stretch=1)
@@ -480,7 +492,7 @@ class SettingsPage(QWidget):
         self.deep_gaze_space_combo = ComboBox()
         self.deep_gaze_space_combo.addItems(["head", "camera"])
         self.deep_gaze_space_combo.setCurrentText("head")
-        self.deep_gaze_space_combo.setFixedWidth(150)
+        self.deep_gaze_space_combo.setFixedWidth(CONTROL_WIDTH)
         deep_space_hint = BodyLabel(tx("head 为原链路，camera 用于跳过 PnP 旋转实验", "head is the original path; camera skips PnP rotation for experiments"))
         deep_space_hint.setStyleSheet("color: #888; font-size: 12px;")
         deep_space_row.addWidget(deep_space_label)
@@ -495,7 +507,7 @@ class SettingsPage(QWidget):
         self.deep_pose_input_combo = ComboBox()
         self.deep_pose_input_combo.addItems(["live", "zero"])
         self.deep_pose_input_combo.setCurrentText("live")
-        self.deep_pose_input_combo.setFixedWidth(150)
+        self.deep_pose_input_combo.setFixedWidth(CONTROL_WIDTH)
         deep_pose_hint = BodyLabel(tx("zero 用于排查坏 head-pose 特征污染", "zero helps isolate bad head-pose feature noise"))
         deep_pose_hint.setStyleSheet("color: #888; font-size: 12px;")
         deep_pose_row.addWidget(deep_pose_label)
@@ -510,7 +522,7 @@ class SettingsPage(QWidget):
         self.deep_ray_origin_combo = ComboBox()
         self.deep_ray_origin_combo.addItems(["face_translation", "zero_origin"])
         self.deep_ray_origin_combo.setCurrentText("face_translation")
-        self.deep_ray_origin_combo.setFixedWidth(150)
+        self.deep_ray_origin_combo.setFixedWidth(CONTROL_WIDTH)
         deep_origin_hint = BodyLabel(tx("用于诊断 runtime 几何原点误差", "Diagnoses runtime ray-origin mismatch"))
         deep_origin_hint.setStyleSheet("color: #888; font-size: 12px;")
         deep_origin_row.addWidget(deep_origin_label)
@@ -525,8 +537,8 @@ class SettingsPage(QWidget):
         self.deep_eye_input_mode_combo = ComboBox()
         self.deep_eye_input_mode_combo.addItems(["normal", "swap", "flip", "swap_flip"])
         self.deep_eye_input_mode_combo.setCurrentText("normal")
-        self.deep_eye_input_mode_combo.setFixedWidth(150)
-        deep_eye_hint = BodyLabel(tx("用于诊断左右眼顺序和水平镜像契约", "Diagnoses left/right eye order and horizontal mirror contract"))
+        self.deep_eye_input_mode_combo.setFixedWidth(CONTROL_WIDTH)
+        deep_eye_hint = BodyLabel(tx("用于诊断左右眼顺序和水平镜像一致性", "Diagnoses left/right eye order and horizontal flip consistency"))
         deep_eye_hint.setStyleSheet("color: #888; font-size: 12px;")
         deep_eye_row.addWidget(deep_eye_label)
         deep_eye_row.addWidget(self.deep_eye_input_mode_combo)
@@ -563,7 +575,7 @@ class SettingsPage(QWidget):
         self.screen_w_mm_spin.setValue(344.0)
         self.screen_w_mm_spin.setDecimals(1)
         self.screen_w_mm_spin.setSingleStep(1.0)
-        self.screen_w_mm_spin.setFixedWidth(120)
+        self.screen_w_mm_spin.setFixedWidth(CONTROL_WIDTH)
         width_row.addWidget(width_label)
         width_row.addWidget(self.screen_w_mm_spin)
         width_row.addStretch(1)
@@ -578,7 +590,7 @@ class SettingsPage(QWidget):
         self.screen_h_mm_spin.setValue(194.0)
         self.screen_h_mm_spin.setDecimals(1)
         self.screen_h_mm_spin.setSingleStep(1.0)
-        self.screen_h_mm_spin.setFixedWidth(120)
+        self.screen_h_mm_spin.setFixedWidth(CONTROL_WIDTH)
         height_row.addWidget(height_label)
         height_row.addWidget(self.screen_h_mm_spin)
         height_row.addStretch(1)
@@ -611,7 +623,7 @@ class SettingsPage(QWidget):
         self.smoother_type_combo = ComboBox()
         self.smoother_type_combo.addItems(["kalman", "ema", "none"])
         self.smoother_type_combo.setCurrentText("kalman")
-        self.smoother_type_combo.setFixedWidth(150)
+        self.smoother_type_combo.setFixedWidth(CONTROL_WIDTH)
         type_hint = BodyLabel(tx("classic 默认 Kalman；EMA/none 用于对照", "classic defaults to Kalman; EMA/none are for comparison"))
         type_hint.setStyleSheet("color: #888; font-size: 12px;")
         type_row.addWidget(type_label)
@@ -624,10 +636,10 @@ class SettingsPage(QWidget):
         alpha_row = QHBoxLayout()
         alpha_label = BodyLabel(tx("平滑系数：", "Alpha:"))
         alpha_label.setFixedWidth(200)
-        self.alpha_slider = Slider(Qt.Orientation.Horizontal)
+        self.alpha_slider = DragOnlySlider(Qt.Orientation.Horizontal)
         self.alpha_slider.setRange(1, 100)  # 0.01 ~ 1.00
         self.alpha_slider.setValue(30)  # 默认 0.30
-        self.alpha_slider.setFixedWidth(300)
+        self.alpha_slider.setFixedWidth(SLIDER_WIDTH)
         self.alpha_slider.valueChanged.connect(self._on_alpha_changed)
         self.alpha_value_label = BodyLabel("0.30")
         self.alpha_value_label.setStyleSheet(f"font-weight: 600; color: {PALETTE['accent']}; font-size: 16px;")
@@ -659,7 +671,7 @@ class SettingsPage(QWidget):
         self.backend_combo = ComboBox()
         self.backend_combo.addItems(["classic", "deep_pog", "deep"])
         self.backend_combo.setCurrentText("classic")
-        self.backend_combo.setFixedWidth(150)
+        self.backend_combo.setFixedWidth(CONTROL_WIDTH)
         backend_hint = BodyLabel(tx("classic 用于体验，deep_pog 用于可演示 ML，deep 用于 3D 研究", "classic for UX; deep_pog for demo ML; deep for 3D research"))
         backend_hint.setStyleSheet("color: #888; font-size: 12px;")
         backend_row.addWidget(backend_label)
@@ -675,7 +687,7 @@ class SettingsPage(QWidget):
         self.target_fps_spin = SpinBox()
         self.target_fps_spin.setRange(10, 60)
         self.target_fps_spin.setValue(30)
-        self.target_fps_spin.setFixedWidth(100)
+        self.target_fps_spin.setFixedWidth(CONTROL_WIDTH)
         fps_row.addWidget(fps_label)
         fps_row.addWidget(self.target_fps_spin)
         fps_row.addStretch(1)
