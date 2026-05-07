@@ -15,13 +15,32 @@
 import sys
 import logging
 import argparse
+import os
 from pathlib import Path
 
+# MediaPipe can fail on Windows if PyQt6 is imported first.
+if sys.platform == "win32":
+    _dll_directory_handles = []
+    _bundle_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    _mediapipe_dll_dir = _bundle_dir / "mediapipe" / "python"
+    if _mediapipe_dll_dir.exists():
+        try:
+            _dll_directory_handles.append(os.add_dll_directory(str(_mediapipe_dll_dir)))
+        except (AttributeError, OSError):
+            pass
+        os.environ["PATH"] = f"{_mediapipe_dll_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+    try:
+        from mediapipe.python.solutions import face_mesh as _mp_face_mesh  # noqa: F401
+    except Exception:
+        pass
+
 import yaml
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import Qt
 
 from qfluentwidgets import setTheme, Theme, setThemeColor
+
+from src.runtime_paths import resource_path
 
 # 配置日志
 logging.basicConfig(
@@ -40,6 +59,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--config",
         default="configs/classic.yaml",
         help="Path to the system YAML config used by UI, tracker, and settings page.",
+    )
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     args, _ = parser.parse_known_args(argv)
     return args
@@ -90,6 +114,122 @@ def setup_application() -> QApplication:
     return app
 
 
+def _patch_modal_dialogs_for_smoke() -> None:
+    """Keep automated GUI smoke checks from blocking on modal message boxes."""
+    def _log_box(*args, **kwargs):
+        title = args[1] if len(args) > 1 else ""
+        text = args[2] if len(args) > 2 else ""
+        logger.info("[SMOKE] suppressed message box: %s %s", title, text)
+        return QMessageBox.StandardButton.Ok
+
+    QMessageBox.critical = _log_box  # type: ignore[method-assign]
+    QMessageBox.warning = _log_box  # type: ignore[method-assign]
+    QMessageBox.information = _log_box  # type: ignore[method-assign]
+    QMessageBox.question = lambda *args, **kwargs: QMessageBox.StandardButton.No  # type: ignore[method-assign]
+
+
+def run_smoke_test() -> int:
+    """Run a non-interactive startup and page/button smoke check."""
+    _patch_modal_dialogs_for_smoke()
+
+    try:
+        from src.runtime_paths import app_data_dir
+        smoke_log_path = app_data_dir() / "smoke-test.log"
+        smoke_log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(smoke_log_path, mode="w", encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"))
+        logging.getLogger().addHandler(file_handler)
+        logger.info("[SMOKE] file log: %s", smoke_log_path)
+    except Exception as e:
+        logger.warning("[SMOKE] could not enable file logging: %s", e)
+
+    app = setup_application()
+    logger.info("[SMOKE] QApplication ready")
+
+    from src.ui.i18n import load_language
+    from src.ui.language_dialog import LanguageSelectionDialog
+    from src.ui.main_window import MainWindow
+    import src.ui.calibration_page as calibration_page
+    import src.ui.settings_page as settings_page
+
+    class _SmokeMessageBox:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self) -> int:
+            return 0
+
+    calibration_page.MessageBox = _SmokeMessageBox  # type: ignore[assignment]
+    settings_page.detect_supported_camera_resolutions = lambda *args, **kwargs: []  # type: ignore[assignment]
+
+    for mode in ("classic", "deep"):
+        config_path = LanguageSelectionDialog._save_startup_config("bilingual", mode)
+        ok, error_message = validate_config_path(config_path)
+        if not ok:
+            logger.error("[SMOKE] %s config invalid: %s", mode, error_message)
+            return 2
+
+        load_language(config_path)
+        dialog = LanguageSelectionDialog(config_path=config_path)
+        for language in ("zh", "en", "bilingual"):
+            dialog._select_language(language)
+        dialog._set_mode(mode)
+        dialog.close()
+
+        window = MainWindow(config_path=config_path)
+        window.show()
+        app.processEvents()
+        if not window.isFullScreen():
+            logger.error("[SMOKE] %s window is not fullscreen", mode)
+            window.close()
+            return 3
+
+        window.go_home()
+        window.go_camera()
+        app.processEvents()
+        window.page_camera._handle_start()
+        app.processEvents()
+        window.page_camera._handle_stop()
+
+        window.go_settings()
+        app.processEvents()
+        window.page_settings._toggle_advanced_settings()
+        window.page_settings._handle_detect_camera_resolutions()
+        window.page_settings._handle_save()
+        window.page_settings._handle_reset()
+
+        window.go_tracking()
+        app.processEvents()
+        window.page_tracking._handle_load_calibration()
+        window.page_tracking._toggle_diagnostics()
+        window.page_tracking._handle_start_tracking()
+        app.processEvents()
+        tracking_error = window.page_tracking.error_label.text().strip()
+        if window.page_tracking.start_btn.isEnabled() or tracking_error.startswith(("错误", "Error", "TrackerPipeline")):
+            logger.error("[SMOKE] %s tracking start failed: %s", mode, tracking_error)
+            window.close()
+            return 4
+        tracker = window.page_tracking.tracker
+        if tracker is None or getattr(tracker.face_detector, "unavailable", False):
+            logger.error("[SMOKE] %s tracking used fallback instead of real FaceDetector", mode)
+            window.close()
+            return 5
+        window.page_tracking._handle_stop_tracking()
+
+        window.switchTo(window.page_calibration)
+        app.processEvents()
+        window.page_calibration._handle_save_calibration()
+        window.page_calibration._handle_load_calibration()
+
+        window.close()
+        app.processEvents()
+        logger.info("[SMOKE] %s passed", mode)
+
+    app.quit()
+    logger.info("[SMOKE] completed")
+    return 0
+
+
 def main() -> int:
     """应用主函数。
     
@@ -99,7 +239,9 @@ def main() -> int:
     try:
         args = parse_args(sys.argv[1:])
         sys.argv = [sys.argv[0]]
-        config_path = Path(args.config)
+        if args.smoke_test:
+            return run_smoke_test()
+        config_path = resource_path(args.config)
         ok, error_message = validate_config_path(config_path)
         if not ok:
             logger.warning(error_message)

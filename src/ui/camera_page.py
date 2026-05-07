@@ -33,7 +33,6 @@ from qfluentwidgets import BodyLabel, CardWidget, PrimaryPushButton, PushButton
 from src.ui.camera_stream import CameraStream, Resolution
 from src.ui.fluent_theme import PALETTE
 from src.ui.i18n import tx, tx_button
-from src.vision.face_detector import FaceDetector
 
 
 def _bgr_to_qimage(bgr: np.ndarray) -> QImage:
@@ -68,7 +67,8 @@ class CameraPage(QWidget):
         self._stream.frame_received.connect(self._on_frame)  # type: ignore[arg-type]
         self._stream.error.connect(self._on_error)  # type: ignore[arg-type]
         
-        self._detector: Optional[FaceDetector] = None
+        self._detector: Optional[object] = None
+        self._detector_error: Optional[str] = None
         
         # FPS 计算
         self._frame_count = 0
@@ -161,8 +161,18 @@ class CameraPage(QWidget):
             self.preview_label.setText(tx_button("正在启动摄像头...", "Starting camera..."))
             
             # 初始化人脸检测器
-            if self._detector is None:
-                self._detector = FaceDetector(eye_crop_size=128)
+            if self._detector is None and self._detector_error is None:
+                try:
+                    from src.vision.face_detector import FaceDetector
+
+                    self._detector = FaceDetector(eye_crop_size=128)
+                except Exception as e:
+                    self._detector_error = str(e)
+                    self.detect_value.setText(tx("检测不可用", "Detection Unavailable"))
+                    self.error_label.setText(tx(
+                        f"人脸检测不可用，继续显示摄像头预览：{e}",
+                        f"Face detection is unavailable; camera preview will continue: {e}",
+                    ))
             
             # 重置 FPS 计数
             self._frame_count = 0
@@ -218,9 +228,6 @@ class CameraPage(QWidget):
         if not isinstance(frame_bgr, np.ndarray):
             return
         
-        if self._detector is None:
-            return
-        
         # 计算 FPS
         self._frame_count += 1
         current_time = time.time()
@@ -232,7 +239,7 @@ class CameraPage(QWidget):
             self._last_fps_time = current_time
         
         # 人脸检测（每 2 帧处理一次，减少计算负担）
-        if self._frame_count % 2 == 0:
+        if self._detector is not None and self._frame_count % 2 == 0:
             try:
                 result = self._detector.detect(frame_bgr)
                 

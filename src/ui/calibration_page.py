@@ -48,16 +48,13 @@ from qfluentwidgets import (
 
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import save_calibration, load_calibration
+from src.runtime_paths import calibration_path_for_backend as runtime_calibration_path_for_backend
 from src.tracker.pipeline import TrackerPipeline, SystemConfig
 from src.ui.i18n import tx, tx_button
 
 
 def calibration_path_for_backend(backend: str) -> Path:
-    if backend == "deep":
-        return Path("calibration_deep.json")
-    if backend == "deep_pog":
-        return Path("calibration_deep_pog.json")
-    return Path("calibration_classic.json")
+    return runtime_calibration_path_for_backend(backend)
 
 
 def calibration_module_for_config(config: SystemConfig) -> CalibrationModule:
