@@ -38,7 +38,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Look2Act Tracker")
     parser.add_argument(
         "--config",
-        default="configs/system_config.yaml",
+        default="configs/classic.yaml",
         help="Path to the system YAML config used by UI, tracker, and settings page.",
     )
     args, _ = parser.parse_known_args(argv)
@@ -102,8 +102,7 @@ def main() -> int:
         config_path = Path(args.config)
         ok, error_message = validate_config_path(config_path)
         if not ok:
-            logger.error(error_message)
-            return 2
+            logger.warning(error_message)
         logger.info("=" * 60)
         logger.info("Look2Act Tracker 启动中...")
         logger.info(f"系统配置路径: {config_path}")
@@ -121,7 +120,14 @@ def main() -> int:
         if dialog.exec() != dialog.DialogCode.Accepted:
             return 0
         language = dialog.selected_language
+        config_path = dialog.selected_config_path
+        ok, error_message = validate_config_path(config_path)
+        if not ok:
+            logger.error(error_message)
+            return 2
         logger.info(f"界面语言已设置: {language}")
+        logger.info(f"演示模式已设置: {dialog.selected_mode}")
+        logger.info(f"系统配置路径: {config_path}")
         
         # 导入主窗口（延迟导入，避免在 QApplication 创建前导入 Qt 组件）
         from src.ui.main_window import MainWindow

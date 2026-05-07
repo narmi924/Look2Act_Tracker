@@ -4,12 +4,13 @@
 
 Look2Act is a webcam gaze interaction project with two active goals:
 
-- Research path: keep the deep `GazeNetV2 + head pose + screen geometry` pipeline for paper experiments.
-- ML baseline path: add `deep_pog`, where a CNN predicts normalized screen points directly before calibration/smoothing.
-- Experience path: restore a smooth demo-grade interaction flow with a classic image-processing tracker inspired by `Eye_Touch_Project\Eye_Touch`.
+- Experience/demo path: keep the `classic` Eye_Touch-style tracker as the stable product fallback.
+- Research path: keep the deep `GazeNetV2 + 3D gaze-to-screen` pipeline for paper experiments.
 
 The current practical diagnosis is that deep-model offline metrics are useful, but real-time screen tracking can fail because model-space labels, head-pose rotation, screen geometry, and calibration are tightly coupled. Do not assume "more data" is the first fix.
 Training uses Intel XPU + Intel Extension for PyTorch (IPEX). Runtime inference uses ONNX Runtime CPU for cross-platform deployment.
+
+The current best Deep Demo contract is camera-space gaze, zero pose input, zero ray origin, 720 mm screen plane, swapped eye input, and EMA smoothing.
 
 ## Working Rules
 
@@ -25,9 +26,12 @@ Training uses Intel XPU + Intel Extension for PyTorch (IPEX). Runtime inference 
 ## Current Implementation Direction
 
 - Default user-facing backend should be `classic`.
-- Deep backend remains available as `deep` for research and paper experiments.
-- `deep_pog` is the first ML path to make usable end-to-end: eye crops + head pose -> normalized screen point -> calibration -> smoothing -> fullscreen validation/interaction.
-- 3D geometry research stays in `deep`: compare camera/head gaze space and ray-origin choices before any head-local relabeling.
+- Deep backend remains available as `deep` for research, demo comparison, and paper experiments.
+- `deep_pog` remains available as an experimental baseline, but it is not the current main demonstration path.
+- 3D geometry research stays in `deep`: use facts from runtime topology and projection diagnostics before making paper claims.
+- Recommended demo configs:
+  - `configs/experiments/system_classic_demo.yaml`
+  - `configs/experiments/system_deep_demo.yaml`
 - Calibration files are separated:
   - `calibration_classic.json`
   - `calibration_deep.json`
@@ -46,6 +50,7 @@ conda run --no-capture-output -n gaze-env python scripts/evaluate_pog.py --check
 conda run --no-capture-output -n gaze-env python scripts/diagnose_tracker.py --backend classic --frames 300
 conda run --no-capture-output -n gaze-env python scripts/diagnose_tracker.py --backend deep --deep-space camera --deep-pose-input zero --smoother none --frames 300 --csv diagnostics_deep.csv
 conda run --no-capture-output -n gaze-env python scripts/analyze_tracker_diagnostics.py diagnostics_deep.csv
+conda run --no-capture-output -n gaze-env python scripts/analyze_3d_geometry_contract.py --processed-dir dataset_processed --split test
 ```
 
 Long commands for the user to run manually:
@@ -60,4 +65,12 @@ python scripts/export_onnx.py --checkpoint checkpoints/deep_pog_zero/best_model.
 python scripts/evaluate.py --checkpoint checkpoints/best_model.pth
 python scripts/evaluate_pog.py --checkpoint checkpoints/deep_pog_zero/best_model.pth
 python scripts/exp_leave_one_out.py --epochs 50 --device xpu
+```
+
+Demo commands for the user in Git Bash:
+
+```bash
+conda activate gaze-env
+python main.py --config configs/experiments/system_classic_demo.yaml
+python main.py --config configs/experiments/system_deep_demo.yaml
 ```

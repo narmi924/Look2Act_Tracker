@@ -356,6 +356,7 @@ class CalibrationPage(QWidget):
     """
     calibration_ready = pyqtSignal()
     return_home_requested = pyqtSignal()
+    tracker_required = pyqtSignal()
     
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -496,21 +497,13 @@ class CalibrationPage(QWidget):
     def _handle_start_calibration(self) -> None:
         """启动校准流程。"""
         if self.tracker is None:
-            QMessageBox.warning(
-                self,
-                tx("错误", "Error"),
-                tx("TrackerPipeline 未初始化。请先启动实时追踪。", "TrackerPipeline is not initialized. Please start real-time tracking first.")
-            )
+            self.tracker_required.emit()
             return
 
         self._show_default_actions()
         
         if not self.tracker.is_running():
-            QMessageBox.warning(
-                self,
-                tx("错误", "Error"),
-                tx("TrackerPipeline 未运行。请先启动实时追踪。", "TrackerPipeline is not running. Please start real-time tracking first.")
-            )
+            self.tracker_required.emit()
             return
         
         # 创建全屏校准窗口（不传 parent，使其作为独立顶层窗口以正确全屏）

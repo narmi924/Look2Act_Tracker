@@ -1,441 +1,222 @@
-# Look2Act Tracker — 视线驱动交互系统
+# Look2Act Tracker
 
 <div align="center">
 
-**用眼神控制电脑，让交互更自然**
+**Gaze-driven interaction with a standard webcam**
 
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0-red.svg)](https://pytorch.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PyQt6](https://img.shields.io/badge/UI-PyQt6-41CD52)](https://www.riverbankcomputing.com/software/pyqt/)
+[![ONNX Runtime](https://img.shields.io/badge/Runtime-ONNX%20Runtime-005CED)](https://onnxruntime.ai/)
+[![PyTorch](https://img.shields.io/badge/Training-PyTorch%20%2B%20Intel%20IPEX-EE4C2C)](https://pytorch.org/)
+[![Status](https://img.shields.io/badge/Status-Demo%20Ready-success)](docs/project_status.md)
 
-[English](#english-version) | [中文](#中文版本)
+![Look2Act Tracker demo](readme-images/hero-demo.gif)
 
 </div>
 
----
+Look2Act Tracker 是一个基于普通摄像头的视线驱动交互系统。项目当前同时保留两条路线：
 
-## 中文版本
+- **Classic Demo**：使用 Eye_Touch 风格的经典图像处理链路，作为稳定演示与产品体验兜底。
+- **Deep Demo**：使用深度模型输出 3D gaze，再通过修正后的 camera-space runtime contract 投影到屏幕注视点，作为机器学习研究主线。
 
-### 🎯 项目简介
+当前项目目标不是替代专业眼动仪，而是在普通摄像头条件下实现可演示、可诊断、可继续研究的人机交互系统。
 
-Look2Act Tracker 是一个基于深度学习的实时视线追踪系统，让你可以用眼神控制电脑。无需昂贵的专业眼动仪，只需一个普通摄像头，就能实现精准的视线追踪和交互。
+## Current Status
 
-**核心特性：**
-- 👁️ **实时追踪**：≥15 FPS，端到端延迟 <66ms
-- 🎯 **高精度**：9 点校准后，屏幕注视点误差 <2cm
-- 💻 **轻量化**：CPU 推理，无需 GPU，适配 Intel IPEX 加速
-- 🔧 **易用性**：图形化界面，一键启动，开箱即用
-- 🌐 **跨平台**：支持 Windows/Linux/macOS（ONNX Runtime）
+当前推荐演示方式：
 
-### 🚀 快速开始
+| Mode | Backend | Purpose | Config |
+| --- | --- | --- | --- |
+| Classic Demo | `classic` | 稳定体验、交互演示、兜底方案 | `configs/classic.yaml` |
+| Deep Demo | `deep` | 机器学习研究演示、3D gaze-to-screen | `configs/deep.yaml` |
 
-#### 环境准备
+![Classic demo interaction](readme-images/classic-demo.gif)
+
+![Deep demo tracking](readme-images/deep-demo.gif)
+
+项目状态详见 [docs/project_status.md](docs/project_status.md)。
+
+## Quick Start
+
+建议在 Git Bash 中运行：
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/your-username/Look2Act_Tracker_Project.git
-cd Look2Act_Tracker_Project
-
-# 2. 创建 conda 环境
-conda create -n gaze-env python=3.11
 conda activate gaze-env
-
-# 3. 安装依赖
-pip install -r requirements.txt
+cd /d/Projects/Look2Act_Tracker_Project
+python main.py --config configs/classic.yaml
 ```
 
-#### 运行应用
+Deep Demo：
 
 ```bash
-# 启动图形界面
-conda run -n gaze-env python main.py
+conda activate gaze-env
+cd /d/Projects/Look2Act_Tracker_Project
+python main.py --config configs/deep.yaml
 ```
 
-#### 使用流程
+默认配置：
 
-1. **摄像头预览** 📷：检查摄像头是否正常工作，查看人脸检测效果
-2. **视线校准** 🎯：注视屏幕上的 9 个校准点，优化追踪精度
-3. **实时追踪** 👁️：启动视线追踪，屏幕上会显示你的注视点光标
-4. **系统设置** ⚙️：调整摄像头、模型参数、平滑系数等
-
-### 🏗️ 技术架构
-
-```
-输入：摄像头画面
-  ↓
-[人脸检测] → MediaPipe Face Mesh (468 关键点)
-  ↓
-[特征提取] → 双眼区域裁剪 + 归一化
-  ↓
-[视线回归] → GazeNet (CNN) → 三维视线方向向量
-  ↓
-[头部姿态] → PnP 算法 → 头部旋转矩阵 + 平移向量
-  ↓
-[几何建模] → 射线-平面求交 → 屏幕坐标系注视点
-  ↓
-[校准优化] → 9 点仿射变换 → 误差补偿
-  ↓
-输出：屏幕注视点坐标 (x, y)
+```bash
+python main.py
 ```
 
-**核心技术：**
-- **三维视线方向回归**：不依赖特定屏幕尺寸，泛化性强
-- **头部姿态估计**：PnP 算法计算头部在相机坐标系的位置和朝向
-- **屏幕几何建模**：射线-平面求交，将视线向量映射到屏幕坐标
-- **仿射变换校准**：9 点校准优化系统误差，提升精度
+启动后可在同一个弹窗中选择界面语言与演示模式：
 
-### 📁 项目结构
+![Startup language and mode dialog](readme-images/startup-dialog.png)
 
+## User Flow
+
+```mermaid
+flowchart LR
+    A[Language Selection] --> B[Home]
+    B --> C[Camera Preview]
+    B --> D[Calibration]
+    C --> D
+    D --> E[Calibration Result]
+    E -->|Save & Verify| F[Fullscreen Verification]
+    F --> G[Fullscreen Interaction]
+    G --> H[Launcher / Tic-Tac-Toe / Exit]
 ```
+
+![Calibration flow](readme-images/calibration-flow.gif)
+
+![Fullscreen verification and interaction](readme-images/tracking-interaction.gif)
+
+## Runtime Architecture
+
+```mermaid
+flowchart TD
+    Cam[Webcam Frame] --> Face[MediaPipe Face Mesh]
+    Face --> ROI[Eye ROI / Face Features]
+    ROI --> Classic[Classic Tracker]
+    ROI --> Deep[Deep Gaze Model]
+    Face --> Pose[Head Pose / Face Translation]
+
+    Classic --> CF[Normalized Pupil-Iris Features]
+    CF --> CCalib[2D Polynomial Calibration]
+
+    Deep --> DGaze[Camera-space 3D Gaze]
+    Pose --> Contract[Runtime Geometry Contract]
+    DGaze --> Contract
+    Contract --> DPoint[Screen Projection]
+    DPoint --> DCalib[2D Calibration]
+
+    CCalib --> Smooth[Smoothing]
+    DCalib --> Smooth
+    Smooth --> UI[Verification / Interaction Windows]
+```
+
+## Deep Runtime Contract
+
+当前 Deep Demo 使用的有效契约：
+
+```mermaid
+flowchart LR
+    L[Left Eye Crop] --> M[GazeNet V2]
+    R[Right Eye Crop] --> M
+    Z[Zero Pose Input] --> M
+    M --> G[3D Gaze Vector]
+    G --> C[Camera-space, no PnP rotation]
+    C --> O[Zero Ray Origin]
+    O --> P[Screen Plane at 720 mm]
+    P --> S[Screen Point]
+```
+
+这条路线的关键结论是：旧链路中的 head-space 假设、PnP rotation、ray origin 与固定屏幕平面没有形成一致的数学契约，容易导致实时 raw topology 折叠。当前演示配置以事实为准，采用 camera-space contract。
+
+![Deep runtime diagnostics](readme-images/deep-runtime-diagnostics.png)
+
+## README Media Assets
+
+后续补充图片或 GIF 时，请将文件放入 `readme-images/`，并使用以下文件名，README 会自动引用：
+
+| File | Usage |
+| --- | --- |
+| `readme-images/hero-demo.gif` | 顶部主演示动图，展示完整产品观感 |
+| `readme-images/classic-demo.gif` | Classic Demo 稳定交互演示 |
+| `readme-images/deep-demo.gif` | Deep Demo 深度模型链路演示 |
+| `readme-images/startup-dialog.png` | 启动语言与模式选择弹窗 |
+| `readme-images/calibration-flow.gif` | 摄像头预览、校准、保存流程 |
+| `readme-images/tracking-interaction.gif` | 全屏验证与交互窗口 |
+| `readme-images/deep-runtime-diagnostics.png` | Deep runtime contract 或诊断结果截图 |
+
+## Repository Structure
+
+```text
 Look2Act_Tracker_Project/
-├── src/                    # 源代码
-│   ├── data/              # 数据处理管道（数据集加载、预处理、增强）
-│   ├── models/            # GazeNet 模型定义（CNN 架构）
-│   ├── vision/            # 计算机视觉模块
-│   │   ├── face_detector.py    # MediaPipe 人脸检测
-│   │   ├── headpose.py         # 头部姿态估计（PnP）
-│   │   └── eye_extractor.py    # 双眼区域提取
-│   ├── geometry/          # 几何计算模块
-│   │   ├── coordinate_transform.py  # 坐标系转换
-│   │   └── ray_plane_intersection.py  # 射线-平面求交
-│   ├── calibration/       # 校准模块（9 点仿射变换）
-│   ├── tracker/           # 实时推理管道
-│   │   ├── tracker_pipeline.py  # 端到端推理流程
-│   │   └── smoothing.py         # 卡尔曼滤波平滑
-│   └── ui/                # PyQt6 图形界面
-│       ├── main_window.py       # 主窗口
-│       ├── home_page.py         # 主页
-│       ├── camera_page.py       # 摄像头预览页
-│       ├── calibration_page.py  # 校准页
-│       ├── tracking_page.py     # 追踪页
-│       └── settings_page.py     # 设置页
-├── scripts/               # 训练、评估、预处理脚本
-│   ├── train.py          # 模型训练
-│   ├── evaluate.py       # 模型评估
-│   ├── preprocess.py     # 数据预处理
-│   └── export_onnx.py    # 导出 ONNX 模型
-├── tests/                 # 单元测试和集成测试（pytest + hypothesis）
-├── tools/                 # 开发工具和验证脚本
-├── configs/               # YAML 配置文件
-│   ├── system_config.yaml    # 系统运行配置
-│   └── train_config.yaml     # 训练配置
-├── docs/                  # 文档
-│   ├── camera_page_usage.md      # 摄像头预览页使用说明
-│   ├── tracking_page_usage.md    # 追踪页使用说明
-│   ├── settings_page_usage.md    # 设置页使用说明
-│   ├── cpu_optimization.md       # CPU 优化策略说明
-│   └── logs/                     # 研究日志和实验记录
-├── dataset_raw/           # 原始数据集（不入库）
-├── dataset_processed/     # 预处理后的数据集
-├── checkpoints/           # 模型权重文件
-│   ├── best_model.pth    # PyTorch 模型（训练用）
-│   └── gaze_net.onnx     # ONNX 模型（推理用）
-├── evaluation_results/    # 评估结果（图表、指标）
-├── logs/                  # 训练日志
-├── main.py                # 应用入口
-└── requirements.txt       # 依赖列表
+├── configs/                  # System and experiment YAML configs
+├── docs/                     # Project status, research logs, reports
+├── scripts/                  # Preprocess, train, export, evaluate, diagnostics
+├── src/
+│   ├── calibration/          # Calibration fit and serialization
+│   ├── interaction/          # Fullscreen launcher and games
+│   ├── models/               # GazeNet models
+│   ├── tracker/              # Runtime pipeline and backends
+│   └── ui/                   # PyQt6 / QFluentWidgets interface
+├── tests/                    # Automated tests
+├── tools/manual_checks/      # Manual UI debugging checks
+├── main.py                   # Application entry
+└── requirements.txt
 ```
 
-### 🔬 技术细节
+## Configuration
 
-#### 模型架构
-
-**GazeNet**：轻量级 CNN 网络，输入双眼图像，输出三维视线方向向量
-
-```python
-输入：左眼图像 (128×128) + 右眼图像 (128×128)
-  ↓
-[卷积层 × 4] → 特征提取
-  ↓
-[全连接层 × 2] → 视线方向回归
-  ↓
-输出：(gaze_x, gaze_y, gaze_z) 单位向量
-```
-
-- 参数量：~500K
-- 推理速度：CPU 批处理 (batch=2) <10ms
-- 训练数据：自采集数据集（使用 Gaze_Dataset_Collector 工具采集）
-
-#### 训练与推理优化
-
-**训练阶段**：使用 Intel XPU + IPEX 加速
-- 默认配置：`device: xpu`, `use_ipex: true`
-- 自动回退：XPU 不可用时自动切换到 CPU
-- 训练速度：相比纯 CPU 提升 3-5 倍
-
-**推理阶段**：使用 ONNX Runtime（跨平台 CPU 优化）
-- 默认配置：`use_onnx: true`, `use_ipex: false`
-- 跨平台兼容：无需 GPU，无需 IPEX，仅依赖 ONNX Runtime
-- 批处理优化：左右眼合并为 batch=2，减少推理调用
-
-详见：[CPU 优化策略说明](docs/cpu_optimization.md)
-
-#### 坐标系转换
-
-系统涉及 4 个坐标系：
-1. **相机坐标系**：以摄像头为原点
-2. **头部坐标系**：以头部中心为原点
-3. **世界坐标系**：以屏幕中心为原点
-4. **屏幕坐标系**：以屏幕左上角为原点（像素坐标）
-
-转换流程：
-```
-头部坐标系 → (旋转矩阵 R + 平移向量 t) → 相机坐标系
-相机坐标系 → (外参矩阵) → 世界坐标系
-世界坐标系 → (射线-平面求交) → 屏幕坐标系
-```
-
-#### 校准算法
-
-采用 9 点仿射变换校准：
-1. 用户依次注视屏幕上的 9 个校准点
-2. 记录每个点的预测坐标和真实坐标
-3. 计算仿射变换矩阵（2×3）
-4. 实时追踪时应用变换矩阵补偿系统误差
-
-### 🛠️ 开发指南
-
-#### 数据采集
-
-推荐使用配套工具 [Gaze_Dataset_Collector](../Gaze_Dataset_Collector_Project) 采集训练数据：
-- 自动记录眼部图像、头部姿态、注视点坐标
-- 支持隐私保护（人脸模糊化）
-- 双语界面，操作简单
-
-#### 训练自己的模型
+主要演示配置：
 
 ```bash
-# 1. 准备数据集（放在 dataset_raw/ 目录）
-# 2. 预处理数据
-conda run -n gaze-env python scripts/preprocess.py
-
-# 3. 训练模型（自动使用 XPU + IPEX 加速）
-conda run -n gaze-env python scripts/train.py --config configs/train_config.yaml
-
-# 4. 导出 ONNX 模型（用于跨平台推理）
-conda run -n gaze-env python scripts/export_onnx.py \
-  --checkpoint checkpoints/best_model.pth \
-  --output checkpoints/gaze_net.onnx
-
-# 5. 评估模型
-conda run -n gaze-env python scripts/evaluate.py --checkpoint checkpoints/best_model.pth
+configs/classic.yaml
+configs/deep.yaml
 ```
 
-#### 运行测试
+Deep 研究配置保留在：
 
 ```bash
-# 运行所有测试
-conda run -n gaze-env pytest tests/
-
-# 运行特定测试
-conda run -n gaze-env pytest tests/test_tracker_pipeline.py -v
-
-# 运行 Property-Based Testing
-conda run -n gaze-env pytest tests/test_optimization.py -v
+configs/experiments/system_deep_camera_zero_720_pose_zero_swap_ema.yaml
+configs/experiments/system_deep_camera_zero_*.yaml
 ```
 
-#### 详细文档
+## Training And Evaluation
 
-- [摄像头预览页使用说明](docs/camera_page_usage.md)
-- [实时追踪页使用说明](docs/tracking_page_usage.md)
-- [系统设置页使用说明](docs/settings_page_usage.md)
-- [CPU 优化策略说明](docs/cpu_optimization.md)
-- [追踪管道使用说明](docs/tracker_pipeline_usage.md)
+训练阶段使用 Intel XPU + IPEX；推理阶段使用 ONNX Runtime CPU。长时间训练、LOO、GUI 长跑通常由用户在独立终端中手动运行。
 
-### 📊 性能指标
-
-| 指标 | 数值 |
-|------|------|
-| 推理帧率 | ~30 FPS (Intel Ultra 5 125H) |
-| 端到端延迟 | ~30ms |
-| 校准后精度 | <2cm (24 英寸显示器，60cm 距离) |
-| 模型大小 | ~2MB (ONNX) |
-| CPU 占用 | <15% (单核) |
-| 内存占用 | <200MB |
-
-**性能分解**（Intel Ultra 5 125H）：
-
-| 模块 | 耗时 |
-|------|------|
-| 人脸检测 (MediaPipe) | ~15ms |
-| 头部姿态估计 (PnP) | ~2ms |
-| 视线回归 (ONNX batch=2) | ~10ms |
-| 坐标转换 + 射线求交 | <1ms |
-| 时序平滑 (卡尔曼滤波) | <1ms |
-| **总计** | **~30ms** |
-
-### 🎓 适用场景
-
-- 🎮 **游戏交互**：眼控射击、视线选择
-- ♿ **无障碍辅助**：帮助肢体障碍人士操作电脑
-- 📊 **用户研究**：网页热力图、广告注意力分析
-- 🎨 **创意应用**：眼控绘画、视线艺术
-- 🔬 **科研教学**：视线追踪算法研究、人机交互实验
-
-### 🔗 相关项目
-
-- [Gaze_Dataset_Collector](../Gaze_Dataset_Collector_Project)：配套的视线数据集采集工具
-- [Eye_Touch_Project](../Eye_Touch_Project)：早期视线交互系统原型
-
-### 🤝 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-1. Fork 本项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改（推荐使用科研友好的提交信息）
-   ```bash
-   git commit -m 'exp: add 3D vs 2D comparison config'
-   git commit -m 'log: update experiment notes for head pose ablation'
-   git commit -m 'paper: draft abstract v1'
-   git commit -m 'demo: add gaze cursor overlay prototype'
-   ```
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 提交 Pull Request
-
-**提交信息前缀建议**：
-- `exp:` 实验相关
-- `log:` 日志和记录
-- `paper:` 论文相关
-- `demo:` 演示和原型
-- `fix:` 修复 bug
-- `feat:` 新功能
-- `docs:` 文档更新
-- `test:` 测试相关
-
-### 📄 开源协议
-
-本项目采用 MIT 协议开源，详见 [LICENSE](LICENSE) 文件。
-
-### 📧 联系方式
-
-- 项目主页：[GitHub](https://github.com/your-username/Look2Act_Tracker_Project)
-- 问题反馈：[Issues](https://github.com/your-username/Look2Act_Tracker_Project/issues)
-
----
-
-## English Version
-
-### 🎯 Introduction
-
-Look2Act Tracker is a real-time gaze tracking system based on deep learning, enabling you to control your computer with your eyes. No expensive professional eye trackers needed—just a regular webcam for precise gaze tracking and interaction.
-
-**Key Features:**
-- 👁️ **Real-time Tracking**: ≥15 FPS, end-to-end latency <66ms
-- 🎯 **High Precision**: <2cm screen gaze error after 9-point calibration
-- 💻 **Lightweight**: CPU inference, no GPU required, Intel IPEX accelerated
-- 🔧 **User-friendly**: GUI interface, one-click launch, ready to use
-- 🌐 **Cross-platform**: Windows/Linux/macOS support (ONNX Runtime)
-
-### 🚀 Quick Start
-
-#### Environment Setup
+常用流程：
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/Look2Act_Tracker_Project.git
-cd Look2Act_Tracker_Project
-
-# 2. Create conda environment
-conda create -n gaze-env python=3.11
 conda activate gaze-env
-
-# 3. Install dependencies
-pip install -r requirements.txt
+python scripts/preprocess.py
+python scripts/train.py --config configs/train_config.yaml
+python scripts/export_onnx.py --checkpoint checkpoints/best_model.pth --output checkpoints/gaze_net.onnx
+python scripts/evaluate.py --checkpoint checkpoints/best_model.pth
 ```
 
-#### Run Application
+3D 契约诊断：
 
 ```bash
-# Launch GUI
-conda run -n gaze-env python main.py
+python scripts/analyze_3d_geometry_contract.py --processed-dir dataset_processed --split test
+python scripts/evaluate_3d_projection_variants.py --checkpoint checkpoints/best_model.pth
 ```
 
-#### Usage Workflow
+## Tests
 
-1. **Camera Preview** 📷: Check camera functionality and face detection
-2. **Gaze Calibration** 🎯: Look at 9 calibration points to optimize accuracy
-3. **Real-time Tracking** 👁️: Start gaze tracking with on-screen cursor
-4. **System Settings** ⚙️: Adjust camera, model parameters, smoothing coefficients
-
-### 🏗️ Technical Architecture
-
-```
-Input: Camera Frame
-  ↓
-[Face Detection] → MediaPipe Face Mesh (468 landmarks)
-  ↓
-[Feature Extraction] → Eye region cropping + normalization
-  ↓
-[Gaze Regression] → GazeNet (CNN) → 3D gaze direction vector
-  ↓
-[Head Pose] → PnP algorithm → Head rotation matrix + translation vector
-  ↓
-[Geometric Modeling] → Ray-plane intersection → Screen coordinate gaze point
-  ↓
-[Calibration] → 9-point affine transformation → Error compensation
-  ↓
-Output: Screen gaze coordinates (x, y)
+```bash
+conda run --no-capture-output -n gaze-env python -m pytest
 ```
 
-**Core Technologies:**
-- **3D Gaze Direction Regression**: Screen-size independent, strong generalization
-- **Head Pose Estimation**: PnP algorithm for head position and orientation
-- **Screen Geometric Modeling**: Ray-plane intersection for gaze-to-screen mapping
-- **Affine Transformation Calibration**: 9-point calibration for error optimization
+在 Windows PowerShell 中，如果 `conda` alias 不可用，可使用：
 
-### 🔬 Technical Details
-
-#### Model Architecture
-
-**GazeNet**: Lightweight CNN network, inputs eye images, outputs 3D gaze direction vector
-
-```python
-Input: Left eye (64×64) + Right eye (64×64)
-  ↓
-[Conv Layers × 4] → Feature extraction
-  ↓
-[FC Layers × 2] → Gaze direction regression
-  ↓
-Output: (gaze_x, gaze_y, gaze_z) unit vector
+```powershell
+& 'C:\ProgramData\anaconda3\Scripts\conda.exe' run --no-capture-output -n gaze-env python -m pytest
 ```
 
-- Parameters: ~500K
-- Inference speed: CPU single frame <10ms
-- Training data: Self-collected dataset + MPIIGaze augmentation
+## Research Notes
 
-#### Coordinate Systems
+- [Current project status](docs/project_status.md)
+- [Windows EXE packaging analysis](docs/windows_exe_packaging_analysis.md)
+- [3D contract runtime repair](docs/research/3d_contract_runtime_repair_2026-05-06.md)
+- [3D gaze-to-screen stage summary](docs/research/3d_gaze_to_screen_stage_summary_2026-05-06.md)
+- [Deep gaze recovery experiments](docs/research/deep_gaze_recovery_experiments_2026-05-05_06.md)
 
-The system involves 4 coordinate systems:
-1. **Camera Coordinate System**: Origin at camera
-2. **Head Coordinate System**: Origin at head center
-3. **World Coordinate System**: Origin at screen center
-4. **Screen Coordinate System**: Origin at screen top-left (pixel coordinates)
+## Author
 
-### 📊 Performance Metrics
-
-| Metric | Value |
-|--------|-------|
-| Inference FPS | ≥15 FPS (Intel Ultra 5 125H) |
-| End-to-end Latency | <66ms |
-| Calibrated Accuracy | <2cm (24" display, 60cm distance) |
-| Model Size | ~2MB (ONNX) |
-| CPU Usage | <15% (single core) |
-| Memory Usage | <200MB |
-
-### 🎓 Use Cases
-
-- 🎮 **Gaming**: Eye-controlled shooting, gaze selection
-- ♿ **Accessibility**: Assist users with physical disabilities
-- 📊 **User Research**: Webpage heatmaps, ad attention analysis
-- 🎨 **Creative Apps**: Eye-controlled painting, gaze art
-- 🔬 **Research & Education**: Gaze tracking algorithms, HCI experiments
-
-### 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-### 📧 Contact
-
-- Project Homepage: [GitHub](https://github.com/your-username/Look2Act_Tracker_Project)
-- Issue Tracker: [Issues](https://github.com/your-username/Look2Act_Tracker_Project/issues)
+依木热尼江·买买提明 / Imranjan Mamtimin  
+https://imranjan.cn

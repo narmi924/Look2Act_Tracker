@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeyEvent, QCloseEvent
 from PyQt6.QtWidgets import QMainWindow, QStackedWidget, QMessageBox
 
@@ -81,41 +81,9 @@ class MainWindow(FluentWindow):
         self.page_settings.config_changed.connect(self._on_config_changed)
         self.page_calibration.calibration_ready.connect(self._on_calibration_ready)
         self.page_calibration.return_home_requested.connect(self.go_home)
+        self.page_calibration.tracker_required.connect(self._on_calibration_tracker_required)
         
-        # 获取屏幕尺寸以便像 Eye_Touch 一样进行自适应全屏布局
-        from PyQt6.QtWidgets import QApplication
-        import yaml
-        
-        screen = QApplication.primaryScreen()
-        
-        # 读取窗口模式配置（参照 Eye_Touch 的 setup_fullscreen_window）
-        window_mode = 'adaptive'  # 默认自适应模式
-        try:
-            with self.config_path.open('r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
-                window_mode = data.get('ui', {}).get('window_mode', 'adaptive')
-        except Exception:
-            pass
-            
-        if window_mode == 'fullscreen':
-            # 全屏模式（覆盖任务栏）
-            screen_geometry = screen.geometry()
-            self.setFixedSize(screen_geometry.size())
-            self.move(0, 0)
-            self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
-        else:
-            # 自适应模式（保留任务栏）
-            available_geometry = screen.availableGeometry()
-            self.setFixedSize(available_geometry.size())
-            self.move(available_geometry.x(), available_geometry.y())
-        self.setWindowFlags(
-            Qt.WindowType.Window | 
-            Qt.WindowType.CustomizeWindowHint | 
-            Qt.WindowType.WindowTitleHint | 
-            Qt.WindowType.WindowSystemMenuHint | 
-            Qt.WindowType.WindowMinimizeButtonHint | 
-            Qt.WindowType.WindowCloseButtonHint
-        )
+        self._apply_window_mode()
         
         # 禁用 QFluentWidgets 自定义标题栏的最大化/还原功能
         if hasattr(self, 'titleBar'):
@@ -141,6 +109,44 @@ class MainWindow(FluentWindow):
         self.navigationInterface.setCurrentItem(self.page_home.objectName())
         
         print("[MAIN_WINDOW] 主窗口已初始化，窗口大小已自适应屏幕")
+
+    def _apply_window_mode(self) -> None:
+        """Apply fullscreen or taskbar-aware window geometry from the active config."""
+        from PyQt6.QtWidgets import QApplication
+        import yaml
+
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+
+        window_mode = "adaptive"
+        try:
+            with self.config_path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+                window_mode = data.get("ui", {}).get("window_mode", "adaptive")
+        except Exception:
+            pass
+
+        if window_mode == "fullscreen":
+            self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
+            self.setGeometry(screen.geometry())
+            self.setFixedSize(screen.geometry().size())
+            self.setWindowState(self.windowState() | Qt.WindowState.WindowFullScreen)
+            return
+
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowFullScreen)
+        self.setWindowFlags(
+            Qt.WindowType.Window |
+            Qt.WindowType.CustomizeWindowHint |
+            Qt.WindowType.WindowTitleHint |
+            Qt.WindowType.WindowSystemMenuHint |
+            Qt.WindowType.WindowMinimizeButtonHint |
+            Qt.WindowType.WindowCloseButtonHint
+        )
+        available_geometry = screen.availableGeometry()
+        self.setMinimumSize(900, 640)
+        self.setMaximumSize(available_geometry.size())
+        self.setGeometry(available_geometry)
     
     def _center_window(self) -> None:
         """将窗口居中显示。"""
@@ -271,11 +277,11 @@ class MainWindow(FluentWindow):
         self.switchTo(self.page_camera)
         print("[MAIN_WINDOW] 导航到摄像头预览页面")
     
-    def go_calibration(self) -> None:
+    def go_calibration(self) -> bool:
         """导航到校准页面。"""
         # 确保 TrackerPipeline 已初始化
         if not self._ensure_tracker_initialized():
-            return
+            return False
         
         # 如果 TrackerPipeline 未运行，启动它
         if not self.tracker.is_running():
@@ -290,13 +296,19 @@ class MainWindow(FluentWindow):
                         "TrackerPipeline failed to start, so calibration cannot begin.\n\nPlease check the camera and model files.",
                     )
                 )
-                return
+                return False
         
         # 将 TrackerPipeline 传递给校准页面
         self.page_calibration.set_tracker(self.tracker)
         
         self.switchTo(self.page_calibration)
         print("[MAIN_WINDOW] 导航到校准页面")
+        return True
+
+    def _on_calibration_tracker_required(self) -> None:
+        """Initialize tracker when the user enters calibration from the sidebar."""
+        if self.go_calibration():
+            QTimer.singleShot(0, self.page_calibration._handle_start_calibration)
     
     def go_tracking(self) -> None:
         """导航到实时追踪页面。"""
