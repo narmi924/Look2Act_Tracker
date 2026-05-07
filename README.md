@@ -10,6 +10,8 @@
 [![PyTorch](https://img.shields.io/badge/Training-PyTorch%20%2B%20Intel%20IPEX-EE4C2C)](https://pytorch.org/)
 [![Status](https://img.shields.io/badge/Status-Demo%20Ready-success)](docs/project_status.md)
 
+![Look2Act Tracker demo](readme-images/hero-demo.gif)
+
 </div>
 
 Look2Act Tracker 是一个基于普通摄像头的视线驱动交互系统。项目当前同时保留两条路线：
@@ -25,8 +27,12 @@ Look2Act Tracker 是一个基于普通摄像头的视线驱动交互系统。项
 
 | Mode | Backend | Purpose | Config |
 | --- | --- | --- | --- |
-| Classic Demo | `classic` | 稳定体验、交互演示、兜底方案 | `configs/experiments/system_classic_demo.yaml` |
-| Deep Demo | `deep` | 机器学习研究演示、3D gaze-to-screen | `configs/experiments/system_deep_demo.yaml` |
+| Classic Demo | `classic` | 稳定体验、交互演示、兜底方案 | `configs/classic.yaml` |
+| Deep Demo | `deep` | 机器学习研究演示、3D gaze-to-screen | `configs/deep.yaml` |
+
+![Classic demo interaction](readme-images/classic-demo.gif)
+
+![Deep demo tracking](readme-images/deep-demo.gif)
 
 项目状态详见 [docs/project_status.md](docs/project_status.md)。
 
@@ -37,7 +43,7 @@ Look2Act Tracker 是一个基于普通摄像头的视线驱动交互系统。项
 ```bash
 conda activate gaze-env
 cd /d/Projects/Look2Act_Tracker_Project
-python main.py --config configs/experiments/system_classic_demo.yaml
+python main.py --config configs/classic.yaml
 ```
 
 Deep Demo：
@@ -45,7 +51,7 @@ Deep Demo：
 ```bash
 conda activate gaze-env
 cd /d/Projects/Look2Act_Tracker_Project
-python main.py --config configs/experiments/system_deep_demo.yaml
+python main.py --config configs/deep.yaml
 ```
 
 默认配置：
@@ -53,6 +59,10 @@ python main.py --config configs/experiments/system_deep_demo.yaml
 ```bash
 python main.py
 ```
+
+启动后可在同一个弹窗中选择界面语言与演示模式：
+
+![Startup language and mode dialog](readme-images/startup-dialog.png)
 
 ## User Flow
 
@@ -67,6 +77,10 @@ flowchart LR
     F --> G[Fullscreen Interaction]
     G --> H[Launcher / Tic-Tac-Toe / Exit]
 ```
+
+![Calibration flow](readme-images/calibration-flow.gif)
+
+![Fullscreen verification and interaction](readme-images/tracking-interaction.gif)
 
 ## Runtime Architecture
 
@@ -110,6 +124,22 @@ flowchart LR
 
 这条路线的关键结论是：旧链路中的 head-space 假设、PnP rotation、ray origin 与固定屏幕平面没有形成一致的数学契约，容易导致实时 raw topology 折叠。当前演示配置以事实为准，采用 camera-space contract。
 
+![Deep runtime diagnostics](readme-images/deep-runtime-diagnostics.png)
+
+## README Media Assets
+
+后续补充图片或 GIF 时，请将文件放入 `readme-images/`，并使用以下文件名，README 会自动引用：
+
+| File | Usage |
+| --- | --- |
+| `readme-images/hero-demo.gif` | 顶部主演示动图，展示完整产品观感 |
+| `readme-images/classic-demo.gif` | Classic Demo 稳定交互演示 |
+| `readme-images/deep-demo.gif` | Deep Demo 深度模型链路演示 |
+| `readme-images/startup-dialog.png` | 启动语言与模式选择弹窗 |
+| `readme-images/calibration-flow.gif` | 摄像头预览、校准、保存流程 |
+| `readme-images/tracking-interaction.gif` | 全屏验证与交互窗口 |
+| `readme-images/deep-runtime-diagnostics.png` | Deep runtime contract 或诊断结果截图 |
+
 ## Repository Structure
 
 ```text
@@ -134,8 +164,8 @@ Look2Act_Tracker_Project/
 主要演示配置：
 
 ```bash
-configs/experiments/system_classic_demo.yaml
-configs/experiments/system_deep_demo.yaml
+configs/classic.yaml
+configs/deep.yaml
 ```
 
 Deep 研究配置保留在：
@@ -181,6 +211,7 @@ conda run --no-capture-output -n gaze-env python -m pytest
 ## Research Notes
 
 - [Current project status](docs/project_status.md)
+- [Windows EXE packaging analysis](docs/windows_exe_packaging_analysis.md)
 - [3D contract runtime repair](docs/research/3d_contract_runtime_repair_2026-05-06.md)
 - [3D gaze-to-screen stage summary](docs/research/3d_gaze_to_screen_stage_summary_2026-05-06.md)
 - [Deep gaze recovery experiments](docs/research/deep_gaze_recovery_experiments_2026-05-05_06.md)
