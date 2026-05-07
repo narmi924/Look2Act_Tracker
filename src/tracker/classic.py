@@ -1,9 +1,7 @@
-"""Eye_Touch style classic image-processing gaze backend.
+"""Classic 图像处理视线后端。
 
-The classic path intentionally mirrors the earlier Eye_Touch course project:
-MediaPipe eye ROIs -> dark pupil centroid -> average absolute camera point ->
-camera-normalized polynomial calibration -> screen-space Kalman + 60-sample
-moving average.
+该链路使用 MediaPipe 提取眼部 ROI，再通过暗色瞳孔质心、相机归一化特征、
+多项式校准和屏幕空间平滑完成注视点估计。
 """
 from __future__ import annotations
 
@@ -17,12 +15,12 @@ import numpy as np
 
 @dataclass(frozen=True)
 class ClassicGazeFeature:
-    """Camera-normalized two-dimensional feature used as calibration input."""
+    """用于校准输入的相机归一化二维特征。"""
 
     x: float
     y: float
     confidence: float
-    method: str = "eyetouch_pupil"
+    method: str = "classic_pupil"
 
     @property
     def point(self) -> tuple[float, float]:
@@ -30,10 +28,10 @@ class ClassicGazeFeature:
 
 
 def detect_pupil_centroid(eye_roi: np.ndarray) -> Optional[tuple[float, float]]:
-    """Return the dark pupil centroid in ROI pixel coordinates.
+    """返回眼部 ROI 内的暗色瞳孔质心坐标。
 
-    This is the same two-stage detector used by Eye_Touch: Otsu inverse
-    threshold + contour centroid, with dark-pixel weighted centroid fallback.
+    先使用 Otsu 反向阈值和轮廓矩定位；当轮廓不可用时，使用暗像素加权质心作为
+    备用估计。
     """
     if eye_roi is None or eye_roi.size == 0:
         return None
@@ -78,7 +76,7 @@ def normalize_camera_point(
     camera_width: int,
     camera_height: int,
 ) -> tuple[float, float]:
-    """Normalize an absolute camera point by the active frame size."""
+    """按当前帧尺寸归一化相机坐标。"""
     width = max(int(camera_width), 1)
     height = max(int(camera_height), 1)
     return (
@@ -91,7 +89,7 @@ def absolute_pupil_point(
     pupil: Optional[tuple[float, float]],
     roi_origin: Optional[tuple[int, int]],
 ) -> Optional[tuple[float, float]]:
-    """Convert an ROI-local pupil point to absolute camera coordinates."""
+    """将 ROI 内的瞳孔坐标转换为原始相机坐标。"""
     if pupil is None or roi_origin is None:
         return None
     return (float(roi_origin[0] + pupil[0]), float(roi_origin[1] + pupil[1]))
@@ -102,9 +100,9 @@ def fuse_eye_features(
     right_point: Optional[tuple[float, float]],
     camera_width: int = 1,
     camera_height: int = 1,
-    method: str = "eyetouch_pupil",
+    method: str = "classic_pupil",
 ) -> Optional[ClassicGazeFeature]:
-    """Average available absolute eye points and normalize by camera size."""
+    """融合可用的左右眼绝对坐标，并按相机尺寸归一化。"""
     points = [p for p in (left_point, right_point) if p is not None]
     if not points:
         return None
@@ -126,7 +124,7 @@ def normalize_crop_point(
     width: int,
     height: int,
 ) -> tuple[float, float]:
-    """Compatibility helper for older tests and experiments."""
+    """兼容旧实验数据的 ROI 归一化工具。"""
     if width <= 1 or height <= 1:
         return (0.5, 0.5)
     nx = float(np.clip(x / float(width - 1), 0.0, 1.0))
@@ -139,7 +137,7 @@ def normalize_iris_offset(
     eye_center: Optional[tuple[float, float]],
     eye_width: Optional[float],
 ) -> Optional[tuple[float, float]]:
-    """Compatibility helper; the Eye_Touch backend does not use iris offsets."""
+    """兼容旧实验数据的虹膜偏移归一化工具。"""
     if iris_center is None or eye_center is None or eye_width is None or eye_width <= 1e-6:
         return None
     dx = (iris_center[0] - eye_center[0]) / eye_width
@@ -148,7 +146,7 @@ def normalize_iris_offset(
 
 
 class ClassicKalmanSmoother:
-    """Eye_Touch constant-velocity Kalman filter."""
+    """屏幕空间常速度 Kalman 平滑器。"""
 
     def __init__(
         self,
@@ -187,8 +185,8 @@ class ClassicKalmanSmoother:
         self._initialized = False
 
 
-class EyeTouchScreenSmoother:
-    """Eye_Touch screen-space smoother: Kalman followed by 60-point mean."""
+class ClassicScreenSmoother:
+    """Classic 后端的屏幕空间平滑器：Kalman 预测后叠加历史均值。"""
 
     def __init__(self, history_len: int = 60):
         self.kalman = ClassicKalmanSmoother()

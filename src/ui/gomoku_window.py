@@ -11,11 +11,9 @@ from src.ui.i18n import tx, tx_button
 
 
 class GomokuWindow(QWidget):
-    """Full-screen 5x5 gaze-playable O/X board.
+    """适合注视交互的全屏 5x5 O/X 棋盘。
 
-    The old 15x15 Gomoku board was too dense for gaze. This keeps the same
-    TrackingPage integration point but presents a coarse 5x5 tic-tac-toe style
-    game with large cells.
+    棋盘格子保持较大尺寸，便于用注视点停留完成选择。
     """
 
     closed = pyqtSignal()

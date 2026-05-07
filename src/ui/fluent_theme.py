@@ -1,5 +1,5 @@
 """
-UI 主题和配色模块 (来自 Gaze_Dataset_Collector_Project)。
+UI 主题和配色模块。
 
 本模块负责统一整个应用的视觉风格，包括颜色、字体、控件样式等。
 使用 PyQt6-Fluent-Widgets 的主题系统作为基础，并应用自定义配色方案。

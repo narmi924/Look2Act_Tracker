@@ -18,7 +18,7 @@ import argparse
 import os
 from pathlib import Path
 
-# MediaPipe can fail on Windows if PyQt6 is imported first.
+# Windows 下先导入 PyQt6 可能影响 MediaPipe DLL 加载，先预热依赖路径。
 if sys.platform == "win32":
     _dll_directory_handles = []
     _bundle_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse Look2Act CLI arguments before Qt starts."""
+    """在 Qt 启动前解析命令行参数。"""
     parser = argparse.ArgumentParser(description="Look2Act Tracker")
     parser.add_argument(
         "--config",
@@ -70,7 +70,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def validate_config_path(config_path: Path) -> tuple[bool, str]:
-    """Validate the startup config before any UI writes to it."""
+    """在界面写入配置前校验启动配置文件。"""
     if not config_path.exists():
         return False, (
             f"配置文件不存在：{config_path}\n"
@@ -107,7 +107,7 @@ def setup_application() -> QApplication:
     app.setOrganizationName("Look2Act")
     app.setApplicationVersion("1.0.0")
     
-    # 应用 Gaze_Dataset_Collector 中的品牌色和自定义样式表
+    # 应用 Look2Act 的品牌色和自定义样式表。
     from src.ui.fluent_theme import apply_fluent_theme
     apply_fluent_theme(app)
     
@@ -115,7 +115,7 @@ def setup_application() -> QApplication:
 
 
 def _patch_modal_dialogs_for_smoke() -> None:
-    """Keep automated GUI smoke checks from blocking on modal message boxes."""
+    """避免自动化冒烟检查被模态对话框阻塞。"""
     def _log_box(*args, **kwargs):
         title = args[1] if len(args) > 1 else ""
         text = args[2] if len(args) > 2 else ""
@@ -129,7 +129,7 @@ def _patch_modal_dialogs_for_smoke() -> None:
 
 
 def run_smoke_test() -> int:
-    """Run a non-interactive startup and page/button smoke check."""
+    """执行非交互式启动、页面切换和按钮冒烟检查。"""
     _patch_modal_dialogs_for_smoke()
 
     try:
@@ -211,7 +211,7 @@ def run_smoke_test() -> int:
             return 4
         tracker = window.page_tracking.tracker
         if tracker is None or getattr(tracker.face_detector, "unavailable", False):
-            logger.error("[SMOKE] %s tracking used fallback instead of real FaceDetector", mode)
+            logger.error("[SMOKE] %s tracking entered protection mode instead of real FaceDetector", mode)
             window.close()
             return 5
         window.page_tracking._handle_stop_tracking()

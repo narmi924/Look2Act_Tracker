@@ -164,8 +164,8 @@ def test_verification_passed_stops_tracker_runtime(qapp):
     page.close()
 
 
-def test_screen_gaze_stabilizer_uses_eyetouch_screen_smoothing():
-    """classic 屏幕级平滑应采用 Eye_Touch 的 Kalman + 历史均值。"""
+def test_screen_gaze_stabilizer_uses_classic_screen_smoothing():
+    """classic 屏幕级平滑应采用 Kalman + 历史均值。"""
     stabilizer = ScreenGazeStabilizer()
 
     first = stabilizer.update((100.0, 100.0))

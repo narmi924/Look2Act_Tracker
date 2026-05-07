@@ -49,7 +49,7 @@ def _print(msg: str):
 
 
 class _UnavailableFaceDetector:
-    """Fallback used only when bundled MediaPipe cannot initialize."""
+    """仅在打包环境中 MediaPipe 初始化失败时使用的保护对象。"""
 
     unavailable = True
 
@@ -340,8 +340,8 @@ class TrackerPipeline:
                 if not getattr(sys, "frozen", False):
                     raise
                 self.face_detector = _UnavailableFaceDetector()
-                logger.warning("Bundled MediaPipe unavailable, tracking will run in UI-only fallback mode: %s", e)
-                _print("人脸检测器不可用，已启用打包版 UI-only fallback")
+                logger.warning("打包环境中的 MediaPipe 初始化失败，追踪链路进入界面保护模式：%s", e)
+                _print("人脸检测器不可用，已启用界面保护模式")
             
             # 3. 初始化头部姿态估计器
             self.head_pose_estimator = HeadPoseEstimator(
@@ -352,7 +352,7 @@ class TrackerPipeline:
             # 4. 加载视线模型（classic 后端不需要 CNN 权重）
             if getattr(self.face_detector, "unavailable", False):
                 self.model_version = f"{self.config.normalized_backend}_fallback"
-                print("打包版 UI-only fallback 已启用，跳过视线模型加载")
+                print("界面保护模式已启用，跳过视线模型加载")
             elif self.config.normalized_backend == "classic":
                 self.model_version = "classic"
                 print("使用 Classic Tracker（pupil/iris feature + calibration）")
@@ -493,8 +493,7 @@ class TrackerPipeline:
                 camera_matrix=self.head_pose_estimator.camera_matrix,
             )
             
-            # Keep the online screen plane aligned with the training-time
-            # camera/screen geometry used for label generation.
+            # 保持运行时屏幕平面与训练标签生成时使用的相机/屏幕几何一致。
             screen_origin = np.array([
                 -self.config.screen_w_mm / 2.0,
                 self.config.cam_above_screen_mm,
@@ -735,7 +734,7 @@ class TrackerPipeline:
                 timings=timings,
             )
 
-        # 4. Convert the predicted 3D gaze vector into a raw screen-space point.
+        # 4. 将模型预测的 3D 视线向量转换为原始屏幕坐标。
         t0 = time.perf_counter()
         d = gaze_vector.astype(np.float64)
         norm_d = np.linalg.norm(d)
@@ -833,13 +832,13 @@ class TrackerPipeline:
         return result
 
     def _select_deep_ray_origin(self, face_translation: np.ndarray) -> np.ndarray:
-        """Select the 3D deep ray origin for geometry-contract experiments."""
+        """选择 Deep 链路的 3D 视线射线原点。"""
         if self.config.normalized_deep_ray_origin == "zero_origin":
             return np.zeros(3, dtype=np.float64)
         return np.asarray(face_translation, dtype=np.float64).flatten()
 
     def _compute_deep_ray(self, gaze_direction: np.ndarray, head_pose) -> tuple[np.ndarray, np.ndarray]:
-        """Compute a 3D gaze ray according to the configured gaze-space contract."""
+        """根据当前坐标空间配置计算 3D 视线射线。"""
         d = np.asarray(gaze_direction, dtype=np.float64).flatten()
         norm = np.linalg.norm(d)
         if norm > 1e-12:
@@ -858,7 +857,7 @@ class TrackerPipeline:
         left_eye: np.ndarray,
         right_eye: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Apply realtime eye-crop contract ablations before model inference."""
+        """在模型推理前应用实时眼部输入一致性配置。"""
         mode = self.config.normalized_deep_eye_input_mode
         left = left_eye
         right = right_eye
@@ -875,7 +874,7 @@ class TrackerPipeline:
         head_pose,
         timings: dict[str, float],
     ) -> TrackerResult:
-        """Map a direct PoG model output to screen pixels without 3D ray geometry."""
+        """将直接 PoG 模型输出映射为屏幕像素坐标。"""
         t0 = time.perf_counter()
         pog = np.asarray(output, dtype=np.float64).flatten()
         if pog.shape[0] < 2 or not np.all(np.isfinite(pog[:2])):
@@ -949,7 +948,7 @@ class TrackerPipeline:
         face_result,
         timings: dict[str, float],
     ) -> TrackerResult:
-        """Process a detected face with the Eye_Touch classic backend."""
+        """使用 Classic 后端处理已检测到的人脸结果。"""
         t0 = time.perf_counter()
         left_pupil = detect_pupil_centroid(getattr(face_result, "left_eye_roi", None))
         right_pupil = detect_pupil_centroid(getattr(face_result, "right_eye_roi", None))
@@ -964,7 +963,7 @@ class TrackerPipeline:
             right_abs,
             camera_width=int(frame_size[0]),
             camera_height=int(frame_size[1]),
-            method="eyetouch_pupil",
+            method="classic_pupil",
         )
         timings["classic_feature"] = (time.perf_counter() - t0) * 1000
 
@@ -1186,7 +1185,7 @@ class TrackerPipeline:
             self.classic_smoother.reset()
 
     def get_diagnostics(self) -> dict[str, object]:
-        """Return runtime diagnostics for UI/debug displays."""
+        """返回运行时诊断信息，供设置页和追踪页展示。"""
         diag: dict[str, object] = {
             "backend": self.config.normalized_backend,
             "model_version": self.model_version,

@@ -3,7 +3,7 @@ import numpy as np
 from src.calibration.calibrator import CalibrationModule
 from src.tracker.classic import (
     ClassicKalmanSmoother,
-    EyeTouchScreenSmoother,
+    ClassicScreenSmoother,
     absolute_pupil_point,
     detect_pupil_centroid,
     fuse_eye_features,
@@ -82,8 +82,8 @@ def test_classic_kalman_smoother_converges_on_constant_point():
     assert abs(point[1] - 0.7) < 0.05
 
 
-def test_eyetouch_screen_smoother_averages_kalman_history():
-    smoother = EyeTouchScreenSmoother(history_len=60)
+def test_classic_screen_smoother_averages_kalman_history():
+    smoother = ClassicScreenSmoother(history_len=60)
     first = smoother.update((100.0, 100.0))
     second = first
     for _ in range(20):

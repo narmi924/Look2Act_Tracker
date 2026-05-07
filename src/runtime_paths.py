@@ -9,7 +9,7 @@ APP_NAME = "Look2Act"
 
 
 def app_base_dir() -> Path:
-    """Return the source root or frozen bundled resource root."""
+    """返回源码根目录或打包后的资源根目录。"""
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
@@ -19,7 +19,7 @@ def app_base_dir() -> Path:
 
 
 def app_data_dir() -> Path:
-    """Return the per-user writable application data directory."""
+    """返回当前用户可写的应用数据目录。"""
     appdata = os.environ.get("APPDATA")
     if appdata:
         return Path(appdata) / APP_NAME
@@ -27,7 +27,7 @@ def app_data_dir() -> Path:
 
 
 def resource_path(path: str | Path) -> Path:
-    """Resolve a bundled/source resource path."""
+    """解析源码或打包资源路径。"""
     candidate = Path(path)
     if candidate.is_absolute():
         return candidate
@@ -35,7 +35,7 @@ def resource_path(path: str | Path) -> Path:
 
 
 def user_data_path(path: str | Path) -> Path:
-    """Resolve a per-user writable path under AppData."""
+    """解析 AppData 下的当前用户可写路径。"""
     candidate = Path(path)
     if candidate.is_absolute():
         return candidate

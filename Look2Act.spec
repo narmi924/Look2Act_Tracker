@@ -6,6 +6,7 @@ from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
 
 block_cipher = None
 PROJECT_ROOT = Path(SPECPATH).resolve()
+APP_ICON = PROJECT_ROOT / "Look2Act.ico"
 
 
 def existing(path: Path, dest: str):
@@ -16,6 +17,7 @@ project_datas = [
     existing(PROJECT_ROOT / "configs", "configs"),
     existing(PROJECT_ROOT / "README.md", "."),
     existing(PROJECT_ROOT / "readme-images", "readme-images"),
+    existing(APP_ICON, "."),
 ]
 
 checkpoint_datas = []
@@ -149,6 +151,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(APP_ICON) if APP_ICON.exists() else None,
 )
 
 coll = COLLECT(

@@ -1,7 +1,7 @@
 """人脸检测与眼部区域裁剪模块。
 
 基于 MediaPipe FaceMesh，封装人脸检测、关键点提取、眼部裁剪功能。
-复用 Gaze_Dataset_Collector_Project 中的 FaceMesh 实现模式。
+实时推理和训练预处理共用同一套关键点与眼部裁剪规则。
 
 主要功能：
 1. 检测人脸边界框和面部关键点
@@ -37,7 +37,7 @@ class FaceDetectionResult:
     right_eye_center: Optional[tuple[float, float]] = None   # 右眼眶中心像素坐标
     left_eye_width: Optional[float] = None
     right_eye_width: Optional[float] = None
-    # Eye_Touch classic backend uses raw, non-resized eye ROIs and origins.
+    # Classic 后端需要未缩放的眼部 ROI 及其在原始画面中的左上角坐标。
     left_eye_roi: Optional[np.ndarray] = None
     right_eye_roi: Optional[np.ndarray] = None
     left_eye_origin: Optional[tuple[int, int]] = None
@@ -292,7 +292,7 @@ class FaceDetector:
         w: int,
         h: int,
     ) -> tuple[Optional[np.ndarray], Optional[tuple[int, int]]]:
-        """Extract Eye_Touch style raw eye ROI without resizing."""
+        """提取未缩放的眼部 ROI 及其原始画面坐标。"""
         pts = []
         for idx in eye_indices:
             if idx < len(lms):
@@ -366,8 +366,7 @@ class FaceDetector:
         eye_w = max(pts_x) - min(pts_x)
         eye_h = max(pts_y) - min(pts_y)
 
-        # Match the offline EyeCropper/collector crop contract: 50% padding
-        # on each side, i.e. total side length is 2.0x the eye box.
+        # 与离线眼部裁剪规则保持一致：四周各留 50% 边距，总边长为眼框的 2 倍。
         side = max(eye_w, eye_h) * 2.0
         side = max(side, 40.0)  # 最小边长
 
