@@ -35,6 +35,7 @@ if sys.platform == "win32":
         pass
 
 import yaml
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import Qt
 
@@ -106,6 +107,9 @@ def setup_application() -> QApplication:
     app.setApplicationName("Look2Act Tracker")
     app.setOrganizationName("Look2Act")
     app.setApplicationVersion("1.0.0")
+    icon_path = resource_path("Look2Act.ico")
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
     
     # 应用 Look2Act 的品牌色和自定义样式表。
     from src.ui.fluent_theme import apply_fluent_theme
