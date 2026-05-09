@@ -40,6 +40,7 @@ Thumbs.db
 
 # 本地文件
 bin/
+docs/final-project-paper/论文
 
 # pytest
 .pytest_cache/
