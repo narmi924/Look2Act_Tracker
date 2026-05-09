@@ -153,7 +153,7 @@ def load_model(config_path: Path, checkpoint_path: Path) -> tuple[Any, str]:
     return model, model_version
 
 
-def runtime_classic_residual() -> dict[str, Any] | None:
+def runtime_residual(label: str) -> dict[str, Any] | None:
     appdata = os.environ.get("APPDATA")
     if not appdata:
         return None
@@ -162,7 +162,7 @@ def runtime_classic_residual() -> dict[str, Any] | None:
         return None
     rows = json.loads(summary_path.read_text(encoding="utf-8"))
     for row in rows:
-        if row.get("label") == "runtime_classic" and row.get("exists"):
+        if row.get("label") == label and row.get("exists"):
             return row
     return None
 
@@ -209,15 +209,32 @@ def plot_strategy_matrix(output_dir: Path, results: list[dict[str, Any]]) -> Non
         ax.text(bar.get_x() + bar.get_width() / 2, value + 12, f"{value:.1f}", ha="center", fontsize=8)
 
     ax2 = axes[1]
-    classic = runtime_classic_residual()
-    if classic is not None and classic.get("computed_mean_residual_px") != "":
-        mean = float(classic["computed_mean_residual_px"])
-        max_res = float(classic["computed_max_residual_px"])
-        bars2 = ax2.bar(["Classic\n25点 polynomial", "Deep\n25点 polynomial"], [mean, 0.0], color=["#4C78A8", "#CCCCCC"])
-        ax2.errorbar([0], [mean], yerr=[[0], [max_res - mean]], fmt="none", ecolor="#E45756", capsize=6, linewidth=1.8)
-        ax2.text(bars2[0].get_x() + bars2[0].get_width() / 2, mean + 6, f"均值 {mean:.2f}\n最大 {max_res:.2f}", ha="center", fontsize=8)
-        ax2.text(1, max(mean * 0.45, 20), "待实测", ha="center", va="center", fontsize=10, color="#555555")
-        ax2.set_ylim(0, max(max_res * 1.25, max(y) * 0.45))
+    runtime_rows = [runtime_residual("runtime_classic"), runtime_residual("runtime_deep")]
+    labels2 = ["Classic\n25点 polynomial", "Deep\n25点 polynomial"]
+    means = [
+        float(row["computed_mean_residual_px"]) if row is not None and row.get("computed_mean_residual_px") != "" else 0.0
+        for row in runtime_rows
+    ]
+    maxes = [
+        float(row["computed_max_residual_px"]) if row is not None and row.get("computed_max_residual_px") != "" else 0.0
+        for row in runtime_rows
+    ]
+    if any(means):
+        colors2 = ["#4C78A8" if means[0] else "#CCCCCC", "#54A24B" if means[1] else "#CCCCCC"]
+        bars2 = ax2.bar(labels2, means, color=colors2)
+        for idx, (bar, mean, max_res, row) in enumerate(zip(bars2, means, maxes, runtime_rows)):
+            if mean > 0 and max_res >= mean:
+                ax2.errorbar([idx], [mean], yerr=[[0], [max_res - mean]], fmt="none", ecolor="#E45756", capsize=6, linewidth=1.8)
+                ax2.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    mean + 6,
+                    f"均值 {mean:.2f}\n最大 {max_res:.2f}",
+                    ha="center",
+                    fontsize=8,
+                )
+            elif row is None:
+                ax2.text(idx, max(max(means) * 0.45, 20), "待实测", ha="center", va="center", fontsize=10, color="#555555")
+        ax2.set_ylim(0, max(max(maxes) * 1.25, max(y) * 0.45))
     else:
         ax2.bar(["Classic\n25点 polynomial", "Deep\n25点 polynomial"], [0.0, 0.0], color="#CCCCCC")
         ax2.text(0.5, 0.5, "实时校准文件缺失", ha="center", va="center", transform=ax2.transAxes)
