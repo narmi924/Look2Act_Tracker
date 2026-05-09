@@ -1,0 +1,2 @@
+mode,screen_resolution,camera_resolution,calibration_points,method,valid_points,mean_residual_px,max_residual_px,notes
+Deep,,,,25,polynomial,,,,

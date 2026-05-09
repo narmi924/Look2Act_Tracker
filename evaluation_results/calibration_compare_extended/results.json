@@ -1,0 +1,102 @@
+[
+  {
+    "method": "none",
+    "num_calib_points": 0,
+    "holdout_error_px_mean": 314.5413306567727,
+    "holdout_error_px_std": 5.684341886080802e-14,
+    "holdout_median_px_mean": 320.7601248040416,
+    "holdout_p90_px_mean": 479.5731398794889,
+    "fit_error_px_mean": 0.0,
+    "n_repeats": 20
+  },
+  {
+    "method": "affine",
+    "num_calib_points": 1,
+    "holdout_error_px_mean": 409.56509477337187,
+    "holdout_error_px_std": 58.86221422814053,
+    "holdout_median_px_mean": 403.980625808484,
+    "holdout_p90_px_mean": 664.7245772447145,
+    "fit_error_px_mean": 2.842170943040401e-15,
+    "n_repeats": 20
+  },
+  {
+    "method": "affine",
+    "num_calib_points": 3,
+    "holdout_error_px_mean": 4608.389881323901,
+    "holdout_error_px_std": 17849.183796370504,
+    "holdout_median_px_mean": 4137.568589307637,
+    "holdout_p90_px_mean": 8485.77100220532,
+    "fit_error_px_mean": 5.308420545078773e-13,
+    "n_repeats": 20
+  },
+  {
+    "method": "affine",
+    "num_calib_points": 5,
+    "holdout_error_px_mean": 295.73576804462334,
+    "holdout_error_px_std": 165.2412077781029,
+    "holdout_median_px_mean": 251.4198465789963,
+    "holdout_p90_px_mean": 569.4961816196586,
+    "fit_error_px_mean": 115.11081550427596,
+    "n_repeats": 20
+  },
+  {
+    "method": "affine",
+    "num_calib_points": 9,
+    "holdout_error_px_mean": 221.1880095375929,
+    "holdout_error_px_std": 28.591692952544594,
+    "holdout_median_px_mean": 185.73530395554127,
+    "holdout_p90_px_mean": 416.4730749148272,
+    "fit_error_px_mean": 174.5330816579437,
+    "n_repeats": 20
+  },
+  {
+    "method": "polynomial",
+    "num_calib_points": 9,
+    "holdout_error_px_mean": 436.9678052640279,
+    "holdout_error_px_std": 222.273264108842,
+    "holdout_median_px_mean": 318.9274531256607,
+    "holdout_p90_px_mean": 979.1295868625333,
+    "fit_error_px_mean": 103.38904988713337,
+    "n_repeats": 20
+  },
+  {
+    "method": "affine",
+    "num_calib_points": 13,
+    "holdout_error_px_mean": 198.29925468836305,
+    "holdout_error_px_std": 24.83152445699685,
+    "holdout_median_px_mean": 152.07639719651476,
+    "holdout_p90_px_mean": 400.85515507801074,
+    "fit_error_px_mean": 142.31751782849125,
+    "n_repeats": 20
+  },
+  {
+    "method": "polynomial",
+    "num_calib_points": 13,
+    "holdout_error_px_mean": 274.3407828990353,
+    "holdout_error_px_std": 86.94413128339927,
+    "holdout_median_px_mean": 216.1756097086049,
+    "holdout_p90_px_mean": 561.2705813856315,
+    "fit_error_px_mean": 130.08194425025633,
+    "n_repeats": 20
+  },
+  {
+    "method": "affine",
+    "num_calib_points": 25,
+    "holdout_error_px_mean": 184.57005624125526,
+    "holdout_error_px_std": 12.51783269353325,
+    "holdout_median_px_mean": 136.295392949778,
+    "holdout_p90_px_mean": 381.10478244124187,
+    "fit_error_px_mean": 157.49489565694608,
+    "n_repeats": 20
+  },
+  {
+    "method": "polynomial",
+    "num_calib_points": 25,
+    "holdout_error_px_mean": 198.4859472949916,
+    "holdout_error_px_std": 16.72991657518705,
+    "holdout_median_px_mean": 153.6144831363025,
+    "holdout_p90_px_mean": 398.3651445056011,
+    "fit_error_px_mean": 153.32614846000857,
+    "n_repeats": 20
+  }
+]

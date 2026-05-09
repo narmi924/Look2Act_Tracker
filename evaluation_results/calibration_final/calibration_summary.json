@@ -1,0 +1,62 @@
+[
+  {
+    "label": "runtime_classic",
+    "path": "C:\\Users\\Imranjan Mamtimin\\AppData\\Roaming\\Look2Act\\calibration\\calibration_classic.json",
+    "exists": true,
+    "is_runtime_default": true,
+    "method": "polynomial",
+    "point_count": 25,
+    "stored_mean_residual_px": 73.58344107875777,
+    "computed_mean_residual_px": 73.58344107875774,
+    "computed_median_residual_px": 53.962618410716345,
+    "computed_max_residual_px": 212.53892085589064,
+    "screen_resolution": "1440x900",
+    "screen_resolution_source": "inferred_from_target_points",
+    "timestamp": "2026-05-08T11:45:58.586511"
+  },
+  {
+    "label": "runtime_deep",
+    "path": "C:\\Users\\Imranjan Mamtimin\\AppData\\Roaming\\Look2Act\\calibration\\calibration_deep.json",
+    "exists": true,
+    "is_runtime_default": true,
+    "method": "polynomial",
+    "point_count": 25,
+    "stored_mean_residual_px": 118.68803796437996,
+    "computed_mean_residual_px": 118.68803796437996,
+    "computed_median_residual_px": 103.45759109530233,
+    "computed_max_residual_px": 251.97263173170745,
+    "screen_resolution": "1440x900",
+    "screen_resolution_source": "inferred_from_target_points",
+    "timestamp": "2026-05-09T21:01:14.751118"
+  },
+  {
+    "label": "bin_classic",
+    "path": "D:\\Projects\\Look2Act_Tracker_Project\\bin\\calibration_classic.json",
+    "exists": true,
+    "is_runtime_default": false,
+    "method": "polynomial",
+    "point_count": 25,
+    "stored_mean_residual_px": 93.26105566722656,
+    "computed_mean_residual_px": 93.26105566722656,
+    "computed_median_residual_px": 87.61929455064991,
+    "computed_max_residual_px": 203.9023542400968,
+    "screen_resolution": "1440x900",
+    "screen_resolution_source": "inferred_from_target_points",
+    "timestamp": "2026-05-06T12:54:59.922163"
+  },
+  {
+    "label": "legacy_root",
+    "path": "D:\\Projects\\Look2Act_Tracker_Project\\calibration.json",
+    "exists": true,
+    "is_runtime_default": false,
+    "method": "polynomial",
+    "point_count": 9,
+    "stored_mean_residual_px": 293.76969653917286,
+    "computed_mean_residual_px": 293.769696539173,
+    "computed_median_residual_px": 248.07756568129648,
+    "computed_max_residual_px": 611.8763135716556,
+    "screen_resolution": "1440x900",
+    "screen_resolution_source": "inferred_from_target_points",
+    "timestamp": "2026-03-29T20:53:45.018495"
+  }
+]
