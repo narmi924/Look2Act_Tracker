@@ -241,7 +241,7 @@ class LanguageSelectionDialog(QDialog):
             data = {}
         ui = data.setdefault("ui", {})
         ui["language"] = language
-        ui["window_mode"] = "fullscreen"
+        ui.setdefault("window_mode", "fullscreen")
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with config_path.open("w", encoding="utf-8") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
