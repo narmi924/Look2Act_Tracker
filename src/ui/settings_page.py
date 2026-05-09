@@ -38,7 +38,6 @@ from qfluentwidgets import (
     PrimaryPushButton,
     PushButton,
     SpinBox,
-    DoubleSpinBox,
     ComboBox,
     LineEdit,
     SwitchButton,
@@ -50,6 +49,7 @@ from qfluentwidgets import (
 from src.tracker.pipeline import SystemConfig
 from src.ui.fluent_theme import PALETTE
 from src.ui.i18n import get_language, language_label, set_language, tx, tx_button
+from src.ui.screen_utils import current_screen_info
 
 
 COMMON_CAMERA_RESOLUTIONS: tuple[tuple[int, int], ...] = (
@@ -192,8 +192,7 @@ class SettingsPage(QWidget):
         self.deep_ray_origin_combo: Optional[ComboBox] = None
         self.deep_eye_input_mode_combo: Optional[ComboBox] = None
         
-        self.screen_w_mm_spin: Optional[DoubleSpinBox] = None
-        self.screen_h_mm_spin: Optional[DoubleSpinBox] = None
+        self.screen_info_label: Optional[BodyLabel] = None
         
         self.alpha_slider: Optional[Slider] = None
         self.alpha_value_label: Optional[BodyLabel] = None
@@ -561,40 +560,26 @@ class SettingsPage(QWidget):
         layout.addWidget(title)
         
         # 提示信息
-        hint = BodyLabel(tx_button("请使用尺子测量屏幕的实际物理尺寸（不含边框）", "Please measure the actual physical size of the screen (excluding bezels)"))
+        hint = BodyLabel(tx_button(
+            "屏幕物理尺寸会从当前电脑系统自动读取；仅 Deep/3D 几何映射会使用该值。",
+            "The physical screen size is read automatically from this computer; only Deep/3D geometry uses it.",
+        ))
         hint.setStyleSheet("color: #888; font-size: 13px; margin-bottom: 8px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
-        
-        # 屏幕宽度
-        width_row = QHBoxLayout()
-        width_label = BodyLabel(tx("屏幕宽度（mm）：", "Screen Width (mm):"))
-        width_label.setFixedWidth(220)
-        self.screen_w_mm_spin = DoubleSpinBox()
-        self.screen_w_mm_spin.setRange(100.0, 1000.0)
-        self.screen_w_mm_spin.setValue(344.0)
-        self.screen_w_mm_spin.setDecimals(1)
-        self.screen_w_mm_spin.setSingleStep(1.0)
-        self.screen_w_mm_spin.setFixedWidth(CONTROL_WIDTH)
-        width_row.addWidget(width_label)
-        width_row.addWidget(self.screen_w_mm_spin)
-        width_row.addStretch(1)
-        layout.addLayout(width_row)
-        
-        # 屏幕高度
-        height_row = QHBoxLayout()
-        height_label = BodyLabel(tx("屏幕高度（mm）：", "Screen Height (mm):"))
-        height_label.setFixedWidth(220)
-        self.screen_h_mm_spin = DoubleSpinBox()
-        self.screen_h_mm_spin.setRange(100.0, 1000.0)
-        self.screen_h_mm_spin.setValue(194.0)
-        self.screen_h_mm_spin.setDecimals(1)
-        self.screen_h_mm_spin.setSingleStep(1.0)
-        self.screen_h_mm_spin.setFixedWidth(CONTROL_WIDTH)
-        height_row.addWidget(height_label)
-        height_row.addWidget(self.screen_h_mm_spin)
-        height_row.addStretch(1)
-        layout.addLayout(height_row)
+
+        screen_row = QHBoxLayout()
+        screen_label = BodyLabel(tx("自动检测：", "Auto-detected:"))
+        screen_label.setFixedWidth(200)
+        self.screen_info_label = BodyLabel("")
+        self.screen_info_label.setWordWrap(True)
+        refresh_btn = PushButton(tx_button("刷新", "Refresh"))
+        refresh_btn.setFixedWidth(100)
+        refresh_btn.clicked.connect(self._refresh_screen_geometry)
+        screen_row.addWidget(screen_label)
+        screen_row.addWidget(self.screen_info_label, stretch=1)
+        screen_row.addWidget(refresh_btn)
+        layout.addLayout(screen_row)
         
         return card
     
@@ -710,6 +695,20 @@ class SettingsPage(QWidget):
         alpha = value / 100.0
         if self.alpha_value_label is not None:
             self.alpha_value_label.setText(f"{alpha:.2f}")
+
+    def _refresh_screen_geometry(self) -> None:
+        """从当前电脑刷新屏幕物理尺寸。"""
+        info = current_screen_info(
+            fallback_w_mm=self.config.screen_w_mm,
+            fallback_h_mm=self.config.screen_h_mm,
+        )
+        self.config.screen_w_mm = info.screen_w_mm
+        self.config.screen_h_mm = info.screen_h_mm
+        if self.screen_info_label is not None:
+            self.screen_info_label.setText(tx(
+                f"{info.screen_w_px}x{info.screen_h_px} px，{info.screen_w_mm:.1f}x{info.screen_h_mm:.1f} mm（来源：{info.physical_source}）",
+                f"{info.screen_w_px}x{info.screen_h_px} px, {info.screen_w_mm:.1f}x{info.screen_h_mm:.1f} mm (source: {info.physical_source})",
+            ))
     
     def _browse_model_path(self) -> None:
         """浏览模型权重文件。"""
@@ -806,10 +805,7 @@ class SettingsPage(QWidget):
             self.backend_combo.setCurrentText(self.config.normalized_backend)
         
         # 几何设置
-        if self.screen_w_mm_spin is not None:
-            self.screen_w_mm_spin.setValue(self.config.screen_w_mm)
-        if self.screen_h_mm_spin is not None:
-            self.screen_h_mm_spin.setValue(self.config.screen_h_mm)
+        self._refresh_screen_geometry()
         
         # 平滑设置
         if self.alpha_slider is not None:
@@ -878,10 +874,7 @@ class SettingsPage(QWidget):
             self.config.deep_eye_input_mode = value if value in {"normal", "swap", "flip", "swap_flip"} else "normal"
         
         # 几何设置
-        if self.screen_w_mm_spin is not None:
-            self.config.screen_w_mm = self.screen_w_mm_spin.value()
-        if self.screen_h_mm_spin is not None:
-            self.config.screen_h_mm = self.screen_h_mm_spin.value()
+        self._refresh_screen_geometry()
         
         # 平滑设置
         if self.alpha_slider is not None:

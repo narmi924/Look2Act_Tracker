@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from qfluentwidgets import BodyLabel, CardWidget, PrimaryPushButton, PushButton
+from qfluentwidgets import BodyLabel, CardWidget, PrimaryPushButton, PushButton, SmoothScrollArea
 
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
@@ -430,13 +430,28 @@ class TrackingPage(QWidget):
         self.info_grid.setVerticalSpacing(16)
         self.info_cards = [perf_card, status_card, stage_card]
 
-        main_layout = QVBoxLayout(self)
+        self.scroll_area = SmoothScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        self.scroll_widget = QWidget()
+        self.scroll_widget.setStyleSheet("QWidget { background: transparent; }")
+
+        main_layout = QVBoxLayout(self.scroll_widget)
         main_layout.setContentsMargins(40, 30, 40, 30)
         main_layout.setSpacing(20)
         main_layout.addLayout(title_row)
         main_layout.addLayout(button_bar)
         main_layout.addLayout(self.info_grid)
         main_layout.addStretch(1)
+
+        self.scroll_area.setWidget(self.scroll_widget)
+
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+        outer_layout.addWidget(self.scroll_area)
+
         self._arrange_info_cards()
 
     def resizeEvent(self, event) -> None:
@@ -452,7 +467,7 @@ class TrackingPage(QWidget):
             item = self.info_grid.takeAt(0)
             widget = item.widget()
             if widget is not None:
-                widget.setParent(self)
+                widget.setParent(getattr(self, "scroll_widget", self))
 
         width = max(self.width(), 0)
         if width >= 1450:

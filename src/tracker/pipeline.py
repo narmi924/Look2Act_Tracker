@@ -466,24 +466,18 @@ class TrackerPipeline:
                         self.config.use_ipex = False
             
             # 5. 初始化屏幕几何模型
-            # 获取屏幕逻辑分辨率（与 PyQt6 一致，避免高 DPI 下物理/逻辑分辨率不匹配）
-            from PyQt6.QtWidgets import QApplication
-            app = QApplication.instance()
-            if app is not None:
-                screen = app.primaryScreen()
-                if screen is not None:
-                    geo = screen.geometry()
-                    screen_w_px = geo.width()
-                    screen_h_px = geo.height()
-                else:
-                    screen_w_px, screen_h_px = 1920, 1080
-            else:
-                # 回退：使用 tkinter（注意高 DPI 下可能返回物理分辨率）
-                import tkinter as tk
-                root = tk.Tk()
-                screen_w_px = root.winfo_screenwidth()
-                screen_h_px = root.winfo_screenheight()
-                root.destroy()
+            # Use the current computer's runtime screen metrics so a config saved
+            # on another machine does not force stale physical dimensions.
+            from src.ui.screen_utils import current_screen_info
+
+            screen_info = current_screen_info(
+                fallback_w_mm=self.config.screen_w_mm,
+                fallback_h_mm=self.config.screen_h_mm,
+            )
+            screen_w_px = screen_info.screen_w_px
+            screen_h_px = screen_info.screen_h_px
+            self.config.screen_w_mm = screen_info.screen_w_mm
+            self.config.screen_h_mm = screen_info.screen_h_mm
             
             self.screen_geometry = ScreenGeometry(
                 screen_w_px=screen_w_px,

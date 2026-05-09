@@ -27,6 +27,7 @@ from src.ui.calibration_page import CalibrationPage
 from src.ui.tracking_page import TrackingPage
 from src.ui.settings_page import SettingsPage
 from src.ui.i18n import tx
+from src.ui.screen_utils import current_screen_info
 from src.tracker.pipeline import TrackerPipeline, SystemConfig
 
 
@@ -112,12 +113,7 @@ class MainWindow(FluentWindow):
 
     def _apply_window_mode(self) -> None:
         """根据当前配置应用全屏或任务栏避让窗口模式。"""
-        from PyQt6.QtWidgets import QApplication
         import yaml
-
-        screen = QApplication.primaryScreen()
-        if screen is None:
-            return
 
         window_mode = "adaptive"
         try:
@@ -127,10 +123,13 @@ class MainWindow(FluentWindow):
         except Exception:
             pass
 
+        screen_info = current_screen_info()
+
         if window_mode == "fullscreen":
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(16777215, 16777215)
             self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
-            self.setGeometry(screen.geometry())
-            self.setFixedSize(screen.geometry().size())
+            self.setGeometry(screen_info.geometry)
             self.setWindowState(self.windowState() | Qt.WindowState.WindowFullScreen)
             return
 
@@ -143,9 +142,11 @@ class MainWindow(FluentWindow):
             Qt.WindowType.WindowMinimizeButtonHint |
             Qt.WindowType.WindowCloseButtonHint
         )
-        available_geometry = screen.availableGeometry()
-        self.setMinimumSize(900, 640)
-        self.setMaximumSize(available_geometry.size())
+        available_geometry = screen_info.available_geometry
+        min_width = min(900, max(640, screen_info.available_w_px - 40))
+        min_height = min(640, max(480, screen_info.available_h_px - 40))
+        self.setMinimumSize(min_width, min_height)
+        self.setMaximumSize(16777215, 16777215)
         self.setGeometry(available_geometry)
     
     def _center_window(self) -> None:

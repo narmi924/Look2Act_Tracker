@@ -109,7 +109,7 @@ class CameraPage(QWidget):
         self.preview_label = QLabel(tx_button("点击启动预览开始", "Click Start Preview to begin"))
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.preview_label.setMinimumSize(960, 540)
+        self.preview_label.setMinimumSize(320, 180)
         self.preview_label.setStyleSheet("background: #000; border-radius: 12px; color: #888; font-size: 18px;")
         
         preview_card = CardWidget()
