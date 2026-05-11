@@ -23,7 +23,6 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -50,6 +49,7 @@ from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import save_calibration, load_calibration
 from src.runtime_paths import calibration_path_for_backend as runtime_calibration_path_for_backend
 from src.tracker.pipeline import TrackerPipeline, SystemConfig
+from src.ui.calibration_points import CalibrationPoint, generate_calibration_points_for_screen
 from src.ui.i18n import tx, tx_button
 
 
@@ -76,14 +76,6 @@ def min_valid_points_for_calibration(num_points: int, method: str) -> int:
 def min_samples_per_calibration_point(sampling_frames: int) -> int:
     """返回单个校准点可接受的最少有效样本数。"""
     return max(6, sampling_frames // 3)
-
-
-@dataclass
-class CalibrationPoint:
-    """校准点数据结构。"""
-    x: float  # 屏幕像素坐标 X
-    y: float  # 屏幕像素坐标 Y
-    index: int  # 点序号（0-8）
 
 
 class CalibrationFullscreenWidget(QWidget):
@@ -147,26 +139,11 @@ class CalibrationFullscreenWidget(QWidget):
             geometry = screen.geometry()
             screen_w, screen_h = geometry.width(), geometry.height()
         
-        # 边距比例
-        margin_ratio = 0.1
-        margin_x = screen_w * margin_ratio
-        margin_y = screen_h * margin_ratio
-        
-        # 有效区域
-        effective_w = screen_w - 2 * margin_x
-        effective_h = screen_h - 2 * margin_y
-        
-        grid_size = 5 if self.calibrator.num_points >= 25 else 3
-
-        # 生成网格
-        index = 0
-        for row in range(grid_size):
-            for col in range(grid_size):
-                denom = max(grid_size - 1, 1)
-                x = margin_x + col * effective_w / denom
-                y = margin_y + row * effective_h / denom
-                self.calibration_points.append(CalibrationPoint(x=x, y=y, index=index))
-                index += 1
+        self.calibration_points = generate_calibration_points_for_screen(
+            screen_w,
+            screen_h,
+            num_points=self.calibrator.num_points,
+        )
     
     def start_calibration(self) -> None:
         """开始校准流程。"""

@@ -4,6 +4,7 @@ from src.ui.calibration_page import (
     CalibrationFullscreenWidget,
     calibration_module_for_config,
     calibration_path_for_backend,
+    generate_calibration_points_for_screen,
     min_samples_per_calibration_point,
     min_valid_points_for_calibration,
 )
@@ -76,6 +77,16 @@ def test_deep_experiment_config_uses_25_point_polynomial_calibration():
 
     assert calibrator.num_points == 25
     assert calibrator.method.value == "polynomial"
+
+
+def test_generate_calibration_points_for_screen_uses_25_point_grid():
+    points = generate_calibration_points_for_screen(1920, 1080, num_points=25)
+
+    assert len(points) == 25
+    assert points[0].x == 192
+    assert points[0].y == 108
+    assert points[-1].x == 1728
+    assert points[-1].y == 972
 
 
 def test_calibration_finished_stays_on_result_actions():
