@@ -217,6 +217,7 @@ class MainWindow(FluentWindow):
             config: 新的系统配置
         """
         print("[MAIN_WINDOW] 系统配置已变更")
+        self.page_tracking._handle_stop_tracking()
         self.tracker_config = config
         
         # 如果 TrackerPipeline 正在运行，提示用户重启
@@ -279,6 +280,7 @@ class MainWindow(FluentWindow):
     
     def go_calibration(self) -> bool:
         """导航到校准页面。"""
+        self.page_tracking._handle_stop_tracking()
         # 确保 TrackerPipeline 已初始化
         if not self._ensure_tracker_initialized():
             return False

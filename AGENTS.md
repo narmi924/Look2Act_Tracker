@@ -2,10 +2,18 @@
 
 ## Project Context
 
-Look2Act is a webcam gaze interaction project with two active goals:
+Look2Act is restarting development with an eye-first product goal: let users operate
+ordinary Windows computers with an RGB webcam and as little hand use as possible.
+Selection, confirmation, cancellation, pause/resume, recalibration and sustained
+reliability matter. Keep keyboard/mouse emergency and debugging controls; do not
+call flows that require them pure eye control.
 
-- Experience/demo path: keep the `classic` Eye_Touch-style tracker as the stable product fallback.
-- Research path: keep the deep `GazeNetV2 + 3D gaze-to-screen` pipeline for paper experiments.
+Classic, Deep and deep_pog remain baselines. Their long-term product roles are not
+pre-decided. The previous Classic demo / Deep paper split below is historical
+context, not the current development objective. Paper work is out of scope.
+
+Work on one explicitly assigned task at a time. Submit a PR, then stop for review;
+never merge automatically or start the next phase. See docs/rebuild/STATUS.md.
 
 The current practical diagnosis is that deep-model offline metrics are useful, but real-time screen tracking can fail because model-space labels, head-pose rotation, screen geometry, and calibration are tightly coupled. Do not assume "more data" is the first fix.
 Training uses Intel XPU + Intel Extension for PyTorch (IPEX). Runtime inference uses ONNX Runtime CPU for cross-platform deployment.
@@ -14,16 +22,19 @@ The current best Deep Demo contract is camera-space gaze, zero pose input, zero 
 
 ## Working Rules
 
-- All Look2Act Python commands must run in the `gaze-env` conda environment.
+- Prefer the `gaze-env` conda environment when it exists. For R1, the user confirmed
+  conda was removed and authorized uv with an isolated Python 3.11 environment;
+  the exact reproducible test environment is recorded in docs/rebuild/STATUS.md.
 - Prefer `conda run --no-capture-output -n gaze-env python ...` for Codex-run checks so output is visible and dependencies match the project.
 - The user normally runs commands in Git Bash, not PowerShell. User-facing commands should prefer forward slashes (`configs/experiments/foo.yaml`) or quoted Windows paths. Avoid backslashes in Git Bash examples because `\` is treated as an escape character.
 - Do not start long training, LOO evaluation, or long-running GUI sessions from Codex.
 - When training or long evaluation is required, provide the exact command and ask the user to run it in a separate terminal.
 - Common user-run commands live in `bin\常用命令.txt`.
 - Do not modify or delete `dataset_raw`, `dataset_processed`, `checkpoints`, `paper-acm`, or old calibration files unless the user explicitly asks.
-- Prefer short tests and static checks from Codex.
+- Prefer short tests and static checks from Codex. Do not run real-camera or
+  OS-action tests indiscriminately; use synthetic observations and mocked actions.
 
-## Current Implementation Direction
+## Historical Implementation Direction (not a permanent roadmap)
 
 - Default user-facing backend should be `classic`.
 - Deep backend remains available as `deep` for research, demo comparison, and paper experiments.

@@ -19,7 +19,7 @@ from src.ui.gomoku_window import GomokuWindow
 from src.ui.tracking_page import GazeCursorOverlay, ScreenGazeStabilizer, TrackingPage
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def qapp():
     """创建 QApplication 实例（整个测试模块共享）。"""
     app = QApplication.instance()

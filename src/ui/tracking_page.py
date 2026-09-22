@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +22,7 @@ from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
 from src.tracker.classic import ClassicScreenSmoother
 from src.tracker.pipeline import SystemConfig, TrackerPipeline
+from src.tracker.observation import ObservationGate, ObservationState, validate_max_age
 from src.ui.calibration_page import calibration_module_for_config
 from src.ui.fluent_theme import PALETTE
 from src.ui.i18n import tx, tx_button
@@ -174,16 +174,22 @@ class TrackingPage(QWidget):
         self._dwell_started_at = 0.0
         self._dwell_cooldown_until = 0.0
         self._reopen_launcher_after_gomoku = False
+        self._launcher_return_timer = QTimer(self)
+        self._launcher_return_timer.setSingleShot(True)
+        self._launcher_return_timer.timeout.connect(self._return_to_launcher_if_running)
 
         self._verification_passed = False
         self.diagnostics_enabled = False
         self.show_cursor_overlay = False
         self.screen_stabilizer = ScreenGazeStabilizer()
+        self.observation_gate = ObservationGate()
+        self._observation_context = None
 
         self._init_ui()
         self._refresh_stage_controls()
 
     def set_calibrator(self, calibrator: CalibrationModule) -> None:
+        self._reset_observation_context()
         self.calibrator = calibrator
         self.screen_stabilizer.reset()
         if self.calibrator.is_calibrated:
@@ -518,6 +524,7 @@ class TrackingPage(QWidget):
             if self.cursor_overlay is None:
                 self.cursor_overlay = GazeCursorOverlay()
 
+            self._reset_observation_context()
             self.update_timer.start(self.update_interval_ms)
             self.screen_stabilizer.reset()
 
@@ -528,6 +535,7 @@ class TrackingPage(QWidget):
             self.error_label.setText(tx(f"启动失败：{e}", f"Start failed: {e}"))
 
     def _handle_stop_tracking(self) -> None:
+        self._reset_observation_context()
         self.update_timer.stop()
         self.screen_stabilizer.reset()
         self._close_verification_window()
@@ -651,6 +659,7 @@ class TrackingPage(QWidget):
         if self.cursor_overlay is not None:
             self.cursor_overlay.hide()
 
+        self._reset_observation_context()
         self.interaction_overlay = InteractionLauncherOverlay()
         self.interaction_overlay.request_toggle_dwell.connect(self._toggle_dwell_click)
         self.interaction_overlay.request_open_gomoku.connect(self._open_gomoku_window)
@@ -667,11 +676,13 @@ class TrackingPage(QWidget):
         self._refresh_stage_controls()
 
     def _on_launcher_closed(self) -> None:
+        self._reset_observation_context()
         self.interaction_overlay = None
         self._restore_cursor_overlay_if_needed()
         self._refresh_stage_controls()
 
     def _open_gomoku_window(self) -> None:
+        self._reset_observation_context()
         self._close_launcher_overlay()
         self._reset_dwell_state()
         if self.cursor_overlay is not None:
@@ -691,17 +702,23 @@ class TrackingPage(QWidget):
         self._refresh_stage_controls()
 
     def _on_gomoku_closed(self) -> None:
+        self._reset_observation_context()
         self.gomoku_window = None
         self._restore_cursor_overlay_if_needed()
         self._refresh_stage_controls()
         if self._reopen_launcher_after_gomoku:
             self._reopen_launcher_after_gomoku = False
-            QTimer.singleShot(0, self._open_launcher_overlay)
+            self._launcher_return_timer.start(0)
+
+    def _return_to_launcher_if_running(self) -> None:
+        if self.tracker is not None and self.tracker.is_running():
+            self._open_launcher_overlay()
 
     def _on_gomoku_return_to_launcher(self) -> None:
         self._reopen_launcher_after_gomoku = True
 
     def _stop_tracker_runtime(self) -> None:
+        self._reset_observation_context()
         self.update_timer.stop()
         self.screen_stabilizer.reset()
         if self.tracker is not None:
@@ -716,13 +733,54 @@ class TrackingPage(QWidget):
         self.gaze_status.setText(tx("未启动", "Not Started"))
         self.gaze_status.setStyleSheet("color: #888;")
 
+    def _interrupt_gaze(self) -> None:
+        self._launcher_return_timer.stop()
+        # A retained cursor is display-only. All unfinished selections are cleared.
+        cooldown = self._dwell_cooldown_until
+        self._reset_dwell_state()
+        self._dwell_cooldown_until = cooldown
+        self.screen_stabilizer.reset()
+        self.dwell_progress_label.setText("0%")
+        if self.cursor_overlay is not None:
+            self.cursor_overlay.set_dwell_progress(0.0, False)
+        if self.interaction_overlay is not None:
+            self.interaction_overlay.reset_progress()
+        if self.gomoku_window is not None:
+            self.gomoku_window.reset_gaze_progress()
+
+    def _reset_observation_context(self) -> None:
+        self._observation_context = None
+        self._launcher_return_timer.stop()
+        self._interrupt_gaze()
+
     def _update_tracking_data(self) -> None:
-        if self.tracker is None or not self.tracker.is_running():
+        if (self.tracker is None or not self.tracker.is_running()
+                or getattr(self.tracker, "_calibration_mode", False)):
+            self._reset_observation_context()
             return
 
+        context = (self.tracker, getattr(self.tracker, "session_id", None),
+                   self.verification_window, self.interaction_overlay,
+                   self.gomoku_window, self.calibrator, self.dwell_enabled,
+                   self.tracker_config.normalized_backend if self.tracker_config else None)
+        if context != self._observation_context:
+            self._interrupt_gaze()
+            self._observation_context = context
+            self.observation_gate.max_age = validate_max_age(
+                self.tracker_config.max_observation_age_ms if self.tracker_config else 250.)
+            self.observation_gate.reset(context[1])
         result = self.tracker.get_latest_result()
-        if result is None:
+        state = self.observation_gate.consume(result)
+        if state is ObservationState.INVALID:
+            self._interrupt_gaze()
+            self.gaze_status.setText(tx("观测不可操作", "Observation unavailable"))
+            self.error_label.setText(getattr(result, "error_message", None) or self.observation_gate.reason)
             return
+        if state is ObservationState.DUPLICATE:
+            return
+        if self.observation_gate.reset_required:
+            self._interrupt_gaze()
+        observed_ms = result.observation.timestamp * 1000.0
 
         self.fps_value.setText(f"{result.fps:.1f}")
 
@@ -740,30 +798,48 @@ class TrackingPage(QWidget):
             self.gaze_status.setText(tx("有效", "Valid"))
             self.gaze_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
 
-            (gaze_x, gaze_y), pre_clamp = self._apply_calibration_and_clamp_with_debug(*result.gaze_point)
+            try:
+                (gaze_x, gaze_y), pre_clamp = self._apply_calibration_and_clamp_with_debug(*result.gaze_point)
+            except Exception:
+                self.observation_gate.reject("calibration_failed")
+                self._interrupt_gaze()
+                return
             clamped_point = (gaze_x, gaze_y)
-            if self._should_stabilize_screen_point(result):
-                gaze_x, gaze_y = self.screen_stabilizer.update(clamped_point)
-            else:
-                self.screen_stabilizer.reset()
+            try:
+                if self._should_stabilize_screen_point(result):
+                    gaze_x, gaze_y = self.screen_stabilizer.update(clamped_point)
+                else:
+                    self.screen_stabilizer.reset()
+            except Exception:
+                self.observation_gate.reject("screen_smoothing_failed")
+                self._interrupt_gaze()
+                return
+            if not all(math.isfinite(v) for v in (gaze_x, gaze_y)):
+                self.observation_gate.reject("nonfinite_smoothed_point")
+                self._interrupt_gaze()
+                return
             result.calibrated_point = (gaze_x, gaze_y)
             if isinstance(result.debug, dict):
                 result.debug["pre_clamp_point"] = pre_clamp
                 result.debug["clamped_point"] = clamped_point
                 result.debug["screen_stabilized_point"] = result.calibrated_point
 
+            if self.observation_gate.clock() - result.observation.timestamp > self.observation_gate.max_age:
+                self.observation_gate.reject("expired_during_processing")
+                self._interrupt_gaze()
+                return
             if self.verification_window is not None:
                 self.verification_window.update_gaze_point(gaze_x, gaze_y)
                 self.dwell_progress_label.setText("0%")
                 if self.cursor_overlay is not None:
                     self.cursor_overlay.set_dwell_progress(0.0, False)
             elif self.gomoku_window is not None:
-                self.gomoku_window.update_gaze_point(gaze_x, gaze_y)
+                self.gomoku_window.update_gaze_point(gaze_x, gaze_y, observed_ms=observed_ms)
                 self.dwell_progress_label.setText("0%")
                 if self.cursor_overlay is not None:
                     self.cursor_overlay.set_dwell_progress(0.0, False)
             elif self.interaction_overlay is not None:
-                self.interaction_overlay.update_gaze_point(gaze_x, gaze_y)
+                self.interaction_overlay.update_gaze_point(gaze_x, gaze_y, observed_ms=observed_ms)
                 self.dwell_progress_label.setText("0%")
                 if self.cursor_overlay is not None:
                     self.cursor_overlay.set_dwell_progress(0.0, False)
@@ -773,7 +849,7 @@ class TrackingPage(QWidget):
 
                 if self.dwell_enabled:
                     QCursor.setPos(int(gaze_x), int(gaze_y))
-                    progress = self._update_dwell_click(gaze_x, gaze_y)
+                    progress = self._update_dwell_click(gaze_x, gaze_y, observed_ms=observed_ms)
                     self.dwell_progress_label.setText(f"{int(progress * 100)}%")
                     if self.cursor_overlay is not None:
                         self.cursor_overlay.set_dwell_progress(progress, True)
@@ -809,6 +885,8 @@ class TrackingPage(QWidget):
     ) -> tuple[tuple[float, float], tuple[float, float]]:
         if self.calibrator is not None and self.calibrator.is_calibrated:
             gaze_x, gaze_y = self.calibrator.apply((gaze_x, gaze_y))
+        if not all(math.isfinite(v) for v in (gaze_x, gaze_y)):
+            raise ValueError("nonfinite_calibrated_point")
         pre_clamp = (gaze_x, gaze_y)
 
         screen = QApplication.primaryScreen()
@@ -872,8 +950,8 @@ class TrackingPage(QWidget):
             return "None"
         return f"({point[0]:.3f},{point[1]:.3f})"
 
-    def _update_dwell_click(self, gaze_x: float, gaze_y: float) -> float:
-        now = time.perf_counter() * 1000.0
+    def _update_dwell_click(self, gaze_x: float, gaze_y: float, *, observed_ms: float) -> float:
+        now = observed_ms
         if now < self._dwell_cooldown_until:
             return 0.0
 
@@ -909,6 +987,7 @@ class TrackingPage(QWidget):
             self.cursor_overlay.set_dwell_progress(0.0, self.dwell_enabled and self._no_fullscreen_stage_open())
 
     def _mark_verification_required(self, label: str) -> None:
+        self._reset_observation_context()
         self._verification_passed = False
         self.dwell_enabled = False
         self.verify_status.setText(label)
