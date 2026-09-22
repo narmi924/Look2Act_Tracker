@@ -200,7 +200,7 @@ class CalibrationFullscreenWidget(QWidget):
         self.sampling_ticks += 1
         state = self.observation_gate.consume(result)
         
-        sample_point = (result.raw_point or result.gaze_point) if result is not None else None
+        sample_point = result.raw_point if result is not None else None
 
         if (
             self.sampling_ticks > self.discard_initial_frames

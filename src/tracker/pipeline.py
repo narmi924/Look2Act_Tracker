@@ -9,7 +9,7 @@
 错误处理与容错：
 - 摄像头帧获取失败：重试 + 错误日志 + UI 通知
 - 未检测到人脸：可保留上一帧显示点，但观测无效
-- 有效屏幕外坐标保留原 clamp 行为；非有限观测不可操作
+- 原始二维输入不做输出平滑或显示截断；非有限观测不可操作
 """
 from __future__ import annotations
 
@@ -85,18 +85,28 @@ class _UnavailableFaceDetector:
 @dataclass
 class TrackerResult:
     """推理结果。"""
-    gaze_point: Optional[tuple[float, float]]  # 屏幕像素坐标
+    gaze_point: Optional[tuple[float, float]]  # compatibility alias of raw_point; never final screen output
     valid: bool
     fps: float
     timings: dict[str, float] = field(default_factory=dict)  # 各阶段耗时（毫秒）
     error_message: Optional[str] = None  # 错误信息（用于 UI 通知）
     face_detected: bool = True  # 是否检测到人脸
+    # Classic: camera-normalized feature; Deep/deep_pog: unbounded screen pixels.
     raw_point: Optional[tuple[float, float]] = None
     calibrated_point: Optional[tuple[float, float]] = None
+    smoothed_point: Optional[tuple[float, float]] = None
+    display_point: Optional[tuple[float, float]] = None
+    calibrated_in_bounds: Optional[bool] = None
+    smoothed_in_bounds: Optional[bool] = None
+    screen_rejection: Optional[str] = None
     backend: str = "deep"
     debug: dict[str, object] = field(default_factory=dict)
     observation: Optional[Observation] = None
     point_kind: str = "observed"  # observed / held; identity is still mandatory
+
+    @property
+    def raw_units(self) -> str:
+        return "camera_normalized_feature" if self.backend == "classic" else "screen_px"
 
 
 @dataclass
@@ -524,10 +534,7 @@ class TrackerPipeline:
             )
             print(f"屏幕几何模型已初始化：屏幕 {screen_w_px}x{screen_h_px} px")
             
-            # 6. 初始化平滑滤波器
-            self.smoother = GazeSmoother(alpha=self.config.smoother_alpha)
-            self.classic_smoother = ClassicKalmanSmoother()
-            print("平滑滤波器已初始化")
+            # Output smoothing is owned by the consumer ScreenMapper after calibration.
             
             return True
             
@@ -579,7 +586,7 @@ class TrackerPipeline:
         
         容错策略：
         - 未检测到人脸或估计失败：返回无效观测，可保留旧显示点
-        - 有效屏幕外坐标保留原有 clamp 行为
+        - 有限屏幕外原始坐标交给后处理校准，不在此处截断
         
         参数:
             frame_bgr: BGR 格式输入图像
@@ -825,7 +832,6 @@ class TrackerPipeline:
         timings['coordinate_transform'] = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
-        clamp_to_screen = not self._calibration_mode
         intersection = self.screen_geometry.ray_plane_intersect(ray_origin, ray_direction)
         timings['ray_plane_intersect'] = (time.perf_counter() - t0) * 1000
 
@@ -851,22 +857,14 @@ class TrackerPipeline:
                 backend=backend,
             )
 
-        raw_point = self.screen_geometry.world_to_screen_px(intersection, clamp=clamp_to_screen)
+        raw_point = self.screen_geometry.world_to_screen_px(intersection, clamp=False)
         
         if not np.all(np.isfinite(raw_point)):
             raise ValueError('nonfinite_screen_point')
 
-        # 5. 时序平滑
-        t0 = time.perf_counter()
-        if self._calibration_mode or self.config.normalized_smoother_type == "none" or self.smoother is None:
-            smoothed_point = raw_point
-        else:
-            smoothed_point = self.smoother.update(raw_point)
-        timings['smoothing'] = (time.perf_counter() - t0) * 1000
-        
         # 保存为有效结果（用于后续容错）
         result = TrackerResult(
-            gaze_point=smoothed_point,
+            gaze_point=raw_point,
             valid=True,
             fps=self._calculate_fps(),
             timings=timings,
@@ -971,21 +969,11 @@ class TrackerPipeline:
         raw_y = raw_norm[1] * screen_h
         if not np.all(np.isfinite((raw_x, raw_y))):
             raise ValueError("nonfinite_pog_screen_point")
-        if not self._calibration_mode:
-            raw_x = float(np.clip(raw_x, 0.0, screen_w - 1.0))
-            raw_y = float(np.clip(raw_y, 0.0, screen_h - 1.0))
         raw_point = (float(raw_x), float(raw_y))
         timings["pog_to_screen"] = (time.perf_counter() - t0) * 1000
 
-        t0 = time.perf_counter()
-        if self._calibration_mode or self.config.normalized_smoother_type == "none" or self.smoother is None:
-            smoothed_point = raw_point
-        else:
-            smoothed_point = self.smoother.update(raw_point)
-        timings["smoothing"] = (time.perf_counter() - t0) * 1000
-
         result = TrackerResult(
-            gaze_point=smoothed_point,
+            gaze_point=raw_point,
             valid=True,
             fps=self._calculate_fps(),
             timings=timings,
@@ -1286,7 +1274,7 @@ class TrackerPipeline:
         return self._running
 
     def set_calibration_mode(self, enabled: bool) -> None:
-        """设置校准模式。校准模式下禁用坐标 clamp，保留原始值。"""
+        """设置校准采样状态；两种模式均输出相同的未截断原始值。"""
         with self._lock:
             self._continuity += 1
             self._calibration_mode = enabled

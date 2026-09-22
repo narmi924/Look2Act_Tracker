@@ -60,9 +60,9 @@ def main():
                 # 打印性能指标
                 print(f"\rFPS: {result.fps:.1f} | ", end="")
                 
-                if result.valid and result.gaze_point is not None:
-                    px, py = result.gaze_point
-                    print(f"注视点: ({px:.0f}, {py:.0f}) | ", end="")
+                if result.valid and result.raw_point is not None:
+                    px, py = result.raw_point
+                    print(f"原始输入 [{result.raw_units}]: ({px:.3f}, {py:.3f}) | ", end="")
                     
                     # 显示各阶段耗时
                     total_time = sum(result.timings.values())
@@ -78,13 +78,13 @@ def main():
                 display_frame = frame.copy()
                 
                 # 叠加注视点
-                if result is not None and result.valid and result.gaze_point is not None:
-                    # 注意：这里显示的是相对于屏幕的注视点，不是相对于摄像头画面
+                if result is not None and result.valid and result.raw_point is not None:
+                    # 原始后端输入：Classic 为相机归一化特征，Deep 为未校准屏幕坐标
                     # 仅作为状态指示
                     h, w = display_frame.shape[:2]
                     cv2.putText(
                         display_frame,
-                        f"Gaze: ({result.gaze_point[0]:.0f}, {result.gaze_point[1]:.0f})",
+                        f"Raw [{result.raw_units}]: ({result.raw_point[0]:.3f}, {result.raw_point[1]:.3f})",
                         (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.7,

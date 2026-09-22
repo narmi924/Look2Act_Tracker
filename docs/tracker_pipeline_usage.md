@@ -6,7 +6,8 @@
 
 ```
 摄像头 → 人脸检测 → 眼部裁剪 → 视线回归 → 头部姿态估计 
-→ 坐标转换 → 屏幕几何建模 → 时序平滑 → 屏幕注视点
+→ 坐标转换 → 屏幕几何建模 → 未截断的 raw_point
+消费者：R1 观测门控 → 校准一次 → 屏幕空间平滑 → 显示边界 → 分派前生产端复核
 ```
 
 ## 快速开始
@@ -31,8 +32,7 @@ if pipeline.start():
     while True:
         result = pipeline.get_latest_result()
         if result and result.valid:
-            px, py = result.gaze_point
-            print(f"注视点: ({px:.0f}, {py:.0f})")
+            print(f"原始输入 [{result.raw_units}]: {result.raw_point}")
         
         # ... 你的业务逻辑 ...
 
@@ -107,13 +107,21 @@ config = SystemConfig.from_yaml("configs/system_config.yaml")
 ```python
 @dataclass
 class TrackerResult:
-    gaze_point: Optional[tuple[float, float]]  # 屏幕像素坐标
+    gaze_point: Optional[tuple[float, float]]  # raw_point 的兼容别名，非最终屏幕点
     valid: bool                                # 结果是否有效
     fps: float                                 # 实时 FPS
     timings: dict[str, float]                  # 各阶段耗时（毫秒）
     error_message: Optional[str]               # 错误信息
     face_detected: bool                        # 是否检测到人脸
 ```
+
+R2 中 `raw_point` 在采样/追踪模式保持同一定义：Classic 是相机归一化特征，
+Deep 是几何映射的未截断屏幕像素，deep_pog 是原有模型归一化输出乘 W/H。
+上面的循环仅查看原始结果，不足以安全分派操作。运行中的 TrackingPage 使用
+`ObservationGate` 去重/验时、`ScreenMapper` 后处理及生产端锁内复核。
+ScreenMapper 的 `calibrated_point`、`smoothed_point` 均为未截断屏幕像素；
+只有 `display_point` 可为显示而截断。两阶段任一越界/非有限均拒绝操作并重置状态。
+校准输出已越界时不再喂给滤波器，`smoothed_point` 留空。
 
 ### 性能指标
 
@@ -124,7 +132,7 @@ class TrackerResult:
 - `gaze_regression`: 视线回归耗时
 - `coordinate_transform`: 坐标转换耗时
 - `ray_plane_intersect`: 射线-平面求交耗时
-- `smoothing`: 时序平滑耗时
+- 输出平滑已移至消费者，生产端 `timings` 不再包含 `smoothing` 耗时。
 
 ## 错误处理与容错
 
@@ -150,7 +158,7 @@ def on_error(message: str):
 **场景**: 当前帧未检测到人脸
 
 **处理策略**:
-- 返回上一帧的有效结果（如果存在）
+- 返回无效观测；旧点如保留，仅供显示，不能操作
 - `result.face_detected = False`
 - `result.error_message = "未检测到人脸"`
 
@@ -161,8 +169,8 @@ def on_error(message: str):
 **场景**: 视线与屏幕平面无交点
 
 **处理策略**:
-- 自动 clamp 到屏幕边缘（`clamp_to_screen=True`）
-- 如果仍无交点，返回上一帧结果
+- 无交点返回无效观测；有限的越界原始点保留给校准器
+- 校准/平滑后越界则拒绝操作，显示截断不能将其恢复为有效证据
 
 ### 4. 模型推理异常
 
@@ -170,7 +178,7 @@ def on_error(message: str):
 
 **处理策略**:
 - 捕获异常并记录日志
-- 返回上一帧有效结果
+- 返回无效观测并记录连续性中断
 - 通过 `error_callback` 通知 UI
 
 ## 线程安全

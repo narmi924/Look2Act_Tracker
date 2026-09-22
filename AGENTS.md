@@ -34,6 +34,18 @@ The current best Deep Demo contract is camera-space gaze, zero pose input, zero 
 - Prefer short tests and static checks from Codex. Do not run real-camera or
   OS-action tests indiscriminately; use synthetic observations and mocked actions.
 
+## Runtime data contract (R2)
+
+- Preserve raw inputs in both calibration and tracking modes. Classic raw values
+  are camera-normalized features; Deep / deep_pog raw values are unbounded screen
+  pixels (deep_pog keeps normalized model output times W/H).
+- After the R1 observation gate, use `ScreenMapper`: raw -> calibration once ->
+  screen smoothing -> display bounds. `gaze_point` is only a raw compatibility alias.
+  Do not substitute it for missing raw input or use it as the final screen point.
+- Calibrated/smoothed out-of-screen estimates cannot drive actions. Reset filters
+  and unfinished selections on rejection/context changes; preserve the locked
+  producer check immediately before dispatch. Duplicates do not feed filters.
+
 ## Historical Implementation Direction (not a permanent roadmap)
 
 - Default user-facing backend should be `classic`.

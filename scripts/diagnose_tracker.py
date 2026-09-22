@@ -18,7 +18,9 @@ if str(ROOT) not in sys.path:
 
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
-from src.tracker.pipeline import SystemConfig, TrackerPipeline, TrackerResult
+from src.tracker.pipeline import SystemConfig, TrackerPipeline
+from src.tracker.observation import ObservationGate, ObservationState
+from src.tracker.screen_mapping import ScreenMapper
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,17 +60,6 @@ def _load_calibrator(config: SystemConfig) -> Optional[CalibrationModule]:
         f"{path.name} method={calibrator.method.value} residual={calibrator.residual_mean:.2f}"
     )
     return calibrator
-
-
-def _calibrated_point(
-    result: TrackerResult,
-    calibrator: Optional[CalibrationModule],
-) -> Optional[tuple[float, float]]:
-    if result.gaze_point is None:
-        return None
-    if calibrator is None or not calibrator.is_calibrated:
-        return result.gaze_point
-    return calibrator.apply(result.gaze_point)
 
 
 def main() -> int:
@@ -132,12 +123,16 @@ def main() -> int:
                 "raw_y",
                 "calibrated_x",
                 "calibrated_y",
+                "raw_units", "smoothed_point", "display_point", "screen_rejection",
                 "error",
                 "timings",
             ],
         )
         csv_writer.writeheader()
         print(f"[diagnose] csv output: {csv_path}")
+    mapper = ScreenMapper()
+    gate = ObservationGate(config.max_observation_age_ms)
+    gate.reset(pipeline.session_id)
     try:
         while printed < args.frames and pipeline.is_running():
             now = time.perf_counter()
@@ -147,13 +142,22 @@ def main() -> int:
             last_print = now
 
             result = pipeline.get_latest_result()
+            state = gate.consume(result)
+            if state is ObservationState.INVALID or gate.reset_required:
+                mapper.reset()
             if result is None:
                 print("[diagnose] waiting for first frame...")
                 printed += 1
                 continue
 
-            raw = result.raw_point or result.gaze_point
-            calibrated = _calibrated_point(result, calibrator)
+            if state is ObservationState.DUPLICATE:
+                continue
+            if state is ObservationState.NEW:
+                geometry = pipeline.screen_geometry
+                result = mapper.process(result, config, calibrator,
+                                        (geometry.screen_w_px, geometry.screen_h_px))
+            raw = result.raw_point
+            calibrated = result.calibrated_point
             timing = " ".join(f"{k}={v:.1f}ms" for k, v in result.timings.items())
             if csv_writer is not None:
                 csv_writer.writerow(
@@ -168,6 +172,10 @@ def main() -> int:
                         "raw_y": "" if raw is None else f"{raw[1]:.6f}",
                         "calibrated_x": "" if calibrated is None else f"{calibrated[0]:.6f}",
                         "calibrated_y": "" if calibrated is None else f"{calibrated[1]:.6f}",
+                        "raw_units": result.raw_units,
+                        "smoothed_point": result.smoothed_point,
+                        "display_point": result.display_point,
+                        "screen_rejection": result.screen_rejection or "",
                         "error": result.error_message or "",
                         "timings": timing,
                     }
@@ -176,7 +184,9 @@ def main() -> int:
                 f"[diagnose] #{printed:04d} "
                 f"backend={result.backend} valid={result.valid} face={result.face_detected} "
                 f"fps={result.fps:.1f} raw={_fmt_point(raw)} "
-                f"calibrated={_fmt_point(calibrated)} "
+                f"units={result.raw_units} calibrated={_fmt_point(calibrated)} "
+                f"smoothed={_fmt_point(result.smoothed_point)} display={_fmt_point(result.display_point)} "
+                f"screen_rejection={result.screen_rejection} "
                 f"err={result.error_message or '-'} {timing}"
             )
             printed += 1
