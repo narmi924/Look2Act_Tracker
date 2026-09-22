@@ -49,6 +49,7 @@ from qfluentwidgets import (
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import save_calibration, load_calibration
 from src.runtime_paths import calibration_path_for_backend as runtime_calibration_path_for_backend
+from src.tracker.observation import ObservationGate, ObservationState
 from src.tracker.pipeline import TrackerPipeline, SystemConfig
 from src.ui.i18n import tx, tx_button
 
@@ -107,6 +108,7 @@ class CalibrationFullscreenWidget(QWidget):
         super().__init__(parent)
         
         self.tracker = tracker
+        self.observation_gate = ObservationGate(tracker.config.max_observation_age_ms)
         self.calibrator = calibrator
         
         # 校准点配置（3x3 或 5x5 网格）
@@ -187,6 +189,7 @@ class CalibrationFullscreenWidget(QWidget):
     def _start_sampling(self) -> None:
         """开始采样当前校准点的视线数据。"""
         self.current_samples.clear()
+        self.observation_gate.reset(self.tracker.session_id)
         self.sampling_ticks = 0
         self.sampling_timer.start(33)  # 约 30 FPS
     
@@ -195,12 +198,14 @@ class CalibrationFullscreenWidget(QWidget):
         # 从 TrackerPipeline 获取最新的视线数据
         result = self.tracker.get_latest_result()
         self.sampling_ticks += 1
+        state = self.observation_gate.consume(result)
         
         sample_point = (result.raw_point or result.gaze_point) if result is not None else None
 
         if (
             self.sampling_ticks > self.discard_initial_frames
             and result is not None
+            and state is ObservationState.NEW
             and result.valid
             and sample_point is not None
         ):

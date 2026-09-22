@@ -32,6 +32,8 @@ smoother:
   type: ema
   alpha: 0.22
 tracker:
+  # R1 engineering initial value, not human-validated; applies to age and sample gaps.
+  max_observation_age_ms: 250.0
   backend: deep
   target_fps: 30
   timer_interval_ms: 33

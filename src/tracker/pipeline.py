@@ -8,16 +8,18 @@
 
 错误处理与容错：
 - 摄像头帧获取失败：重试 + 错误日志 + UI 通知
-- 未检测到人脸：返回上一帧结果
-- 视线无效：clamp 到屏幕边缘
+- 未检测到人脸：可保留上一帧显示点，但观测无效
+- 有效屏幕外坐标保留原 clamp 行为；非有限观测不可操作
 """
 from __future__ import annotations
 
 import logging
+import copy
+import uuid
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, Optional
@@ -36,6 +38,7 @@ from src.tracker.classic import (
     fuse_eye_features,
 )
 from src.tracker.smoother import GazeSmoother
+from src.tracker.observation import Observation, validate_max_age
 from src.vision.head_pose import HeadPoseEstimator
 
 
@@ -92,6 +95,8 @@ class TrackerResult:
     calibrated_point: Optional[tuple[float, float]] = None
     backend: str = "deep"
     debug: dict[str, object] = field(default_factory=dict)
+    observation: Optional[Observation] = None
+    point_kind: str = "observed"  # observed / held; identity is still mandatory
 
 
 @dataclass
@@ -141,6 +146,10 @@ class SystemConfig:
     
     # 追踪配置
     target_fps: int = 30
+    max_observation_age_ms: float = 250.0
+
+    def __post_init__(self):
+        validate_max_age(self.max_observation_age_ms)
     
     @classmethod
     def from_yaml(cls, yaml_path: str) -> SystemConfig:
@@ -179,6 +188,7 @@ class SystemConfig:
             smoother_alpha=data.get('smoother', {}).get('alpha', 0.3),
             smoother_type=data.get('smoother', {}).get('type', 'kalman'),
             target_fps=data.get('tracker', {}).get('target_fps', 30),
+            max_observation_age_ms=data.get('tracker', {}).get('max_observation_age_ms', 250.0),
             window_mode=data.get('ui', {}).get('window_mode', 'adaptive'),
         )
 
@@ -264,6 +274,9 @@ class TrackerPipeline:
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._lock = threading.Lock()
+        self.session_id = uuid.uuid4().hex
+        self._sequence = 0
+        self._continuity = 0
         
         # 最新结果（线程安全访问）
         self._latest_result: Optional[TrackerResult] = None
@@ -523,12 +536,50 @@ class TrackerPipeline:
             self._notify_error(error_msg)
             return False
     
-    def process_frame(self, frame_bgr: np.ndarray) -> TrackerResult:
+    def _stamp(self, timestamp, time_source):
+        with self._lock:
+            self._sequence += 1
+            return Observation(self.session_id, self._sequence, timestamp,
+                               self._continuity, time_source)
+
+    def _finish_observation(self, result, observation):
+        points = (result.gaze_point, result.raw_point)
+        finite = all(p is None or (len(p) == 2 and np.all(np.isfinite(p))) for p in points)
+        valid = result.valid and result.face_detected and finite and result.gaze_point is not None
+        if not valid:
+            with self._lock:
+                self._continuity += 1
+                observation = replace(observation, continuity=self._continuity)
+        result = replace(result, valid=bool(valid), observation=observation,
+                         point_kind="observed" if valid else "held",
+                         error_message=result.error_message if valid else
+                         (result.error_message or "invalid_or_nonfinite_observation"))
+        if valid:
+            self._last_valid_result = result
+        return result
+
+    def process_frame(self, frame_bgr: np.ndarray, *, captured_at=None,
+                      time_source="processing_entry") -> TrackerResult:
+        # Live input uses host time immediately after VideoCapture.read returns.
+        # Direct callers get processing-entry time, not a fabricated UI time.
+        observation = self._stamp(time.perf_counter() if captured_at is None else captured_at,
+                                  time_source)
+        previous = self._last_valid_result
+        try:
+            result = self._process_frame(frame_bgr)
+        except Exception as exc:
+            result = TrackerResult(previous.gaze_point if previous else None, False, 0.,
+                                   error_message=f"processing_exception: {exc}",
+                                   face_detected=False, backend=self.config.normalized_backend)
+        self._last_valid_result = previous
+        return self._finish_observation(result, observation)
+
+    def _process_frame(self, frame_bgr: np.ndarray) -> TrackerResult:
         """处理单帧，返回注视点和各阶段耗时。
         
         容错策略：
-        - 未检测到人脸：返回上一帧有效结果
-        - 视线无效（无交点）：已通过 clamp_to_screen=True 处理
+        - 未检测到人脸或估计失败：返回无效观测，可保留旧显示点
+        - 有效屏幕外坐标保留原有 clamp 行为
         
         参数:
             frame_bgr: BGR 格式输入图像
@@ -563,7 +614,8 @@ class TrackerPipeline:
                 logger.debug(f"未检测到人脸（连续 {self._no_face_count} 帧），使用上一帧结果")
                 return TrackerResult(
                     gaze_point=self._last_valid_result.gaze_point,
-                    valid=True,
+                    valid=False,
+                    point_kind="held",
                     fps=self._calculate_fps(),
                     timings=timings,
                     error_message="未检测到人脸，使用上一帧结果",
@@ -593,13 +645,17 @@ class TrackerPipeline:
         head_pose = self.head_pose_estimator.estimate(face_result.pnp_points_2d)
         timings['head_pose'] = (time.perf_counter() - t0) * 1000
         
-        if not head_pose.valid:
+        pose_finite = all(np.all(np.isfinite(value)) for value in (
+            head_pose.yaw, head_pose.pitch, head_pose.roll,
+            head_pose.rotation_matrix, head_pose.translation_vec)) if head_pose.valid else False
+        if not head_pose.valid or not pose_finite:
             # 容错：返回上一帧有效结果
             if self._last_valid_result is not None:
                 logger.debug("头部姿态估计失败，使用上一帧结果")
                 return TrackerResult(
                     gaze_point=self._last_valid_result.gaze_point,
-                    valid=True,
+                    valid=False,
+                    point_kind="held",
                     fps=self._calculate_fps(),
                     timings=timings,
                     error_message="头部姿态估计失败",
@@ -627,7 +683,8 @@ class TrackerPipeline:
             if self._last_valid_result is not None:
                 return TrackerResult(
                     gaze_point=self._last_valid_result.gaze_point,
-                    valid=True,
+                    valid=False,
+                    point_kind="held",
                     fps=self._calculate_fps(),
                     timings=timings,
                     error_message="眼部裁剪失败",
@@ -710,7 +767,8 @@ class TrackerPipeline:
             if self._last_valid_result is not None:
                 return TrackerResult(
                     gaze_point=self._last_valid_result.gaze_point,
-                    valid=True,
+                    valid=False,
+                    point_kind="held",
                     fps=self._calculate_fps(),
                     timings=timings,
                     error_message=f"视线回归失败: {e}",
@@ -738,14 +796,15 @@ class TrackerPipeline:
         t0 = time.perf_counter()
         d = gaze_vector.astype(np.float64)
         norm_d = np.linalg.norm(d)
-        if norm_d < 1e-12:
+        if not np.all(np.isfinite(d)) or not np.isfinite(norm_d) or norm_d < 1e-12:
             if self._last_valid_result is not None:
                 return TrackerResult(
                     gaze_point=self._last_valid_result.gaze_point,
-                    valid=True,
+                    valid=False,
+                    point_kind="held",
                     fps=self._calculate_fps(),
                     timings=timings,
-                    error_message="视线方向为零向量",
+                    error_message="视线方向为零或非有限向量",
                     face_detected=True,
                     backend=backend,
                 )
@@ -754,13 +813,15 @@ class TrackerPipeline:
                 valid=False,
                 fps=self._calculate_fps(),
                 timings=timings,
-                error_message="视线方向为零向量",
+                error_message="视线方向为零或非有限向量",
                 face_detected=True,
                 backend=backend,
             )
         
         d = d / norm_d
         ray_origin, ray_direction = self._compute_deep_ray(d, head_pose)
+        if not np.all(np.isfinite(ray_origin)) or not np.all(np.isfinite(ray_direction)):
+            raise ValueError('nonfinite_ray')
         timings['coordinate_transform'] = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
@@ -768,11 +829,12 @@ class TrackerPipeline:
         intersection = self.screen_geometry.ray_plane_intersect(ray_origin, ray_direction)
         timings['ray_plane_intersect'] = (time.perf_counter() - t0) * 1000
 
-        if intersection is None:
+        if intersection is None or not np.all(np.isfinite(intersection)):
             if self._last_valid_result is not None:
                 return TrackerResult(
                     gaze_point=self._last_valid_result.gaze_point,
-                    valid=True,
+                    valid=False,
+                    point_kind="held",
                     fps=self._calculate_fps(),
                     timings=timings,
                     error_message="视线射线未与屏幕平面相交",
@@ -791,6 +853,9 @@ class TrackerPipeline:
 
         raw_point = self.screen_geometry.world_to_screen_px(intersection, clamp=clamp_to_screen)
         
+        if not np.all(np.isfinite(raw_point)):
+            raise ValueError('nonfinite_screen_point')
+
         # 5. 时序平滑
         t0 = time.perf_counter()
         if self._calibration_mode or self.config.normalized_smoother_type == "none" or self.smoother is None:
@@ -881,7 +946,8 @@ class TrackerPipeline:
             if self._last_valid_result is not None:
                 return TrackerResult(
                     gaze_point=self._last_valid_result.gaze_point,
-                    valid=True,
+                    valid=False,
+                    point_kind="held",
                     fps=self._calculate_fps(),
                     timings=timings,
                     error_message="Deep PoG 输出无效",
@@ -903,6 +969,8 @@ class TrackerPipeline:
         screen_h = self.screen_geometry.screen_h_px if self.screen_geometry is not None else 1080
         raw_x = raw_norm[0] * screen_w
         raw_y = raw_norm[1] * screen_h
+        if not np.all(np.isfinite((raw_x, raw_y))):
+            raise ValueError("nonfinite_pog_screen_point")
         if not self._calibration_mode:
             raw_x = float(np.clip(raw_x, 0.0, screen_w - 1.0))
             raw_y = float(np.clip(raw_y, 0.0, screen_h - 1.0))
@@ -971,7 +1039,8 @@ class TrackerPipeline:
             if self._last_valid_result is not None:
                 return TrackerResult(
                     gaze_point=self._last_valid_result.gaze_point,
-                    valid=True,
+                    valid=False,
+                    point_kind="held",
                     fps=self._calculate_fps(),
                     timings=timings,
                     error_message="classic 眼部特征提取失败",
@@ -1047,11 +1116,24 @@ class TrackerPipeline:
             frame = None
             
             for retry in range(self._max_camera_retries):
-                ret, frame = self.cap.read()
-                if ret:
+                try:
+                    ret, frame = self.cap.read()
+                except Exception:
+                    ret, frame = False, None
+                captured_at = time.perf_counter()
+                if not self._running:
+                    return
+                if ret and frame is not None:
                     self._camera_fail_count = 0  # 重置失败计数
                     break
                 
+                failure = self._finish_observation(
+                    TrackerResult(None, False, 0., error_message="camera_read_failed",
+                                  face_detected=False, backend=self.config.normalized_backend),
+                    self._stamp(captured_at, "host_read_completed"))
+                with self._lock:
+                    if self._running:
+                        self._latest_result = failure
                 logger.warning(f"摄像头帧获取失败，重试 {retry + 1}/{self._max_camera_retries}")
                 time.sleep(0.01)
             
@@ -1072,36 +1154,9 @@ class TrackerPipeline:
                 self._camera_disconnected = False
                 print("摄像头已恢复连接")
             
-            # 处理帧
-            try:
-                result = self.process_frame(frame)
-            except Exception as e:
-                logger.error(f"帧处理异常: {e}")
-                import traceback
-                traceback.print_exc()
-                
-                # 容错：使用上一帧结果
-                if self._last_valid_result is not None:
-                    result = TrackerResult(
-                        gaze_point=self._last_valid_result.gaze_point,
-                        valid=True,
-                        fps=self._calculate_fps(),
-                        timings={},
-                        error_message=f"帧处理异常: {e}",
-                        face_detected=False,
-                        backend=self.config.normalized_backend,
-                    )
-                else:
-                    result = TrackerResult(
-                        gaze_point=None,
-                        valid=False,
-                        fps=self._calculate_fps(),
-                        timings={},
-                        error_message=f"帧处理异常: {e}",
-                        face_detected=False,
-                        backend=self.config.normalized_backend,
-                    )
-            
+            result = self.process_frame(frame, captured_at=captured_at,
+                                        time_source="host_read_completed")
+
             # 更新 FPS 计算
             self._frame_times.append(frame_start)
             if len(self._frame_times) > self._max_frame_times:
@@ -1109,8 +1164,9 @@ class TrackerPipeline:
             
             # 线程安全地更新最新结果
             with self._lock:
-                self._latest_result = result
-                self._latest_frame = frame.copy()
+                if self._running:
+                    self._latest_result = result
+                    self._latest_frame = frame.copy()
         
         print("推理管道已停止")
     
@@ -1124,22 +1180,47 @@ class TrackerPipeline:
             print("警告：推理管道已在运行")
             return False
         
+        if self._thread is not None and self._thread.is_alive():
+            self._notify_error("Previous capture thread has not stopped")
+            return False
+        if self._thread is not None:
+            # A timed-out stop may have left resources owned by a late worker.
+            # is_alive() is now false: retire them before initialize overwrites them.
+            self._thread = None
+            self._cleanup_stopped_resources()
         if not self.initialize():
             return False
         
-        self._running = True
+        with self._lock:
+            self.session_id = uuid.uuid4().hex
+            self._sequence = 0
+            self._continuity = 0
+            self._latest_result = None
+            self._last_valid_result = None
+            self._running = True
         self._thread = threading.Thread(target=self.run, daemon=True)
         self._thread.start()
         return True
     
     def stop(self) -> None:
         """停止推理线程并释放资源。"""
-        self._running = False
+        with self._lock:
+            self._running = False
+            self._latest_result = None
         
         if self._thread is not None:
             self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                with self._lock:
+                    self._latest_result = None
+                self._notify_error("Capture thread is still stopping; restart is blocked")
+                return
             self._thread = None
-        
+
+        self._cleanup_stopped_resources()
+
+    def _cleanup_stopped_resources(self) -> None:
+        """Idempotent cleanup; callers must first confirm the old worker has exited."""
         if self.cap is not None:
             self.cap.release()
             self.cap = None
@@ -1153,9 +1234,10 @@ class TrackerPipeline:
         if self.classic_smoother is not None:
             self.classic_smoother.reset()
 
-        self._last_valid_result = None
-        self._latest_result = None
-        self._latest_frame = None
+        with self._lock:
+            self._last_valid_result = None
+            self._latest_result = None
+            self._latest_frame = None
         self._frame_times.clear()
         
         print("推理管道资源已释放")
@@ -1163,7 +1245,34 @@ class TrackerPipeline:
     def get_latest_result(self) -> Optional[TrackerResult]:
         """获取最新的推理结果（线程安全）。"""
         with self._lock:
-            return self._latest_result
+            return copy.deepcopy(self._latest_result)
+
+    def get_dispatch_rejection(
+        self, observation: Observation, max_age_s: float, *, clock=time.perf_counter,
+    ) -> Optional[str]:
+        """Recheck producer state immediately before UI dispatch; None allows it.
+
+        The same lock protects failure continuity, session, run/calibration state
+        and publication. This is a point-in-time check, not a lock held over OS/UI
+        actions, and cannot anticipate a failure that happens after it returns.
+        A newer valid sequence in the same continuity is deliberately allowed.
+        """
+        with self._lock:
+            now = clock()
+            if not self._running or (self._thread is not None and not self._thread.is_alive()):
+                return "producer_not_running"
+            if self._calibration_mode:
+                return "producer_calibrating"
+            if not isinstance(observation, Observation) or observation.session != self.session_id:
+                return "producer_session_changed"
+            if observation.continuity != self._continuity:
+                return "producer_continuity_changed"
+            if (not np.isfinite(now) or not np.isfinite(observation.timestamp)
+                    or observation.timestamp > now or now - observation.timestamp > max_age_s):
+                return "expired_during_processing"
+            if self._latest_result is None or not self._latest_result.valid:
+                return "producer_observation_unavailable"
+            return None
     
     def get_latest_frame(self) -> Optional[np.ndarray]:
         """获取最新的摄像头帧（线程安全）。"""
@@ -1178,7 +1287,9 @@ class TrackerPipeline:
 
     def set_calibration_mode(self, enabled: bool) -> None:
         """设置校准模式。校准模式下禁用坐标 clamp，保留原始值。"""
-        self._calibration_mode = enabled
+        with self._lock:
+            self._continuity += 1
+            self._calibration_mode = enabled
         if self.smoother is not None:
             self.smoother.reset()
         if self.classic_smoother is not None:

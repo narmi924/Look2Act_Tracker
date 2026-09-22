@@ -89,7 +89,7 @@ def test_process_frame_no_face_fallback_keeps_backend_and_last_point():
 
     result = pipeline.process_frame(np.zeros((8, 8, 3), dtype=np.uint8))
 
-    assert result.valid is True
+    assert result.valid is False
     assert result.face_detected is False
     assert result.gaze_point == (0.4, 0.6)
     assert result.backend == "classic"

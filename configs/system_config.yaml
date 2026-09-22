@@ -31,6 +31,8 @@ smoother:
   type: kalman
   alpha: 0.3
 tracker:
+  # R1 engineering initial value, not human-validated; applies to age and sample gaps.
+  max_observation_age_ms: 250.0
   backend: classic
   target_fps: 30
   timer_interval_ms: 33

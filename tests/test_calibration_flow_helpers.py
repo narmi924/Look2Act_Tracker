@@ -1,3 +1,5 @@
+import time
+from src.tracker.observation import Observation, ObservationGate
 from src.tracker.pipeline import SystemConfig, TrackerResult
 from src.ui.calibration_page import (
     CalibrationPage,
@@ -101,6 +103,7 @@ def test_calibration_sampling_discards_initial_transition_frames():
         def get_latest_result(self):
             return TrackerResult(
                 gaze_point=(0.25, 0.5),
+                observation=Observation("test", time.perf_counter_ns(), time.perf_counter(), 0),
                 valid=True,
                 fps=30.0,
                 face_detected=True,
@@ -116,6 +119,8 @@ def test_calibration_sampling_discards_initial_transition_frames():
 
     widget = CalibrationFullscreenWidget.__new__(CalibrationFullscreenWidget)
     widget.tracker = FakeTracker()
+    widget.observation_gate = ObservationGate()
+    widget.observation_gate.reset("test")
     widget.current_samples = []
     widget.sampling_ticks = 0
     widget.discard_initial_frames = 10
@@ -140,6 +145,7 @@ def test_calibration_sampling_prefers_raw_point_over_smoothed_point():
             return TrackerResult(
                 gaze_point=(900.0, 900.0),
                 raw_point=(100.0, 200.0),
+                observation=Observation("test", time.perf_counter_ns(), time.perf_counter(), 0),
                 valid=True,
                 fps=30.0,
                 face_detected=True,
@@ -152,6 +158,8 @@ def test_calibration_sampling_prefers_raw_point_over_smoothed_point():
 
     widget = CalibrationFullscreenWidget.__new__(CalibrationFullscreenWidget)
     widget.tracker = FakeTracker()
+    widget.observation_gate = ObservationGate()
+    widget.observation_gate.reset("test")
     widget.current_samples = []
     widget.sampling_ticks = 10
     widget.discard_initial_frames = 10

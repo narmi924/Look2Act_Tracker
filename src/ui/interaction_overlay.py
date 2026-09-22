@@ -471,10 +471,10 @@ class InteractionLauncherOverlay(FullscreenStageWindow):
         for card in self._cards.values():
             card.reset_progress()
 
-    def update_gaze_point(self, x: float, y: float) -> None:
+    def update_gaze_point(self, x: float, y: float, *, observed_ms: float) -> None:
         self.trail_overlay.update_gaze_point(x, y)
 
-        now = self._now_ms()
+        now = observed_ms
         if now - self._last_trigger_time < 500.0:
             return
 

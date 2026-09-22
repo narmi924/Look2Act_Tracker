@@ -986,6 +986,7 @@ class SettingsPage(QWidget):
                 'tracker': {
                     'backend': self.config.normalized_backend,
                     'target_fps': self.config.target_fps,
+                    'max_observation_age_ms': self.config.max_observation_age_ms,
                     'timer_interval_ms': int(1000 / self.config.target_fps),
                 },
             }

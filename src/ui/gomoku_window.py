@@ -26,6 +26,7 @@ class GomokuWindow(QWidget):
         self.board = [[0 for _ in range(self.board_size)] for _ in range(self.board_size)]
         self.current_hover: Optional[tuple[int, int]] = None
         self._hover_started_at = 0.0
+        self._gaze_progress = 0.0
         self._last_gaze: Optional[QPointF] = None
         self._dwell_ms = 900.0
         self._game_over = False
@@ -91,14 +92,21 @@ class GomokuWindow(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self.reset_gaze_progress()
         self.showFullScreen()
         self.raise_()
         self.activateWindow()
 
-    def update_gaze_point(self, x: float, y: float) -> None:
+    def reset_gaze_progress(self) -> None:
+        self.current_hover = None
+        self._hover_started_at = 0.0
+        self._gaze_progress = 0.0
+        self.update()
+
+    def update_gaze_point(self, x: float, y: float, *, observed_ms: float) -> None:
         self._last_gaze = QPointF(x, y)
         pos = self._board_pos_from_point(x, y)
-        now = self._now_ms()
+        now = observed_ms
 
         if self._game_over:
             self.update()
@@ -106,9 +114,11 @@ class GomokuWindow(QWidget):
 
         if pos != self.current_hover:
             self.current_hover = pos
+            self._gaze_progress = 0.0
             self._hover_started_at = now
         elif pos is not None:
             progress = min((now - self._hover_started_at) / self._dwell_ms, 1.0)
+            self._gaze_progress = progress
             if progress >= 1.0:
                 self._place_x(pos)
                 self.current_hover = None
@@ -142,7 +152,7 @@ class GomokuWindow(QWidget):
         if self.current_hover is not None and not self._game_over:
             row, col = self.current_hover
             cell_rect = self._cell_rect(rect, row, col)
-            progress = min((self._now_ms() - self._hover_started_at) / self._dwell_ms, 1.0)
+            progress = self._gaze_progress
             painter.setPen(QPen(QColor(76, 175, 80, 220), 5))
             painter.setBrush(QColor(76, 175, 80, 45))
             painter.drawRoundedRect(cell_rect.adjusted(8, 8, -8, -8), 10, 10)
