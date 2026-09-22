@@ -1,4 +1,5 @@
 import time
+import pytest
 from src.tracker.observation import Observation, ObservationGate
 from src.tracker.pipeline import SystemConfig, TrackerResult
 from src.ui.calibration_page import (
@@ -103,6 +104,7 @@ def test_calibration_sampling_discards_initial_transition_frames():
         def get_latest_result(self):
             return TrackerResult(
                 gaze_point=(0.25, 0.5),
+                raw_point=(0.25, 0.5),
                 observation=Observation("test", time.perf_counter_ns(), time.perf_counter(), 0),
                 valid=True,
                 fps=30.0,
@@ -139,12 +141,13 @@ def test_calibration_sampling_discards_initial_transition_frames():
     assert widget.current_samples == [(0.25, 0.5)]
 
 
-def test_calibration_sampling_prefers_raw_point_over_smoothed_point():
+@pytest.mark.parametrize('raw', [(100.0, 200.0), None])
+def test_calibration_sampling_prefers_raw_point_over_smoothed_point(raw):
     class FakeTracker:
         def get_latest_result(self):
             return TrackerResult(
                 gaze_point=(900.0, 900.0),
-                raw_point=(100.0, 200.0),
+                raw_point=raw,
                 observation=Observation("test", time.perf_counter_ns(), time.perf_counter(), 0),
                 valid=True,
                 fps=30.0,
@@ -170,4 +173,4 @@ def test_calibration_sampling_prefers_raw_point_over_smoothed_point():
 
     widget._on_sampling_tick()
 
-    assert widget.current_samples == [(100.0, 200.0)]
+    assert widget.current_samples == ([raw] if raw is not None else [])

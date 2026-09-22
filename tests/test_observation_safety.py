@@ -30,7 +30,8 @@ class Clock:
 
 def observation(seq=1, t=10.1, **kwargs):
     stamp = Observation(kwargs.pop('session', 'session'), seq, t, kwargs.pop('continuity', 0))
-    return TrackerResult((100., 100.), True, 30., observation=stamp, **kwargs)
+    return TrackerResult((100., 100.), True, 30., observation=stamp,
+                         raw_point=kwargs.pop('raw_point', (100., 100.)), **kwargs)
 
 
 @pytest.mark.parametrize('value', [0, -1, float('nan'), float('inf'), True, '250', None])
@@ -140,6 +141,7 @@ def interaction(request, qapp, monkeypatch):
     clock = Clock()
     page.observation_gate = ObservationGate(clock=clock)
     page.tracker_config = SystemConfig()
+    page.calibrator = SimpleNamespace(is_calibrated=True, apply=lambda p: p)
     tracker = ControlledTracker()
     page.tracker = tracker
     calls, moves, samples = [], [], []
@@ -169,14 +171,15 @@ def interaction(request, qapp, monkeypatch):
     page._update_tracking_data()  # bind context before observations are captured
     sequence = [0]
     epoch = [0]
-    def feed(t, *, valid=True, continuity=None, point=(100., 100.)):
+    def feed(t, *, valid=True, continuity=None, point=(100., 100.), backend='classic'):
         clock.now = t
         sequence[0] = max(sequence[0], tracker._sequence) + 1
         epoch[0] = max(epoch[0], tracker._continuity)
         if continuity is not None: epoch[0] = continuity
-        tracker.result = observation(sequence[0], t, continuity=epoch[0], backend='classic')
+        tracker.result = observation(sequence[0], t, continuity=epoch[0], backend=backend)
         tracker.result.valid = valid
         tracker.result.gaze_point = point
+        tracker.result.raw_point = point
         page._update_tracking_data()
     def hold(start, duration_ms=duration):
         # Binary-exact intervals avoid accidental threshold floating point crossings.
@@ -589,12 +592,12 @@ def test_dispatch_rechecks_producer_after_processing(interaction, monkeypatch, p
             h.tracker.set_calibration_mode(True)
 
     if phase == 'calibration':
-        original = h.page._apply_calibration_and_clamp_with_debug
+        original = h.page.calibrator.apply
         def process(*args):
             point = original(*args)
             processing_event()
             return point
-        monkeypatch.setattr(h.page, '_apply_calibration_and_clamp_with_debug', process)
+        monkeypatch.setattr(h.page.calibrator, 'apply', process)
     else:
         original = h.page.screen_stabilizer.update
         def process(point):
@@ -614,7 +617,7 @@ def test_dispatch_rechecks_producer_after_processing(interaction, monkeypatch, p
     h.cleared()
 
     if phase == 'calibration':
-        monkeypatch.setattr(h.page, '_apply_calibration_and_clamp_with_debug', original)
+        monkeypatch.setattr(h.page.calibrator, 'apply', original)
     else:
         monkeypatch.setattr(h.page.screen_stabilizer, 'update', original)
     if event in ('invalid', 'invalid_then_valid'):

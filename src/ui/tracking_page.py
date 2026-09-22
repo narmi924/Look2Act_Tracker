@@ -21,6 +21,7 @@ from qfluentwidgets import BodyLabel, CardWidget, PrimaryPushButton, PushButton
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
 from src.tracker.classic import ClassicScreenSmoother
+from src.tracker.screen_mapping import ScreenMapper
 from src.tracker.pipeline import SystemConfig, TrackerPipeline
 from src.tracker.observation import ObservationGate, ObservationState, validate_max_age
 from src.ui.calibration_page import calibration_module_for_config
@@ -182,6 +183,7 @@ class TrackingPage(QWidget):
         self.diagnostics_enabled = False
         self.show_cursor_overlay = False
         self.screen_stabilizer = ScreenGazeStabilizer()
+        self.screen_mapper = ScreenMapper(self.screen_stabilizer)
         self.observation_gate = ObservationGate()
         self._observation_context = None
 
@@ -191,7 +193,7 @@ class TrackingPage(QWidget):
     def set_calibrator(self, calibrator: CalibrationModule) -> None:
         self._reset_observation_context()
         self.calibrator = calibrator
-        self.screen_stabilizer.reset()
+        self.screen_mapper.reset()
         if self.calibrator.is_calibrated:
             residual = self.calibrator.residual_mean
             self.calib_status.setText(tx(f"已加载（残差：{residual:.2f} px）", f"Loaded (Residual: {residual:.2f} px)"))
@@ -495,7 +497,7 @@ class TrackingPage(QWidget):
                 self.calibrator = calibration_module_for_config(self.tracker_config)
 
             load_calibration(self.calibrator, str(load_path))
-            self.screen_stabilizer.reset()
+            self.screen_mapper.reset()
             residual = self.calibrator.residual_mean
             self.calib_status.setText(tx(f"已加载（残差：{residual:.2f} px）", f"Loaded (Residual: {residual:.2f} px)"))
             self.calib_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
@@ -526,7 +528,7 @@ class TrackingPage(QWidget):
 
             self._reset_observation_context()
             self.update_timer.start(self.update_interval_ms)
-            self.screen_stabilizer.reset()
+            self.screen_mapper.reset()
 
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
@@ -537,7 +539,7 @@ class TrackingPage(QWidget):
     def _handle_stop_tracking(self) -> None:
         self._reset_observation_context()
         self.update_timer.stop()
-        self.screen_stabilizer.reset()
+        self.screen_mapper.reset()
         self._close_verification_window()
         self._close_launcher_overlay()
         self._close_gomoku_window()
@@ -720,7 +722,7 @@ class TrackingPage(QWidget):
     def _stop_tracker_runtime(self) -> None:
         self._reset_observation_context()
         self.update_timer.stop()
-        self.screen_stabilizer.reset()
+        self.screen_mapper.reset()
         if self.tracker is not None:
             self.tracker.stop()
         self.start_btn.setEnabled(True)
@@ -739,7 +741,7 @@ class TrackingPage(QWidget):
         cooldown = self._dwell_cooldown_until
         self._reset_dwell_state()
         self._dwell_cooldown_until = cooldown
-        self.screen_stabilizer.reset()
+        self.screen_mapper.reset()
         self.dwell_progress_label.setText("0%")
         if self.cursor_overlay is not None:
             self.cursor_overlay.set_dwell_progress(0.0, False)
@@ -798,31 +800,19 @@ class TrackingPage(QWidget):
             self.gaze_status.setText(tx("有效", "Valid"))
             self.gaze_status.setStyleSheet("color: #4CAF50; font-weight: 600;")
 
-            try:
-                (gaze_x, gaze_y), pre_clamp = self._apply_calibration_and_clamp_with_debug(*result.gaze_point)
-            except Exception:
-                self.observation_gate.reject("calibration_failed")
+            screen = QApplication.primaryScreen()
+            size = (screen.geometry().width(), screen.geometry().height()) if screen else (0, 0)
+            result = self.screen_mapper.process(
+                result, self.tracker_config or SystemConfig(), self.calibrator, size)
+            if result.screen_rejection is not None:
+                self.observation_gate.reject(result.screen_rejection)
                 self._interrupt_gaze()
+                self.gaze_status.setText(tx("估计不可操作", "Estimate unavailable"))
+                self.error_label.setText(result.screen_rejection)
+                if self.diagnostics_enabled:
+                    self._update_diagnostics_label(result)
                 return
-            clamped_point = (gaze_x, gaze_y)
-            try:
-                if self._should_stabilize_screen_point(result):
-                    gaze_x, gaze_y = self.screen_stabilizer.update(clamped_point)
-                else:
-                    self.screen_stabilizer.reset()
-            except Exception:
-                self.observation_gate.reject("screen_smoothing_failed")
-                self._interrupt_gaze()
-                return
-            if not all(math.isfinite(v) for v in (gaze_x, gaze_y)):
-                self.observation_gate.reject("nonfinite_smoothed_point")
-                self._interrupt_gaze()
-                return
-            result.calibrated_point = (gaze_x, gaze_y)
-            if isinstance(result.debug, dict):
-                result.debug["pre_clamp_point"] = pre_clamp
-                result.debug["clamped_point"] = clamped_point
-                result.debug["screen_stabilized_point"] = result.calibrated_point
+            gaze_x, gaze_y = result.display_point
 
             # Recheck after calibration/smoothing, immediately before any gaze
             # dispatch. New valid frames are fine; a producer interruption is not.
@@ -880,35 +870,6 @@ class TrackingPage(QWidget):
         if self.diagnostics_enabled:
             self._update_diagnostics_label(result)
 
-    def _apply_calibration_and_clamp(self, gaze_x: float, gaze_y: float) -> tuple[float, float]:
-        clamped, _ = self._apply_calibration_and_clamp_with_debug(gaze_x, gaze_y)
-        return clamped
-
-    def _apply_calibration_and_clamp_with_debug(
-        self,
-        gaze_x: float,
-        gaze_y: float,
-    ) -> tuple[tuple[float, float], tuple[float, float]]:
-        if self.calibrator is not None and self.calibrator.is_calibrated:
-            gaze_x, gaze_y = self.calibrator.apply((gaze_x, gaze_y))
-        if not all(math.isfinite(v) for v in (gaze_x, gaze_y)):
-            raise ValueError("nonfinite_calibrated_point")
-        pre_clamp = (gaze_x, gaze_y)
-
-        screen = QApplication.primaryScreen()
-        if screen is not None:
-            geo = screen.geometry()
-            gaze_x = max(0.0, min(gaze_x, float(geo.width() - 1)))
-            gaze_y = max(0.0, min(gaze_y, float(geo.height() - 1)))
-        return (gaze_x, gaze_y), pre_clamp
-
-    def _should_stabilize_screen_point(self, result) -> bool:
-        if self.tracker_config is None:
-            return False
-        if self.tracker_config.normalized_smoother_type == "none":
-            return False
-        return result.backend == "classic"
-
     def _toggle_diagnostics(self) -> None:
         self.diagnostics_enabled = not self.diagnostics_enabled
         self.diagnostics_label.setVisible(self.diagnostics_enabled)
@@ -918,24 +879,18 @@ class TrackingPage(QWidget):
 
     def _update_diagnostics_label(self, result) -> None:
         tracker_diag = self.tracker.get_diagnostics() if self.tracker is not None else {}
-        raw = result.raw_point or result.gaze_point
+        raw = result.raw_point
         calibrated = result.calibrated_point
         calib_method = getattr(getattr(self.calibrator, "method", None), "value", "none")
         calib_points = len(getattr(self.calibrator, "_raw_points", [])) if self.calibrator is not None else 0
         lines = [
             f"backend={result.backend} model={tracker_diag.get('model_version')} fps={result.fps:.1f}",
-            f"raw={self._fmt_point(raw)} calibrated={self._fmt_point(calibrated)}",
+            f"raw={self._fmt_point(raw)} [{result.raw_units}] calibrated={self._fmt_point(calibrated)}",
             f"calib={calib_method} points={calib_points} path={tracker_diag.get('calibration_path')}",
             f"onnx_inputs={tracker_diag.get('onnx_inputs', [])}",
         ]
-        if isinstance(result.debug, dict):
-            lines.append(
-                "pre_clamp={} clamped={}".format(
-                    self._fmt_point(result.debug.get("pre_clamp_point")),
-                    self._fmt_point(result.debug.get("clamped_point")),
-                )
-            )
-            lines.append(f"screen_smooth={self._fmt_point(result.debug.get('screen_stabilized_point'))}")
+        lines.append(f"smoothed={self._fmt_point(result.smoothed_point)} display={self._fmt_point(result.display_point)}")
+        lines.append(f"in_bounds=({result.calibrated_in_bounds}, {result.smoothed_in_bounds}) rejected={result.screen_rejection}")
         head_pose = result.debug.get("head_pose") if isinstance(result.debug, dict) else None
         if isinstance(head_pose, dict):
             lines.append(

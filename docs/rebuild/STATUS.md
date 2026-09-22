@@ -1,10 +1,83 @@
-# 重启进度：R1（待外部审阅、人工摄像头验证）
+# 重启进度：R2（待外部审阅、人工摄像头验证）
 
 当前目标：普通 Windows + RGB 摄像头上的眼控优先交互；保留键鼠急停。
 Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线。
 一次一个任务，PR 后停止，不自动合并。本轮不做精度、模型、训练、论文或新交互框架。
 
-## 基线与已确认问题
+## R2：统一原始输入与屏幕处理顺序
+
+R1 PR #22 已合并，人工摄像头验证仍未执行。R2 从 fetch 后的
+`origin/main=b01b8f1f6c860c3588f4c27dad703f13d930a1e2` 建立
+`codex/rebuild-r2-screen-mapping`；开始时工作区干净。沿用 R1 隔离 uv 环境，未安装或升级依赖。
+
+确认的问题与修改：
+
+- `pipeline.py::_process_frame` Deep 的 world-to-screen 曾在追踪时 clamp，校准时不 clamp；
+  `_process_deep_pog_output` 同样提前 clip。两者现均输出有限、未截断 raw，后台不再执行输出 EMA。
+- 原 Deep/PoG 链：原始映射 → clamp → 后台 EMA → UI 校准 → display clamp。
+  原 Classic 链：归一化特征 → UI 校准 → clamp → Kalman/历史稳定器。
+  新链统一为：R1 门控 → **raw → 校准一次 → 屏幕平滑 → 显示边界** → R1 生产端分派前复核。
+- `screen_mapping.py::ScreenMapper` 是无 Qt 的共用后处理；`tracking_page.py` 四个入口
+  （桌面、启动器、棋盘、全屏验证）及合成对照调用同一实现。旧 UI 后处理分支已移除。
+- `raw_point`：Classic 为相机归一化特征；Deep 为原几何映射的屏幕像素；deep_pog 保持模型输出乘 W/H。
+  `calibrated_point` 和 `smoothed_point` 为未截断屏幕像素，`display_point` 仅供显示。
+  `gaze_point` 保留为 raw 兼容别名，不能当最终屏幕点；采样及应用均不从该别名补缺失 raw。
+  后处理副本保留源 Observation，不改 session/sequence/timestamp/continuity。
+- 范围为当前单屏闭区间 `[0,W-1] × [0,H-1]`，不改 W/H 归一化或几何定义。
+  raw 越界可被校准映回屏内；校准或平滑越界/非有限/异常则拒绝操作、清空选择和滤波。
+  校准已越界时不再喂给滤波器，smoothed 字段及其范围状态为 None；可计算截断显示值，但 UI 不分派它。
+- Classic 仍用原 Kalman + 60 历史；Deep/PoG 仍用原 EMA alpha（原配置写 kalman 时实际也是 EMA）；
+  none 完全绕过输出平滑。Deep EMA 从生产端逐帧改为消费端逐个新观测，latest-result 跳帧会改变更新次数。
+  未调参数补偿，也没有宣称响应速度改善。失效、过期、上下文/校准变化与恢复边界均清理历史。
+- `calibration_page.py` 明确只采样 raw；`demo_tracker.py` 标注原始单位，`diagnose_tracker.py`
+  使用共用后处理并分别记录四阶段值。诊断脚本按自己的采样间隔更新，不能据此推断 UI 平滑响应。
+
+### R2 自动测试与合成对照（本机）
+
+下列 `R1_PY` 指向已授权隔离环境的 Python（环境版本见后方 R1 记录），命令为 Git Bash 写法：
+
+```bash
+QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_screen_mapping.py tests/test_observation_safety.py tests/test_tracker_pipeline.py tests/test_classic_pipeline.py tests/test_classic_tracker.py tests/test_tracking_page_unit.py tests/test_calibration.py tests/test_calibration_flow_helpers.py tests/test_smoother.py tests/test_geometry.py tests/test_head_pose.py tests/test_analyze_tracker_diagnostics.py tests/test_config.py -k 'not test_error_callback and not test_process_frame_with_mock_frame' -q
+QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
+"$R1_PY" scripts/compare_screen_mapping.py
+```
+
+- 修改前已有短套件：180 passed、2 deselected。先仅新增
+  `test_backend_raw_is_identical_in_calibration_and_tracking`，实际运行 **2 failed**：
+  Deep/PoG 同一输入在校准为 `(-200,100)`，追踪却为 `(0,100)`；修复后两项通过。
+- 最终短套件：**233 passed、2 deselected**；独立设置测试 **13 passed、14 第三方 warnings**。
+  合计 **246 passed、0 failed、0 skipped、2 主动不执行**。
+  排除真实摄像头 `test_error_callback` 和真实检测器/模型 `test_process_frame_with_mock_frame`。
+  全库训练/模型/数据测试、真实摄像头/系统动作均未执行。
+- 新文件 `test_screen_mapping.py`：同源 raw、负值/超边界、校准一次、非线性顺序、原滤波参数、
+  NaN/Inf/异常、显示边界、三类实际入口越界中断与恢复、EMA 去重/清理、验证窗口、合成旧文件。
+  原 R1 的处理中生产端失效复核、停留恢复和迟到线程资源清理回归全部包含在通过套件内。
+- 远端 CI 与本机测试分开记录；本轮未建设 CI。原生 access violation 的历史记录与未解决状态保留。
+
+对照脚本用固定少量数据、无随机数，屏幕 1000×800，EMA alpha=0.3，基线为上方 SHA。
+R1 对照逐步复制该基线 Deep 的真实旧顺序，仅在脚本内；R2 调用实际 ScreenMapper 并断言独立参考：
+
+| 案例（坐标单位 px） | R1 关键阶段/参考偏差 | R2 关键阶段/参考偏差 |
+|---|---|---|
+| A：x=-200,-50；y=100；C(x)=x+300；none | raw 被截成 0,0 → 输出 300,300；误差 200,50 | raw 保留 → 校准/输出 100,250；误差 0,0 |
+| B：x=2,4,6；y=100；C(x)=x²；EMA | 先平滑 2,2.6,3.62 → 校准 4,6.76,13.1044；误差 0,0.84,3.0156 | 校准 4,16,36 → 平滑 4,7.6,16.12；最大浮点误差约 3.6e-15 |
+| C：几何交点(100,100,720) mm；屏幕500×400 mm；none | 原/新几何映射均(200,200)，平移校准(+10,+20)后(210,220)；误差0 | 同值；另核对 deep_pog (.2,.25)×(W,H)仍为(200,200) |
+
+这仅证明软件链路与数学参考一致，不证明摄像头精度、人体成功率、模型角度误差或头眼解耦改善。
+
+### 兼容性、人工验证与限制
+
+- 用合成 version 1 校准文件覆盖三后端 × affine/polynomial 的保存、加载、应用；原校准采样空间未改变。
+  相同后端、原始输入定义和几何配置下可沿用，未要求全部重校准。旧文件未充分记录后端/源配置，
+  不能保证任意历史文件兼容；若来源不匹配，只为当前后端重新校准。未读写用户校准内容。
+- 人工摄像头验证 **待执行**：沿用下方安全桌面步骤；在各后端匹配的校准/配置下查看四阶段诊断，
+  检查已知越界时进度清零且不操作、恢复后完整停留可触发，再测遮挡/断流/停止重启。
+  真实输出落在屏内不代表用户意图正确；Deep 几何仍是现有编码，未修正为真实眼球方向。
+- 单屏/DPI 约定保持原状；边界更保守可能增加中断。原生 access violation 根因仍未解决。
+- 回退本 R2 提交可恢复 R1 链路（会恢复提前截断/先平滑问题），不会撤回 R1 安全门控和生命周期补修。
+  下一轮仅候选：人工验证与原生崩溃定位；本轮不启动。
+
+## R1 历史记录：基线与已确认问题
 
 - 分支：`codex/rebuild-r1-observation-safety`。
 - fetch 后实际 origin/main：`ba3a8ef50f529d7782000269013ca47ecd8d579c`；开始时工作区干净。
@@ -81,13 +154,13 @@ QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
 - 摄像头驱动缓冲可能使主机 read 返回时间晚于实际曝光；250 ms 可能中断低帧率设备上的选择，需人工评估。
 - Qt 主线程阻塞时不能准时重绘失效状态；恢复执行后先做 freshness 检查，绘制不自行增长进度。
 - 卡住的采集线程退出前不允许重启；这是保守保护，需要实机确认设备行为。
-- 前置 clamp、旧滤波历史行为、校准精度、配置切换的完整运行时重建及全量依赖兼容性留待独立任务。
+- R1 当时将前置 clamp/旧滤波链留待后续，现由上方 R2 处理；校准精度、配置切换的完整运行时重建及全量依赖兼容性仍未处理。
 - 候选：实机失效/恢复与采样间隔观测、校准可靠性、头眼解耦实验；没有启动承诺。
 - 回退：审阅后如需回退，revert 本 PR 提交；原有模型/数据/校准文件未修改。回退也会恢复旧的交互风险。
 
 ## PR #22 审阅补修（基于 8b3b254fa700dd6844ce0d84d8b9c9904b5aa44a）
 
-仅修复两项，保留首轮 R1。开始时本地/远端 HEAD 一致、工作区干净；PR 当前 Open、非 Draft，不改变状态、不合并。
+当时仅修复两项，保留首轮 R1；开始时本地/远端 HEAD 一致、工作区干净。补修提交时 PR 为 Open、非 Draft；现 PR #22 已合并。
 
 - **分派前生产端复核**：TrackingPage 在校准/平滑完成后、所有视线入口分派之前调用 `TrackerPipeline.get_dispatch_rejection`。
   在生产端同一把 `_lock` 内检查运行/线程状态、校准状态、会话、连续性、源观测年龄和当前结果可用性；相关状态写入也使用此锁。
