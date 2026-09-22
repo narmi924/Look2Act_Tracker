@@ -50,7 +50,7 @@ QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
 
 - 原有短测试：36 passed、2 deselected，无基线失败。
 - 修复前新增 `test_no_face_fallback_is_not_actionable`：实际执行 **1 failed**，断言发现旧点 valid=True；未改测试接口绕过旧实现。
-- 最终相关套件：**143 passed、2 deselected**；独立设置测试：**13 passed、14 第三方弃用 warnings**。
+- 首轮提交的相关套件：**143 passed、2 deselected**；独立设置测试：**13 passed、14 第三方弃用 warnings**。
   总计 **156 passed，0 failed，0 skipped，2 主动不执行**；`uv pip check` 通过。
 - 2 项不执行：`test_error_callback` 打开真实摄像头；`test_process_frame_with_mock_frame` 导入真实检测器和 torch/模型接口。
   未运行全库训练/模型/数据测试、实时诊断、摄像头、OS 操作或长 GUI。测试用假时钟/相机/ONNX，替换鼠标和应用执行函数。
@@ -84,3 +84,32 @@ QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
 - 前置 clamp、旧滤波历史行为、校准精度、配置切换的完整运行时重建及全量依赖兼容性留待独立任务。
 - 候选：实机失效/恢复与采样间隔观测、校准可靠性、头眼解耦实验；没有启动承诺。
 - 回退：审阅后如需回退，revert 本 PR 提交；原有模型/数据/校准文件未修改。回退也会恢复旧的交互风险。
+
+## PR #22 审阅补修（基于 8b3b254fa700dd6844ce0d84d8b9c9904b5aa44a）
+
+仅修复两项，保留首轮 R1。开始时本地/远端 HEAD 一致、工作区干净；PR 当前 Open、非 Draft，不改变状态、不合并。
+
+- **分派前生产端复核**：TrackingPage 在校准/平滑完成后、所有视线入口分派之前调用 `TrackerPipeline.get_dispatch_rejection`。
+  在生产端同一把 `_lock` 内检查运行/线程状态、校准状态、会话、连续性、源观测年龄和当前结果可用性；相关状态写入也使用此锁。
+  更新的正常有效帧不要求序号相等；即使失效已被恢复结果覆盖，连续性改变仍拒绝旧观测。拒绝时不分派动作，清空选择，恢复后重新停留。
+  这是**执行前的检查时点**，锁不跨越 UI/系统动作，不能预知检查返回后才发生的故障。
+- **停止超时后补清理**：活线程仍禁止重启且不释放它的资源；之后 start 确认旧线程已退出，复用 `_cleanup_stopped_resources`，先 release/close，再 initialize。
+  正常 stop 复用同一幂等清理路径，新会话/旧结果清除规则保留。
+
+新增回归：
+
+- `test_dispatch_rechecks_producer_after_processing`：桌面/启动器/棋盘 × 校准/平滑期间发布失效、失效再恢复、仅更新正常有效帧、停止、换会话、进入校准；时间仅推进 62.5 ms。
+  失效用例还验证恢复首帧不触发、完整新停留能触发；复用实际 TrackingPage 分派、真实生产端锁/失败连续性与合成输入，替换所有系统操作。
+- `test_late_worker_exit_cleans_resources_before_restart`：假线程模拟停止超时→活线程重启拒绝→迟到退出→释放旧资源→初始化新会话，验证 release/close 各一次且先于 initialize。
+
+```bash
+QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_observation_safety.py -k 'dispatch_rechecks_producer_after_processing or late_worker_exit_cleans_resources_before_restart' -q --tb=short
+```
+
+实际修复前 **31 failed、6 passed、92 deselected**（仅新增测试和夹具，生产代码尚未修改）；修复后 **37 passed、92 deselected**。
+沿用上方完整相关套件及独立设置测试命令，当前本机结果 **180 + 13 = 193 passed，0 failed，0 skipped，2 deselected**；设置测试仍有 14 条第三方弃用 warnings。
+2 项未执行及原因与首轮相同；未访问摄像头、执行真实鼠标/点击/应用启动，未升级依赖。
+
+**远端 CI**：检查 PR 未报告 checks，不能将本机测试称为 CI 通过。
+**人工摄像头验证**：上方项目全部仍待执行；另需验证断流后停止超时、线程迟到退出与再次启动的设备释放/重新打开行为。
+**原生 access violation**：首轮记录保留，根因尚未解决；本轮独立测试通过不代表该问题已消失。

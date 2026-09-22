@@ -824,8 +824,14 @@ class TrackingPage(QWidget):
                 result.debug["clamped_point"] = clamped_point
                 result.debug["screen_stabilized_point"] = result.calibrated_point
 
-            if self.observation_gate.clock() - result.observation.timestamp > self.observation_gate.max_age:
-                self.observation_gate.reject("expired_during_processing")
+            # Recheck after calibration/smoothing, immediately before any gaze
+            # dispatch. New valid frames are fine; a producer interruption is not.
+            rejection = self.tracker.get_dispatch_rejection(
+                result.observation, self.observation_gate.max_age,
+                clock=self.observation_gate.clock,
+            )
+            if rejection is not None:
+                self.observation_gate.reject(rejection)
                 self._interrupt_gaze()
                 return
             if self.verification_window is not None:

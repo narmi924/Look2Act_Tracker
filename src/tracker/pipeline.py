@@ -1183,6 +1183,11 @@ class TrackerPipeline:
         if self._thread is not None and self._thread.is_alive():
             self._notify_error("Previous capture thread has not stopped")
             return False
+        if self._thread is not None:
+            # A timed-out stop may have left resources owned by a late worker.
+            # is_alive() is now false: retire them before initialize overwrites them.
+            self._thread = None
+            self._cleanup_stopped_resources()
         if not self.initialize():
             return False
         
@@ -1192,14 +1197,16 @@ class TrackerPipeline:
             self._continuity = 0
             self._latest_result = None
             self._last_valid_result = None
-        self._running = True
+            self._running = True
         self._thread = threading.Thread(target=self.run, daemon=True)
         self._thread.start()
         return True
     
     def stop(self) -> None:
         """停止推理线程并释放资源。"""
-        self._running = False
+        with self._lock:
+            self._running = False
+            self._latest_result = None
         
         if self._thread is not None:
             self._thread.join(timeout=2.0)
@@ -1209,7 +1216,11 @@ class TrackerPipeline:
                 self._notify_error("Capture thread is still stopping; restart is blocked")
                 return
             self._thread = None
-        
+
+        self._cleanup_stopped_resources()
+
+    def _cleanup_stopped_resources(self) -> None:
+        """Idempotent cleanup; callers must first confirm the old worker has exited."""
         if self.cap is not None:
             self.cap.release()
             self.cap = None
@@ -1223,9 +1234,10 @@ class TrackerPipeline:
         if self.classic_smoother is not None:
             self.classic_smoother.reset()
 
-        self._last_valid_result = None
-        self._latest_result = None
-        self._latest_frame = None
+        with self._lock:
+            self._last_valid_result = None
+            self._latest_result = None
+            self._latest_frame = None
         self._frame_times.clear()
         
         print("推理管道资源已释放")
@@ -1234,6 +1246,33 @@ class TrackerPipeline:
         """获取最新的推理结果（线程安全）。"""
         with self._lock:
             return copy.deepcopy(self._latest_result)
+
+    def get_dispatch_rejection(
+        self, observation: Observation, max_age_s: float, *, clock=time.perf_counter,
+    ) -> Optional[str]:
+        """Recheck producer state immediately before UI dispatch; None allows it.
+
+        The same lock protects failure continuity, session, run/calibration state
+        and publication. This is a point-in-time check, not a lock held over OS/UI
+        actions, and cannot anticipate a failure that happens after it returns.
+        A newer valid sequence in the same continuity is deliberately allowed.
+        """
+        with self._lock:
+            now = clock()
+            if not self._running or (self._thread is not None and not self._thread.is_alive()):
+                return "producer_not_running"
+            if self._calibration_mode:
+                return "producer_calibrating"
+            if not isinstance(observation, Observation) or observation.session != self.session_id:
+                return "producer_session_changed"
+            if observation.continuity != self._continuity:
+                return "producer_continuity_changed"
+            if (not np.isfinite(now) or not np.isfinite(observation.timestamp)
+                    or observation.timestamp > now or now - observation.timestamp > max_age_s):
+                return "expired_during_processing"
+            if self._latest_result is None or not self._latest_result.valid:
+                return "producer_observation_unavailable"
+            return None
     
     def get_latest_frame(self) -> Optional[np.ndarray]:
         """获取最新的摄像头帧（线程安全）。"""
@@ -1250,7 +1289,7 @@ class TrackerPipeline:
         """设置校准模式。校准模式下禁用坐标 clamp，保留原始值。"""
         with self._lock:
             self._continuity += 1
-        self._calibration_mode = enabled
+            self._calibration_mode = enabled
         if self.smoother is not None:
             self.smoother.reset()
         if self.classic_smoother is not None:

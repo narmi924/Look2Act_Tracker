@@ -100,6 +100,36 @@ def qapp():
     yield app
 
 
+class ControlledTracker(TrackerPipeline):
+    """Real publication lock/state with synthetic results and no worker/camera."""
+    def __init__(self):
+        super().__init__('', SystemConfig())
+        self.session_id = 'session'
+        self.running = True
+
+    @property
+    def running(self):
+        return self.is_running()
+
+    @running.setter
+    def running(self, value):
+        with self._lock:
+            self._running = value
+
+    @property
+    def result(self):
+        return self._latest_result
+
+    @result.setter
+    def result(self, value):
+        with self._lock:
+            self._latest_result = value
+            stamp = getattr(value, 'observation', None)
+            if stamp is not None and stamp.session == self.session_id:
+                self._sequence = max(self._sequence, stamp.sequence)
+                self._continuity = max(self._continuity, stamp.continuity)
+
+
 @pytest.fixture(params=['desktop', 'launcher', 'board'])
 def interaction(request, qapp, monkeypatch):
     from src.ui import tracking_page as ui
@@ -110,10 +140,7 @@ def interaction(request, qapp, monkeypatch):
     clock = Clock()
     page.observation_gate = ObservationGate(clock=clock)
     page.tracker_config = SystemConfig()
-    tracker = SimpleNamespace(session_id='session', result=None, running=True)
-    tracker.is_running = lambda: tracker.running
-    tracker.get_latest_result = lambda: tracker.result
-    tracker.stop = lambda: setattr(tracker, 'running', False)
+    tracker = ControlledTracker()
     page.tracker = tracker
     calls, moves, samples = [], [], []
     monkeypatch.setattr(ui, 'perform_left_click', lambda: calls.append('click') or True)
@@ -144,7 +171,8 @@ def interaction(request, qapp, monkeypatch):
     epoch = [0]
     def feed(t, *, valid=True, continuity=None, point=(100., 100.)):
         clock.now = t
-        sequence[0] += 1
+        sequence[0] = max(sequence[0], tracker._sequence) + 1
+        epoch[0] = max(epoch[0], tracker._continuity)
         if continuity is not None: epoch[0] = continuity
         tracker.result = observation(sequence[0], t, continuity=epoch[0], backend='classic')
         tracker.result.valid = valid
@@ -522,3 +550,118 @@ def test_calibration_sampling_consumes_each_observation_once(qapp):
     widget._on_sampling_tick()
     assert not widget.current_samples
     widget.close()
+
+
+@pytest.mark.parametrize('phase', ['calibration', 'smoothing'])
+@pytest.mark.parametrize('event', ['invalid', 'invalid_then_valid', 'valid', 'stop', 'session', 'calibration'])
+def test_dispatch_rechecks_producer_after_processing(interaction, monkeypatch, phase, event):
+    """Publish during processing, 62.5 ms before dispatch, while the consumed frame is fresh."""
+    h = interaction
+    start = 10.125
+    steps = int(np.ceil(h.duration / 125.))
+    for i in range(steps):
+        h.feed(start + i * .125)
+    assert not h.calls
+    moves_before = len(h.moves)
+    target_time = start + steps * .125
+
+    def publish(valid):
+        # Exercise real producer stamping/failure accounting, then its publication lock.
+        monkeypatch.setattr(h.tracker, '_process_frame', lambda frame: TrackerResult(
+            (100., 100.), valid, 30., backend='classic',
+            error_message=None if valid else 'synthetic_failure'))
+        result = h.tracker.process_frame(None, captured_at=h.clock.now)
+        with h.tracker._lock:
+            h.tracker._latest_result = result
+
+    def processing_event():
+        h.clock.now += .0625
+        if event in ('invalid', 'invalid_then_valid'):
+            publish(False)
+        if event in ('valid', 'invalid_then_valid'):
+            publish(True)
+        if event == 'stop':
+            h.tracker.stop()
+        elif event == 'session':
+            with h.tracker._lock:
+                h.tracker.session_id = 'replacement-session'
+        elif event == 'calibration':
+            h.tracker.set_calibration_mode(True)
+
+    if phase == 'calibration':
+        original = h.page._apply_calibration_and_clamp_with_debug
+        def process(*args):
+            point = original(*args)
+            processing_event()
+            return point
+        monkeypatch.setattr(h.page, '_apply_calibration_and_clamp_with_debug', process)
+    else:
+        original = h.page.screen_stabilizer.update
+        def process(point):
+            result = original(point)
+            processing_event()
+            return result
+        monkeypatch.setattr(h.page.screen_stabilizer, 'update', process)
+
+    h.feed(target_time)
+    assert h.clock.now - target_time == .0625
+    if event == 'valid':
+        # A newer sequence alone must not prevent a normal completed dwell.
+        assert len(h.calls) == 1
+        return
+    assert h.calls == []
+    assert len(h.moves) == moves_before
+    h.cleared()
+
+    if phase == 'calibration':
+        monkeypatch.setattr(h.page, '_apply_calibration_and_clamp_with_debug', original)
+    else:
+        monkeypatch.setattr(h.page.screen_stabilizer, 'update', original)
+    if event in ('invalid', 'invalid_then_valid'):
+        # No inherited progress, but the complete new dwell remains usable.
+        recovered_at = h.clock.now + .125
+        h.feed(recovered_at)
+        assert not h.calls
+        h.hold(recovered_at + .125)
+        assert len(h.calls) == 1
+
+
+def test_late_worker_exit_cleans_resources_before_restart(monkeypatch):
+    import src.tracker.pipeline as module
+    pipeline = TrackerPipeline('', SystemConfig())
+    order = []
+    alive = [True]
+    cap = SimpleNamespace(release=lambda: order.append('release'))
+    detector = SimpleNamespace(close=lambda: order.append('close'))
+    pipeline.cap = cap
+    pipeline.face_detector = detector
+    pipeline._running = True
+    pipeline._latest_result = observation()
+    pipeline._thread = SimpleNamespace(
+        join=lambda **kw: order.append('join'), is_alive=lambda: alive[0])
+    old_session = pipeline.session_id
+
+    def initialize():
+        order.append('initialize')
+        assert order.count('release') == order.count('close') == 1
+        assert pipeline.cap is None and pipeline.face_detector is None
+        assert pipeline.get_latest_result() is None
+        return True
+    monkeypatch.setattr(pipeline, 'initialize', initialize)
+    monkeypatch.setattr(module.threading, 'Thread', lambda **kw: SimpleNamespace(
+        start=lambda: order.append('new_thread'), join=lambda **kw: None, is_alive=lambda: False))
+
+    pipeline.stop()  # join times out; resources are still in use
+    assert pipeline.cap is cap and pipeline.face_detector is detector
+    assert order == ['join']
+    assert pipeline.get_latest_result() is None
+    assert not pipeline.start()
+    assert order == ['join']
+    alive[0] = False  # old worker exits later, without any sleep
+    assert pipeline.start()
+    assert order == ['join', 'release', 'close', 'initialize', 'new_thread']
+    assert pipeline.session_id != old_session
+    assert pipeline._sequence == 0
+    pipeline.stop()
+    pipeline.stop()
+    assert order.count('release') == order.count('close') == 1
