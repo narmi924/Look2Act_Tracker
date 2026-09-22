@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import sys
 import time
 from pathlib import Path
@@ -19,8 +20,7 @@ if str(ROOT) not in sys.path:
 from src.calibration.calibrator import CalibrationModule
 from src.calibration.serializer import load_calibration
 from src.tracker.pipeline import SystemConfig, TrackerPipeline
-from src.tracker.observation import ObservationGate, ObservationState
-from src.tracker.screen_mapping import ScreenMapper
+from src.experiment.consumer import Consumer, PollSchedule
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,8 +31,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--deep-pose-input", choices=["live", "zero"], default=None)
     parser.add_argument("--deep-ray-origin", choices=["face_translation", "zero_origin"], default=None)
     parser.add_argument("--smoother", choices=["kalman", "ema", "none"], default=None)
-    parser.add_argument("--frames", type=int, default=300)
-    parser.add_argument("--interval", type=float, default=0.2)
+    parser.add_argument("--frames", type=int, default=300, help="Number of 33 ms consumption polls (including empty/duplicate), not printed rows")
+    parser.add_argument("--interval", type=float, default=0.2, help="Print interval only; CSV records every 33 ms consumption poll")
     parser.add_argument("--csv", dest="csv_path", default=None, help="Optional CSV output path.")
     parser.add_argument("--no-calibration", action="store_true")
     return parser.parse_args()
@@ -60,6 +60,25 @@ def _load_calibrator(config: SystemConfig) -> Optional[CalibrationModule]:
         f"{path.name} method={calibrator.method.value} residual={calibrator.residual_mean:.2f}"
     )
     return calibrator
+
+
+def diagnostic_row(event, index):
+    identity = event['observation_id'] or [None, None]
+    row = dict(index=index, session=identity[0], sequence=identity[1],
+               backend=event['backend'], source_valid=event['source_valid'],
+               source_time=event['source_time'], source_time_source=event['source_time_source'],
+               continuity=event['source_continuity'], published_at=event['published_at'],
+               consume_time=event['read_at'], processed_at=event['processed_at'], age_s=event['age_s'],
+               gate_state=event['gate_state'], gate_reason=event['gate_reason'], reset=event['reset'],
+               raw_units=event['raw_units'], screen_rejection=event['screen_rejection'],
+               calibrated_in_bounds=event['calibrated_in_bounds'], smoothed_in_bounds=event['smoothed_in_bounds'],
+               dispatch_rejection=event['dispatch_rejection'], dispatch_allowed=event['dispatch_allowed'])
+    for stage in ('raw', 'calibrated', 'smoothed', 'display'):
+        point = event[stage + '_point']
+        row[stage + '_x'], row[stage + '_y'] = point if point is not None else (None, None)
+    for name in ('source_timings', 'processing_timings', 'processing_status', 'dispatch_state'):
+        row[name] = json.dumps(event[name])
+    return row
 
 
 def main() -> int:
@@ -103,93 +122,34 @@ def main() -> int:
         print("[diagnose] failed to start tracker")
         return 2
 
-    printed = 0
-    last_print = 0.0
     csv_file = None
     csv_writer = None
-    if args.csv_path:
-        csv_path = Path(args.csv_path)
-        csv_file = csv_path.open("w", newline="", encoding="utf-8")
-        csv_writer = csv.DictWriter(
-            csv_file,
-            fieldnames=[
-                "index",
-                "time_s",
-                "backend",
-                "valid",
-                "face_detected",
-                "fps",
-                "raw_x",
-                "raw_y",
-                "calibrated_x",
-                "calibrated_y",
-                "raw_units", "smoothed_point", "display_point", "screen_rejection",
-                "error",
-                "timings",
-            ],
-        )
-        csv_writer.writeheader()
-        print(f"[diagnose] csv output: {csv_path}")
-    mapper = ScreenMapper()
-    gate = ObservationGate(config.max_observation_age_ms)
-    gate.reset(pipeline.session_id)
+    geometry = pipeline.screen_geometry
+    consumer = Consumer(config, calibrator, (geometry.screen_w_px, geometry.screen_h_px))
+    consumer.reset(pipeline.session_id, 'diagnostic_start')
+    schedule = PollSchedule(print_interval=args.interval)
+    count = 0
     try:
-        while printed < args.frames and pipeline.is_running():
-            now = time.perf_counter()
-            if now - last_print < args.interval:
-                time.sleep(0.01)
+        if args.csv_path:
+            csv_file = Path(args.csv_path).open('w', newline='', encoding='utf-8')
+        while count < args.frames and pipeline.is_running():
+            due, printing = schedule.due(time.perf_counter())
+            if not due:
+                time.sleep(.005)
                 continue
-            last_print = now
-
-            result = pipeline.get_latest_result()
-            state = gate.consume(result)
-            if state is ObservationState.INVALID or gate.reset_required:
-                mapper.reset()
-            if result is None:
-                print("[diagnose] waiting for first frame...")
-                printed += 1
-                continue
-
-            if state is ObservationState.DUPLICATE:
-                continue
-            if state is ObservationState.NEW:
-                geometry = pipeline.screen_geometry
-                result = mapper.process(result, config, calibrator,
-                                        (geometry.screen_w_px, geometry.screen_h_px))
-            raw = result.raw_point
-            calibrated = result.calibrated_point
-            timing = " ".join(f"{k}={v:.1f}ms" for k, v in result.timings.items())
-            if csv_writer is not None:
-                csv_writer.writerow(
-                    {
-                        "index": printed,
-                        "time_s": f"{time.time():.3f}",
-                        "backend": result.backend,
-                        "valid": result.valid,
-                        "face_detected": result.face_detected,
-                        "fps": f"{result.fps:.3f}",
-                        "raw_x": "" if raw is None else f"{raw[0]:.6f}",
-                        "raw_y": "" if raw is None else f"{raw[1]:.6f}",
-                        "calibrated_x": "" if calibrated is None else f"{calibrated[0]:.6f}",
-                        "calibrated_y": "" if calibrated is None else f"{calibrated[1]:.6f}",
-                        "raw_units": result.raw_units,
-                        "smoothed_point": result.smoothed_point,
-                        "display_point": result.display_point,
-                        "screen_rejection": result.screen_rejection or "",
-                        "error": result.error_message or "",
-                        "timings": timing,
-                    }
-                )
-            print(
-                f"[diagnose] #{printed:04d} "
-                f"backend={result.backend} valid={result.valid} face={result.face_detected} "
-                f"fps={result.fps:.1f} raw={_fmt_point(raw)} "
-                f"units={result.raw_units} calibrated={_fmt_point(calibrated)} "
-                f"smoothed={_fmt_point(result.smoothed_point)} display={_fmt_point(result.display_point)} "
-                f"screen_rejection={result.screen_rejection} "
-                f"err={result.error_message or '-'} {timing}"
-            )
-            printed += 1
+            event = consumer.consume(pipeline.get_latest_result(), pipeline.get_dispatch_snapshot)
+            row = diagnostic_row(event, count)
+            if csv_file:
+                if csv_writer is None:
+                    csv_writer = csv.DictWriter(csv_file, fieldnames=list(row))
+                    csv_writer.writeheader()
+                csv_writer.writerow(row)
+            if printing:
+                print(f"[diagnose] #{count} gate={event['gate_state']} reason={event['gate_reason']} "
+                      f"raw[{event['raw_units']}]={event['raw_point']} calibrated={event['calibrated_point']} "
+                      f"smoothed={event['smoothed_point']} display={event['display_point']} "
+                      f"screen_rejection={event['screen_rejection']} age_s={event['age_s']}")
+            count += 1
     except KeyboardInterrupt:
         print("[diagnose] interrupted")
     finally:

@@ -7,6 +7,7 @@ not change the backend's W/H normalization or geometric coordinate definitions.
 """
 from dataclasses import replace
 import math
+import time
 
 from src.tracker.classic import ClassicScreenSmoother
 from src.tracker.smoother import GazeSmoother
@@ -30,7 +31,8 @@ def display_point(point, size):
 
 
 class ScreenMapper:
-    def __init__(self, classic_smoother=None):
+    def __init__(self, classic_smoother=None, clock=time.perf_counter):
+        self.clock = clock
         self.classic = classic_smoother if classic_smoother is not None else ClassicScreenSmoother(history_len=60)
         self.ema = None
         self._configuration = None
@@ -52,7 +54,19 @@ class ScreenMapper:
             self.ema = GazeSmoother(config.smoother_alpha)
             self._configuration = key
         output = replace(result, calibrated_point=None, smoothed_point=None, display_point=None,
-                         calibrated_in_bounds=None, smoothed_in_bounds=None, screen_rejection=None)
+                         calibrated_in_bounds=None, smoothed_in_bounds=None, screen_rejection=None,
+                         processing_timings={'calibration': None, 'smoothing': None},
+                         processing_status={'calibration': 'not_executed', 'smoothing': 'not_executed'})
+
+        def measured(name, operation):
+            start = self.clock()
+            output.processing_status[name] = 'failed'
+            try:
+                value = operation()
+                output.processing_status[name] = 'measured'
+                return value
+            finally:
+                output.processing_timings[name] = (self.clock() - start) * 1000.
 
         def reject(reason):
             self.reset()
@@ -66,7 +80,9 @@ class ScreenMapper:
         if result.backend == 'classic' and not calibrated:
             return reject('classic_requires_calibration')
         try:
-            point = calibrator.apply(result.raw_point) if calibrated else result.raw_point
+            point = measured('calibration', lambda: calibrator.apply(result.raw_point)) if calibrated else result.raw_point
+            if not calibrated:
+                output.processing_status['calibration'] = 'identity_no_calibration'
             output.calibrated_point = point
             if not finite_point(point):
                 return reject('nonfinite_calibrated_point')
@@ -77,9 +93,10 @@ class ScreenMapper:
                 return reject('calibrated_out_of_bounds')
             if config.normalized_smoother_type == 'none':
                 smooth = point
+                output.processing_status['smoothing'] = 'disabled'
             else:
                 smoother = self.classic if result.backend == 'classic' else self.ema
-                smooth = smoother.update(point)
+                smooth = measured('smoothing', lambda: smoother.update(point))
             output.smoothed_point = smooth
             if not finite_point(smooth):
                 return reject('nonfinite_smoothed_point')

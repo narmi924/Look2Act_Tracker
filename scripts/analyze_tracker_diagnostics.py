@@ -84,17 +84,22 @@ def point_extent(df: pd.DataFrame, x_col: str, y_col: str) -> dict[str, float | 
 
 def analyze_file(csv_path: Path) -> dict[str, object]:
     df = pd.read_csv(csv_path)
+    raw_units = df['raw_units'].dropna().unique().tolist() if 'raw_units' in df else []
+    raw_units = raw_units[0] if len(raw_units) == 1 else 'unknown'
     summary: dict[str, object] = {
         "file": str(csv_path),
         "rows": int(len(df)),
         "backend_counts": df["backend"].value_counts(dropna=False).to_dict() if "backend" in df else {},
-        "valid_ratio": bool_ratio(df, "valid"),
+        "valid_ratio": bool_ratio(df, "source_valid" if 'source_valid' in df else "valid"),
+        "source_valid_ratio": bool_ratio(df, "source_valid") if 'source_valid' in df else None,
         "face_detected_ratio": bool_ratio(df, "face_detected"),
         "fps": describe(numeric_series(df, "fps")),
         "raw_extent": point_extent(df, "raw_x", "raw_y"),
         "calibrated_extent": point_extent(df, "calibrated_x", "calibrated_y"),
-        "raw_step_px": point_jitter(df, "raw_x", "raw_y"),
-        "calibrated_step_px": point_jitter(df, "calibrated_x", "calibrated_y"),
+        "raw_units": raw_units,
+        "gate_state_counts": df['gate_state'].value_counts().to_dict() if 'gate_state' in df else {'unknown': len(df)},
+        "raw_step": dict(continuous_steps(df, 'raw_x', 'raw_y'), units=raw_units),
+        "calibrated_step": dict(continuous_steps(df, 'calibrated_x', 'calibrated_y'), units='screen_px'),
     }
     if "error" in df.columns:
         errors = df["error"].fillna("").astype(str)
@@ -102,6 +107,34 @@ def analyze_file(csv_path: Path) -> dict[str, object]:
         summary["error_counts"] = non_empty.value_counts().head(20).to_dict()
         summary["error_ratio"] = float((errors != "").mean()) if len(errors) else 0.0
     return summary
+
+
+def continuous_steps(df, x_col, y_col):
+    """Per-frame displacement, NOT static fixation jitter. Never bridge rejections."""
+    required = {'gate_state', 'session', 'sequence', 'continuity', 'reset', x_col, y_col}
+    if not required.issubset(df.columns):
+        return {'count': 0, 'status': 'unknown_missing_gate_or_identity'}
+    steps, previous, seen = [], None, set()
+    for _, row in df.iterrows():
+        if row['gate_state'] == 'duplicate':
+            continue
+        if row['gate_state'] != 'new':
+            previous = None
+            continue
+        point = np.array([row[x_col], row[y_col]], dtype=float)
+        identity = (row['session'], row['sequence'])
+        key = (row['session'], row['continuity'])
+        rejected = any(pd.notna(row.get(k)) and str(row.get(k)) not in ('', 'None')
+                       for k in ('screen_rejection', 'dispatch_rejection'))
+        reset = str(row['reset']).lower() in ('true', '1')
+        if not np.all(np.isfinite(point)) or rejected or identity in seen:
+            previous = None
+            continue
+        seen.add(identity)
+        if not reset and previous is not None and previous[0] == key:
+            steps.append(float(np.linalg.norm(point - previous[1])))
+        previous = (key, point)
+    return describe(pd.Series(steps, dtype=float))
 
 
 def print_summary(summary: dict[str, object]) -> None:
@@ -122,9 +155,9 @@ def print_summary(summary: dict[str, object]) -> None:
             "[diag-summary]   raw extent "
             f"w={raw_extent['width']:.3f} h={raw_extent['height']:.3f}"
         )
-    raw_step = summary.get("raw_step_px", {})
+    raw_step = summary.get("raw_step", {})
     if isinstance(raw_step, dict) and raw_step.get("count", 0):
-        print(f"[diag-summary]   raw step mean={raw_step['mean']:.3f} p95={raw_step['p95']:.3f}")
+        print(f"[diag-summary]   raw step [{raw_step['units']}] mean={raw_step['mean']:.3f} p95={raw_step['p95']:.3f}")
     errors = summary.get("error_counts", {})
     if errors:
         print(f"[diag-summary]   top errors={errors}")

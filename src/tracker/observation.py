@@ -30,6 +30,24 @@ class ObservationState(Enum):
     INVALID = "invalid"
 
 
+def dispatch_rejection(observation, max_age_s, state, now):
+    """R1 point-in-time rule, shared by live locked snapshots and offline replay."""
+    if not state['running'] or not state['worker_alive']:
+        return 'producer_not_running'
+    if state['calibrating']:
+        return 'producer_calibrating'
+    if not isinstance(observation, Observation) or observation.session != state['session']:
+        return 'producer_session_changed'
+    if observation.continuity != state['continuity']:
+        return 'producer_continuity_changed'
+    if (not math.isfinite(now) or not math.isfinite(observation.timestamp)
+            or observation.timestamp > now or now - observation.timestamp > max_age_s):
+        return 'expired_during_processing'
+    if not state['latest_valid']:
+        return 'producer_observation_unavailable'
+    return None
+
+
 class ObservationGate:
     def __init__(self, max_age_ms=250.0, clock=time.perf_counter):
         self.max_age = validate_max_age(max_age_ms)
@@ -53,8 +71,8 @@ class ObservationGate:
         self.reset_required = True
         return ObservationState.INVALID
 
-    def consume(self, result):
-        now = self.clock()
+    def consume(self, result, *, now=None):
+        now = self.clock() if now is None else now
         obs = getattr(result, "observation", None)
         self.reset_required = False
         if not isinstance(obs, Observation) or not self.session or obs.session != self.session:

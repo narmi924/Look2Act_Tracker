@@ -38,7 +38,7 @@ from src.tracker.classic import (
     fuse_eye_features,
 )
 from src.tracker.smoother import GazeSmoother
-from src.tracker.observation import Observation, validate_max_age
+from src.tracker.observation import Observation, validate_max_age, dispatch_rejection
 from src.vision.head_pose import HeadPoseEstimator
 
 
@@ -103,6 +103,10 @@ class TrackerResult:
     debug: dict[str, object] = field(default_factory=dict)
     observation: Optional[Observation] = None
     point_kind: str = "observed"  # observed / held; identity is still mandatory
+    numeric_snapshot: Optional[dict] = None  # experiment-only, no images
+    published_at: Optional[float] = None
+    processing_timings: dict = field(default_factory=dict)  # consumer ms, None means not executed
+    processing_status: dict = field(default_factory=dict)
 
     @property
     def raw_units(self) -> str:
@@ -305,6 +309,8 @@ class TrackerPipeline:
         self._max_camera_retries = 3
         self._no_face_count = 0
         self._camera_disconnected = False
+        self.record_sink = None  # nonblocking numerical event enqueue, opt-in
+        self._frame_numeric = None
         
     def _notify_error(self, message: str) -> None:
         """通知 UI 层错误信息。
@@ -342,6 +348,7 @@ class TrackerPipeline:
             
             actual_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             actual_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            self.actual_camera_size = (actual_w, actual_h)
             _print(
                 "摄像头已打开："
                 f"请求 {self.config.camera_width}x{self.config.camera_height}，"
@@ -572,6 +579,7 @@ class TrackerPipeline:
         observation = self._stamp(time.perf_counter() if captured_at is None else captured_at,
                                   time_source)
         previous = self._last_valid_result
+        self._frame_numeric = {} if self.record_sink is not None else None
         try:
             result = self._process_frame(frame_bgr)
         except Exception as exc:
@@ -579,6 +587,7 @@ class TrackerPipeline:
                                    error_message=f"processing_exception: {exc}",
                                    face_detected=False, backend=self.config.normalized_backend)
         self._last_valid_result = previous
+        result.numeric_snapshot = copy.deepcopy(self._frame_numeric)
         return self._finish_observation(result, observation)
 
     def _process_frame(self, frame_bgr: np.ndarray) -> TrackerResult:
@@ -601,6 +610,9 @@ class TrackerPipeline:
         t0 = time.perf_counter()
         face_result = self.face_detector.detect(frame_bgr)
         timings['face_detection'] = (time.perf_counter() - t0) * 1000
+        if self._frame_numeric is not None:
+            from src.experiment.snapshots import face_snapshot
+            self._frame_numeric.update(face_snapshot(face_result))
         
         if not face_result.detected:
             self._no_face_count += 1
@@ -651,6 +663,10 @@ class TrackerPipeline:
         t0 = time.perf_counter()
         head_pose = self.head_pose_estimator.estimate(face_result.pnp_points_2d)
         timings['head_pose'] = (time.perf_counter() - t0) * 1000
+        if self._frame_numeric is not None:
+            from src.experiment.snapshots import pose_snapshot
+            self._frame_numeric['head_pose'] = pose_snapshot(head_pose)
+            self._frame_numeric['head_pose_status'] = 'estimated_online'
         
         pose_finite = all(np.all(np.isfinite(value)) for value in (
             head_pose.yaw, head_pose.pitch, head_pose.roll,
@@ -727,6 +743,8 @@ class TrackerPipeline:
                 ], dtype=np.float32)
             
             if self.model_version in {"v2", "pog_v1"}:
+                if self._frame_numeric is not None:
+                    self._frame_numeric['model_pose_input_deg'] = head_pose_vec.tolist()
                 if self.config.use_onnx:
                     left_batch = np.expand_dims(left_chw, axis=0)
                     right_batch = np.expand_dims(right_chw, axis=0)
@@ -1010,6 +1028,10 @@ class TrackerPipeline:
         right_pupil = detect_pupil_centroid(getattr(face_result, "right_eye_roi", None))
         left_abs = absolute_pupil_point(left_pupil, getattr(face_result, "left_eye_origin", None))
         right_abs = absolute_pupil_point(right_pupil, getattr(face_result, "right_eye_origin", None))
+        if self._frame_numeric is not None:
+            self._frame_numeric['classic_dark_centroid'] = dict(
+                left_roi=left_pupil, right_roi=right_pupil, left_frame=left_abs,
+                right_frame=right_abs, units='camera_px', method='dark_centroid_not_iris')
         frame_size = getattr(face_result, "frame_size", None) or (
             self.config.camera_width,
             self.config.camera_height,
@@ -1119,9 +1141,7 @@ class TrackerPipeline:
                     TrackerResult(None, False, 0., error_message="camera_read_failed",
                                   face_detected=False, backend=self.config.normalized_backend),
                     self._stamp(captured_at, "host_read_completed"))
-                with self._lock:
-                    if self._running:
-                        self._latest_result = failure
+                self._publish_result(failure)
                 logger.warning(f"摄像头帧获取失败，重试 {retry + 1}/{self._max_camera_retries}")
                 time.sleep(0.01)
             
@@ -1151,12 +1171,23 @@ class TrackerPipeline:
                 self._frame_times.pop(0)
             
             # 线程安全地更新最新结果
-            with self._lock:
-                if self._running:
-                    self._latest_result = result
-                    self._latest_frame = frame.copy()
+            self._publish_result(result, frame)
         
         print("推理管道已停止")
+
+    def _publish_result(self, result, frame=None):
+        with self._lock:
+            if not self._running:
+                return
+            result = replace(result, published_at=time.perf_counter())
+            self._latest_result = result
+            if frame is not None:
+                self._latest_frame = frame.copy()
+            sink = self.record_sink
+        # Numerical snapshot already belongs to this frame. No I/O/JSON in lock.
+        if sink is not None:
+            from src.experiment.snapshots import result_snapshot
+            sink('producer', result.published_at, result=result_snapshot(result))
     
     def start(self) -> bool:
         """启动推理线程。
@@ -1245,22 +1276,18 @@ class TrackerPipeline:
         actions, and cannot anticipate a failure that happens after it returns.
         A newer valid sequence in the same continuity is deliberately allowed.
         """
+        state = self.get_dispatch_snapshot(clock=clock)
+        return dispatch_rejection(observation, max_age_s, state, state['checked_at'])
+
+    def get_dispatch_snapshot(self, *, clock=time.perf_counter):
         with self._lock:
-            now = clock()
-            if not self._running or (self._thread is not None and not self._thread.is_alive()):
-                return "producer_not_running"
-            if self._calibration_mode:
-                return "producer_calibrating"
-            if not isinstance(observation, Observation) or observation.session != self.session_id:
-                return "producer_session_changed"
-            if observation.continuity != self._continuity:
-                return "producer_continuity_changed"
-            if (not np.isfinite(now) or not np.isfinite(observation.timestamp)
-                    or observation.timestamp > now or now - observation.timestamp > max_age_s):
-                return "expired_during_processing"
-            if self._latest_result is None or not self._latest_result.valid:
-                return "producer_observation_unavailable"
-            return None
+            return dict(checked_at=clock(), running=self._running,
+                        worker_alive=self._thread is None or self._thread.is_alive(),
+                        calibrating=self._calibration_mode, session=self.session_id,
+                        continuity=self._continuity,
+                        latest_valid=self._latest_result is not None and self._latest_result.valid,
+                        latest_sequence=(self._latest_result.observation.sequence
+                                         if self._latest_result and self._latest_result.observation else None))
     
     def get_latest_frame(self) -> Optional[np.ndarray]:
         """获取最新的摄像头帧（线程安全）。"""
