@@ -49,7 +49,7 @@ Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线
   独立 settings 测试 **13 passed、14 warnings**；合计 **288 passed、0 failed、0 skipped**，
   2 项主动排除的测试及全库长任务仍未执行。R2 合成对照再次通过。
 - 远端 PR #24 为普通 OPEN PR，检查列表为空，不宣称 CI 通过。
-  修复后用户已完成一次真实 AB 采集；暂停/恢复/跳过等控件尚未逐项确认。
+  修复后用户已完成一次真实 AB 采集；后续 A 协议控件验证见下。
   此修复只验证采集入口的加载顺序，历史原生 access violation **仍未解决**。
 
 2026-09-23 真实采集反馈与本地离线核验：
@@ -62,7 +62,8 @@ Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线
   `write_unconfirmed=0`。重新运行 `src.experiment.session.replay`：1533 条比较一致，
   0 mismatch、0 integrity issue、`strictly_reproducible=true`。
 - 这证实一次真实采集文件的数值回放可重现，不代表视线精度或长时稳定性。
-  暂停/继续/跳过、开始前无相机/文件操作、R1/R2 交互人工验证仍待明确执行。
+  当时尚未验证暂停/继续/跳过；后续人工检查见下。开始前无文件写入、
+  R1/R2 交互人工验证仍待明确执行。
   历史混合进程 access violation 根因仍未解决。
 
 2026-09-23 PR #24 审阅补修（基于 `efc582aff25addff1915f8da58161626d438c6cd`）：
@@ -89,8 +90,26 @@ Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线
   独立 settings **13 passed、14 第三方 warnings**，合计 **306 passed、0 failed、0 skipped、2 主动未执行**。
   合成 selftest/replay 两个命令退出码均为 0，
   **20/20 比较一致、0 mismatch、0 完整性问题、0 写丢失**。远端 CI 无检查结果；
-  未自动运行真实相机或系统动作。R3 暂停/继续/跳过的实机流程仍待核验，
+  未自动运行真实相机或系统动作。R3 控件实机结果见下，
   历史原生 access violation 根因未解决。
+
+2026-09-23 用户协作的短时 R3 控件验证：
+
+- 在安全桌面运行 Classic A；用户确认点击“开始”前终端无相机打开日志、指示灯未亮。
+  开始后相机/检测器/管道初始化、黄色目标显示正常；暂停后目标消失并显示暂停；
+  继续后目标重新出现，跳过后切换目标，结束后未报告异常。
+- 只检查最新本地会话的事件类型、目标轮次和完成/回放计数；未输出、提交或上传眼部数值。
+  会话 complete=true，`write_lost=0`、`write_unconfirmed=0`，自动回放 **143/143 一致**，
+  0 mismatch、0 issue。事件有 1 次 pause/resume、2 次已绘制后的 skip；
+  两次对应 `user_skipped_after_paint`，均没有错误的 skipped 事件。
+  正常手动结束为 `user_end`，4 次 target_closed 中有 1 次自然完成、2 次已绘制跳过、
+  1 次已绘制后手动结束。
+- 记录到的暂停间隔约 1.43 s（没有达到原提示的 3 s），恢复请求到绘制提交约 2.1 ms；
+  恢复绘制后 100 ms 的目标标签是 settling。后两者是主机时间/软件状态，
+  不是物理显示延迟或用户注视真值。
+- 已验证一次普通启动、短暂停/继续、已绘制目标跳过及结束保存；
+  未绘制前跳过、长时间暂停、异常退出、断流，以及 R1/R2 眼控交互仍待人工验证。
+  单次采集未出现 DLL 错误，历史原生 access violation 根因仍未解决。
 
 沿用已授权 uv 隔离环境，未安装/升级依赖。`R1_PY` 同后方环境约定：
 
@@ -118,7 +137,9 @@ QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
 
 格式、三个入口和参数见 [EXPERIMENTS.md](EXPERIMENTS.md)。用户手动采集命令：
 `"$R1_PY" scripts/experiment.py collect --config configs/classic.yaml --protocol AB`。
-真实采集已完成一次 AB 全协议且回放通过；其余人工核验 **待执行**：安全环境下检查开始前不启相机、不写数据，暂停/恢复/跳过等控件及异常退出场景。
+真实采集已完成一次 AB 全协议且回放通过；另一次 A 协议验证了开始前相机未打开、
+短暂停/继续与已绘制目标跳过。其余人工核验 **待执行**：开始前无文件写入、
+未绘制前跳过、长时间暂停、异常退出与断流场景。
 采集无需通过旧验证页面；无校准只记录可用阶段，Classic 不计算屏幕误差。不要在本次评估数据上拟合再报告效果。
 
 这支持眼角/虹膜/暗色质心/ROI/PnP 的后续数值特征研究及后处理回放，不支持重跑检测器、重裁眼图或外观网络训练。
