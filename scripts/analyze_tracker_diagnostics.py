@@ -46,11 +46,20 @@ def describe(values: pd.Series) -> dict[str, float | int]:
     }
 
 
-def bool_ratio(df: pd.DataFrame, column: str) -> float:
-    if column not in df.columns or df.empty:
-        return 0.0
-    normalized = df[column].astype(str).str.lower().isin({"true", "1", "yes"})
-    return float(normalized.mean())
+def bool_counts(df: pd.DataFrame, column: str) -> dict[str, object]:
+    if column not in df.columns:
+        return dict(true=0, denominator=0, unknown_rows=len(df), ratio=None)
+    normalized = df[column].astype('string').str.strip().str.lower()
+    positive = normalized.isin({'true', '1', '1.0', 'yes'})
+    known = normalized.isin({'true', '1', '1.0', 'yes', 'false', '0', '0.0', 'no'})
+    denominator = int(known.sum())
+    numerator = int(positive.sum())
+    return dict(true=numerator, denominator=denominator, unknown_rows=len(df) - denominator,
+                ratio=numerator / denominator if denominator else None)
+
+
+def bool_ratio(df: pd.DataFrame, column: str) -> float | None:
+    return bool_counts(df, column)['ratio']
 
 
 def point_jitter(df: pd.DataFrame, x_col: str, y_col: str) -> dict[str, float | int]:
@@ -86,14 +95,24 @@ def analyze_file(csv_path: Path) -> dict[str, object]:
     df = pd.read_csv(csv_path)
     raw_units = df['raw_units'].dropna().unique().tolist() if 'raw_units' in df else []
     raw_units = raw_units[0] if len(raw_units) == 1 else 'unknown'
+    valid_column = 'source_valid' if 'source_valid' in df else 'valid'
+    valid_counts = bool_counts(df, valid_column)
+    face_counts = bool_counts(df, 'face_detected')
+    fps = describe(numeric_series(df, 'fps'))
+    fps['denominator'] = len(df)
+    fps['unavailable_count'] = len(df) - fps['count']
+    if fps['count'] == 0:
+        fps['status'] = 'unavailable'
     summary: dict[str, object] = {
         "file": str(csv_path),
         "rows": int(len(df)),
         "backend_counts": df["backend"].value_counts(dropna=False).to_dict() if "backend" in df else {},
-        "valid_ratio": bool_ratio(df, "source_valid" if 'source_valid' in df else "valid"),
+        "valid_ratio": valid_counts['ratio'],
+        "valid_counts": valid_counts,
         "source_valid_ratio": bool_ratio(df, "source_valid") if 'source_valid' in df else None,
-        "face_detected_ratio": bool_ratio(df, "face_detected"),
-        "fps": describe(numeric_series(df, "fps")),
+        "face_detected_ratio": face_counts['ratio'],
+        "face_detected_counts": face_counts,
+        "fps": fps,
         "raw_extent": point_extent(df, "raw_x", "raw_y"),
         "calibrated_extent": point_extent(df, "calibrated_x", "calibrated_y"),
         "raw_units": raw_units,
@@ -106,6 +125,10 @@ def analyze_file(csv_path: Path) -> dict[str, object]:
         non_empty = errors[errors != ""]
         summary["error_counts"] = non_empty.value_counts().head(20).to_dict()
         summary["error_ratio"] = float((errors != "").mean()) if len(errors) else 0.0
+        summary["error_count"] = len(non_empty)
+        summary["error_denominator"] = len(errors)
+    else:
+        summary["error_ratio"] = None
     return summary
 
 
@@ -139,16 +162,23 @@ def continuous_steps(df, x_col, y_col):
 
 def print_summary(summary: dict[str, object]) -> None:
     print(f"[diag-summary] {summary['file']} rows={summary['rows']}")
+    def ratio_text(counts):
+        ratio = counts['ratio']
+        value = 'unknown' if ratio is None else f'{ratio:.3f}'
+        return f"{value} ({counts['true']}/{counts['denominator']}; unknown={counts['unknown_rows']})"
+    error_ratio = summary.get('error_ratio')
+    error_text = 'unknown' if error_ratio is None else (
+        f"{error_ratio:.3f} ({summary['error_count']}/{summary['error_denominator']})")
     print(
-        "[diag-summary]   valid={:.3f} face={:.3f} error={:.3f}".format(
-            summary.get("valid_ratio", 0.0),
-            summary.get("face_detected_ratio", 0.0),
-            summary.get("error_ratio", 0.0),
-        )
+        f"[diag-summary]   valid={ratio_text(summary['valid_counts'])} "
+        f"face={ratio_text(summary['face_detected_counts'])} error={error_text}"
     )
     fps = summary.get("fps", {})
     if isinstance(fps, dict) and fps.get("count", 0):
-        print(f"[diag-summary]   fps mean={fps['mean']:.1f} p50={fps['p50']:.1f} p95={fps['p95']:.1f}")
+        print(f"[diag-summary]   fps mean={fps['mean']:.1f} p50={fps['p50']:.1f} p95={fps['p95']:.1f} "
+              f"(n={fps['count']}/{fps['denominator']})")
+    else:
+        print('[diag-summary]   fps=unknown')
     raw_extent = summary.get("raw_extent", {})
     if isinstance(raw_extent, dict) and raw_extent.get("count", 0):
         print(

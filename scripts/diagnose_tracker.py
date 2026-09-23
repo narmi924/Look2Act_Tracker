@@ -66,6 +66,7 @@ def diagnostic_row(event, index):
     identity = event['observation_id'] or [None, None]
     row = dict(index=index, session=identity[0], sequence=identity[1],
                backend=event['backend'], source_valid=event['source_valid'],
+               face_detected=event.get('source_face_detected'), fps=event.get('source_fps'),
                source_time=event['source_time'], source_time_source=event['source_time_source'],
                continuity=event['source_continuity'], published_at=event['published_at'],
                consume_time=event['read_at'], processed_at=event['processed_at'], age_s=event['age_s'],

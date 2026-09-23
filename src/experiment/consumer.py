@@ -35,6 +35,8 @@ class Consumer:
             self.mapper.reset()
         out = None
         event = dict(read_at=at, observation_id=observation_id(result), source_valid=None if result is None else result.valid,
+                     source_face_detected=None if result is None or result.observation is None else result.face_detected,
+                     source_fps=None if result is None or result.observation is None else result.fps,
                      source_time=None if result is None or result.observation is None else result.observation.timestamp,
                      source_time_source=None if result is None or result.observation is None else result.observation.time_source,
                      source_continuity=None if result is None or result.observation is None else result.observation.continuity,

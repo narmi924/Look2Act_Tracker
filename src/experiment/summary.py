@@ -100,6 +100,15 @@ def summarize(meta, events):
     for group in ('source_timings', 'processing_timings'):
         keys = set().union(*(e[group].keys() for e in independent)) if independent else set()
         timing[group] = {key: stats([e[group].get(key) for e in independent]) for key in keys}
+    paints = [e for e in events if e['kind'] == 'target_painted']
+    outcomes = Counter(e['outcome'] for e in events if e['kind'] == 'target_closed')
+    modern_requests = any(e['kind'] == 'target_request' and 'epoch' in e for e in events)
+    outcome_status = 'recorded' if outcomes else ('no_closed_target_yet' if modern_requests else 'unavailable_legacy')
+
+    def paint_timing(field):
+        available = [e['at'] - e[field] for e in paints
+                     if type(e.get(field)) in (int, float) and np.isfinite(e[field])]
+        return dict(stats(available), denominator=len(paints), unavailable_count=len(paints) - len(available))
     return dict(complete=meta.get('complete', False), producer_count=len(producers),
                 independent_consumed=denominator, total_consumption_ticks=len(consumers),
                 duplicate_ticks=sum(e['gate_state'] == 'duplicate' for e in consumers),
@@ -116,8 +125,14 @@ def summarize(meta, events):
                                ranges_deg={key: stats(values) for key, values in poses.items()}),
                 protocol=dict(selection=meta['plan']['selection'], planned=len(meta['plan']['segments']),
                               painted=len(set(e['segment'] for e in events if e['kind'] == 'target_painted')),
-                              paint_delay_s=stats([e['at'] - e['planned_at'] for e in events
-                                                   if e['kind'] == 'target_painted' and 'planned_at' in e]),
-                              skipped=[e.get('segment') for e in events if e['kind'] in ('skip', 'skipped')],
+                              paint_delay_s=paint_timing('requested_at'),
+                              paint_plan_deviation_s=paint_timing('planned_at'),
+                              skipped=list(dict.fromkeys(e['segment'] for e in events if e['kind'] in ('skip', 'skipped'))),
+                              user_skips=[dict(segment=e['segment'], epoch=e.get('epoch'),
+                                               was_painted=e.get('was_painted'))
+                                          for e in events if e['kind'] == 'skip'],
+                              unpainted=[dict(segment=e['segment'], epoch=e.get('epoch'), reason=e.get('reason'))
+                                         for e in events if e['kind'] == 'skipped'],
+                              outcome_counts=dict(outcomes), outcome_status=outcome_status,
                               end_reasons=[e['reason'] for e in events if e['kind'] == 'end']),
                 interpretation='instructed_target is not independently measured gaze; numerical replay only')

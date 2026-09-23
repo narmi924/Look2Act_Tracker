@@ -45,7 +45,7 @@ collect 的输出使用随机会话目录名，结束时显示名称。可选 `-
 | `producer` | 原 Observation 全部字段、published_at、source valid（字段 `result.valid`）、失败原因、raw/单位、同帧眼部/PnP/在线头姿/模型实际姿态输入、生产计算耗时 |
 | `consume` | 读取 ID（可空）、read_at/processed_at/age、门控结果与 reset、四阶段数值、范围/拒绝、检查时刻与生产端一致快照、放行结果、实际处理耗时/执行状态 |
 | `context` | 消费会话/重置原因/active；回放恢复相同边界 |
-| `start/target_request/target_painted/skipped/pause/resume/skip/end` | 计划时刻、实际绘制提交时刻、未显示/用户跳过、暂停等历史；requested_motion 只是协议指令 |
+| `start/target_request/target_painted/target_closed/skipped/pause/resume/skip/end` | 计划/本次请求/绘制提交时刻、目标关闭结果、未显示/用户跳过、暂停等历史；requested_motion 只是协议指令 |
 | `summary.json` | 计数与分母、源失败/消费拒绝、采样间隔/年龄/耗时、阶段可计算/越界比例、按目标连续段的偏差/离散程度、在线姿态范围及回放差异 |
 
 事件用有序 `event_id` 流式写入 `events.jsonl`；观察身份仍是原 session/sequence，不重分配。
@@ -53,6 +53,17 @@ monotonic_origin_s 记录统一 perf_counter 时间原点，各事件保留该�
 read_at 是取得结果快照之后、开始门控前的主机时刻；published_at 在生产端发布锁内建立；
 dispatch_state.checked_at 是同一生产端锁内复核快照的时刻。processed_at 表示处理完成，并非显示完成。
 相机时间是 read 返回时间，不是曝光时间；target_painted 在 Qt 绘制提交附近，不是像素真正亮起时间。
+`target_request.at` 是本次请求显示的主机时刻；恢复同一目标会产生带新 epoch 的请求。
+`target_painted.requested_at` 对应这次请求，`planned_at` 是协议排程时间，`at` 是绘制提交时刻。
+`summary.protocol.paint_delay_s` 统计 `at-requested_at`，`paint_plan_deviation_s` 单独统计 `at-planned_at`；
+两者都不是物理像素点亮或端到端显示延迟。未绘制不产生提交时间；旧 schema_version=1 事件缺少 requested_at
+时，绘制等待标 unavailable 并计入 unavailable_count，不用 planned_at 冒充请求时刻，也不改旧 events.jsonl。
+`target_closed` 用 segment+epoch 标识一次显示轮次：completed_after_paint、deadline_without_paint、
+user_skipped_after_paint、user_skipped_before_paint、user_end_after_paint、user_end_before_paint。
+已绘制后跳过只产生 skip/target_closed，不产生未绘制的 skipped；未绘制跳过保留 skipped，原因是
+user_skip_before_paint；超时未绘制仍是 not_painted_before_deadline。跳过最后目标的 end 原因为
+user_skip_complete，正常走完为 protocol_complete。摘要的 skipped 按 segment 去重，user_skips/unpainted
+保留 epoch 与原因，outcome_counts 只数 target_closed；旧会话缺此事件时 outcome_status 为 unavailable_legacy。
 目标按源 timestamp 关联**实际**绘制历史；延迟推理不会被贴到新目标，跳过未绘制目标不产生标签。
 边界 ±guard 标 time_uncertain；没有实际目标、暂停、恢复未绘制、结束后均 unavailable。无硬件同步保证。
 
@@ -91,10 +102,15 @@ PnP 参数足以用现有估计器离线生成辅助姿态，但 R3 没有自动
 `--frames` 现在是消费轮询次数（含空/重复），CSV 每次轮询一行，不再按打印次数截取。
 CSV 是事件字段投影，不能替代包含全部生产事件的规范会话；没有生产记录时无法发现所有被覆盖的数值。
 CSV 增加身份/源时间来源/消费时间/年龄/状态/范围和执行耗时，源 valid 与消费接受分开。
+新 CSV 的 face_detected/fps 取自该轮读取的 TrackerResult；无结果或无观测身份时留空。
+分析器按有已知布尔值的 CSV 行计算 true/denominator，另报 unknown_rows；重复读取仍是多行，
+因此它是诊断轮询行比例，不是独立相机帧检出率。实测 False/0 保留为零，旧 CSV 缺列、
+空轮询或全部缺测标 unknown/null；终端、JSON 摘要沿用同一分子和分母。
 分析器旧文件缺状态/单位写 unknown，Classic raw 位移不标 px；跨失效不连接位移，也不把位移叫静态抖动。
 
 ScreenMapper 在实际校准/平滑调用处测时，独立 processing_timings 不覆盖源 timings；
 未执行为 null，none 对应 disabled；UI 后处理后显示，缺测为“—”。计算耗时不等于滤波响应延迟，
 各模块耗时之和不是完整端到端显示延迟。
 
-真实摄像头采集和 R1/R2 人工验收仍待执行；原生 access violation 根因未解决。
+已完成一次真实 Classic AB 全协议采集与离线回放。R3 暂停/继续/跳过及 R1/R2 人工验收仍待执行；
+原生 access violation 根因未解决。

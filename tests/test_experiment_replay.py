@@ -1,5 +1,6 @@
 """R3 numerical tests: no cameras, model weights, network or real OS actions."""
 import copy
+import csv
 import json
 import threading
 from dataclasses import replace
@@ -438,6 +439,32 @@ def test_csv_projection_contains_rejected_valid_source(tmp_path, monkeypatch):
     assert row['source_time'] == 10.125 and row['consume_time'] == 10.5
     assert row['source_time_source'] == 'host_read_completed'
     assert json.loads(row['processing_timings'])['smoothing'] is None
+    h.finish()
+
+
+def test_diagnostic_csv_preserves_observed_face_and_fps_but_empty_poll_is_missing(tmp_path, monkeypatch):
+    from scripts.diagnose_tracker import diagnostic_row
+    from scripts.analyze_tracker_diagnostics import analyze_file
+    h = Harness(tmp_path / 'diagnostic-source', monkeypatch)
+    empty = diagnostic_row(h.consume(), 0)
+    assert empty['face_detected'] is None and empty['fps'] is None
+    h.publish(10.125)
+    observed = diagnostic_row(h.consume(), 1)
+    assert observed['face_detected'] is True and observed['fps'] == 30.
+    h.clock.now = 10.25
+    failed = TrackerResult(None, False, 0., raw_point=None, backend='deep', face_detected=False)
+    failed = h.tracker._finish_observation(failed, h.tracker._stamp(10.25, 'host_read_completed'))
+    h.tracker._publish_result(failed)
+    failure_row = diagnostic_row(h.consume(), 2)
+    assert failure_row['face_detected'] is False and failure_row['fps'] == 0.
+    csv_path = tmp_path / 'diagnostic.csv'
+    with csv_path.open('w', newline='', encoding='utf-8') as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(empty))
+        writer.writeheader()
+        writer.writerows((empty, observed, failure_row))
+    summary = analyze_file(csv_path)
+    assert summary['face_detected_counts'] == dict(true=1, denominator=2, unknown_rows=1, ratio=.5)
+    assert summary['fps']['count'] == 2 and summary['fps']['min'] == 0.
     h.finish()
 
 

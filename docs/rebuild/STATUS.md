@@ -65,10 +65,37 @@ Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线
   暂停/继续/跳过、开始前无相机/文件操作、R1/R2 交互人工验证仍待明确执行。
   历史混合进程 access violation 根因仍未解决。
 
+2026-09-23 PR #24 审阅补修（基于 `efc582aff25addff1915f8da58161626d438c6cd`）：
+
+- `Protocol.skip/tick` 原先递增 epoch 后用新 epoch 检查旧目标，已绘制目标会被误记
+  `not_painted_before_deadline`。现在目标关闭记录 segment+epoch 和结果：正常绘制完成、
+  截止前未绘制、用户跳过已绘制/未绘制、手动提前结束。真正未绘制仍保留 skipped；
+  最后目标手动跳过以 `user_skip_complete` 结束。摘要 skipped 按 segment 去重，
+  user_skips/unpainted/outcome_counts 分别显示动作、缺画与关闭结果。
+- 恢复同一目标会重新发出 target_request；target_painted 保存对应 requested_at、原 planned_at、
+  实际 at。paint_delay_s 现在是请求到绘制提交的主机等待；计划偏差另列
+  paint_plan_deviation_s。旧 schema_version=1 会话没有 requested_at 时标 unavailable，
+  不用计划时刻伪造零等待。没有改动用户的原始 events.jsonl 或已有真实 AB 会话。
+- 诊断 CSV 从该轮源结果取 face_detected/fps；无结果/身份留空。分析器对已知布尔值
+  报 true/denominator/unknown_rows，实测 False 与 FPS=0 保留为零；缺列/全缺测为
+  unknown。终端与 JSON 使用同一统计；重复 poll 按行计，不声称独立相机帧检出率。
+- 本机先写失败回归：已绘制后 skip 实测多出 skipped；恢复后回归因缺 requested_at
+  失败；旧 CSV 缺 face 字段实测为 0.0；诊断投影缺 face_detected 字段。修复后通过。
+  审阅者独立环境的 15 项（13 通过、2 失败）是另一次记录，不与下述本机套件混计。
+- 本机新定向测试 `tests/test_experiment_protocol_regressions.py`（12 项）、
+  `tests/test_analyze_tracker_diagnostics.py` 中缺列/混合/全 False/真实零 FPS 回归，
+  及 `tests/test_experiment_replay.py::test_diagnostic_csv_preserves_observed_face_and_fps_but_empty_poll_is_missing`
+  均通过；诊断命令 JSON/终端一致性也通过。主相关套件 **293 passed、2 deselected**；
+  独立 settings **13 passed、14 第三方 warnings**，合计 **306 passed、0 failed、0 skipped、2 主动未执行**。
+  合成 selftest/replay 两个命令退出码均为 0，
+  **20/20 比较一致、0 mismatch、0 完整性问题、0 写丢失**。远端 CI 无检查结果；
+  未自动运行真实相机或系统动作。R3 暂停/继续/跳过的实机流程仍待核验，
+  历史原生 access violation 根因未解决。
+
 沿用已授权 uv 隔离环境，未安装/升级依赖。`R1_PY` 同后方环境约定：
 
 ```bash
-QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_experiment_replay.py tests/test_screen_mapping.py tests/test_observation_safety.py tests/test_tracker_pipeline.py tests/test_classic_pipeline.py tests/test_classic_tracker.py tests/test_tracking_page_unit.py tests/test_calibration.py tests/test_calibration_flow_helpers.py tests/test_smoother.py tests/test_geometry.py tests/test_head_pose.py tests/test_analyze_tracker_diagnostics.py tests/test_config.py -k 'not test_error_callback and not test_process_frame_with_mock_frame' -q
+QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_experiment_protocol_regressions.py tests/test_experiment_startup.py tests/test_experiment_replay.py tests/test_screen_mapping.py tests/test_observation_safety.py tests/test_tracker_pipeline.py tests/test_classic_pipeline.py tests/test_classic_tracker.py tests/test_tracking_page_unit.py tests/test_calibration.py tests/test_calibration_flow_helpers.py tests/test_smoother.py tests/test_geometry.py tests/test_head_pose.py tests/test_analyze_tracker_diagnostics.py tests/test_config.py -k 'not test_error_callback and not test_process_frame_with_mock_frame' -q
 QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
 "$R1_PY" scripts/compare_screen_mapping.py
 "$R1_PY" scripts/experiment.py selftest --output experiment_sessions/synthetic-demo

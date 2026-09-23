@@ -60,13 +60,19 @@ class Protocol:
         self.drawn = None
         self.finished = False
         self.epoch = 0
+        self.requested_at = None
+
+    def _request(self, index, at, reason):
+        self.requested_at = at
+        self.sink('target_request', at, segment=index, epoch=self.epoch, reason=reason,
+                  planned_at=self.started + self.shift + self.plan['segments'][index]['planned_offset_s'])
 
     def start(self):
         self.started = self.clock()
         self.sink('start', self.started)
         self.tick()
 
-    def tick(self):
+    def tick(self, _user_skip=None):
         if self.started is None or self.paused_at is not None or self.finished:
             return None
         now = self.clock()
@@ -78,14 +84,22 @@ class Protocol:
         if self.current != index:
             previous = -1 if self.current is None else self.current
             for skipped in range(previous, index):
-                if skipped >= 0 and self.drawn != (skipped, self.epoch):
-                    self.sink('skipped', now, segment=skipped, reason='not_painted_before_deadline')
+                if skipped < 0:
+                    continue
+                user_skipped = _user_skip is not None and skipped == _user_skip[0]
+                epoch = _user_skip[1] if user_skipped else self.epoch
+                painted = _user_skip[2] if user_skipped else self.drawn == (skipped, epoch)
+                outcome = ('user_skipped_after_paint' if painted else 'user_skipped_before_paint') if user_skipped else (
+                    'completed_after_paint' if painted else 'deadline_without_paint')
+                self.sink('target_closed', now, segment=skipped, epoch=epoch, outcome=outcome)
+                if not painted:
+                    reason = 'user_skip_before_paint' if user_skipped else 'not_painted_before_deadline'
+                    self.sink('skipped', now, segment=skipped, epoch=epoch, reason=reason)
             self.current = index
             if index == len(offsets):
-                self.end('protocol_complete')
+                self.end('user_skip_complete' if _user_skip is not None else 'protocol_complete')
                 return None
-            self.sink('target_request', now, segment=index,
-                      planned_at=self.started + self.shift + offsets[index])
+            self._request(index, now, 'schedule')
         return self.plan['segments'][index]
 
     def painted(self):
@@ -95,7 +109,8 @@ class Protocol:
         if key != self.drawn:
             segment = self.plan['segments'][self.current]
             self.sink('target_painted', self.clock(), **segment, epoch=self.epoch,
-                      planned_at=self.started + self.shift + segment['planned_offset_s'])
+                      planned_at=self.started + self.shift + segment['planned_offset_s'],
+                      requested_at=self.requested_at)
             self.drawn = key
 
     def pause(self):
@@ -110,18 +125,26 @@ class Protocol:
             self.paused_at = None
             self.epoch += 1
             self.sink('resume', now)
+            if self.current is not None and self.current < len(self.plan['segments']):
+                self._request(self.current, now, 'resume')
 
     def skip(self):
         if self.current is not None and not self.finished and self.paused_at is None:
             now = self.clock()
-            self.sink('skip', now, segment=self.current)
+            closed = (self.current, self.epoch, self.drawn == (self.current, self.epoch))
+            self.sink('skip', now, segment=self.current, epoch=self.epoch,
+                      was_painted=closed[2])
             next_offset = self.plan['segments'][self.current]['planned_offset_s'] + self.plan['segments'][self.current]['duration_s']
             self.shift = now - self.started - next_offset
             self.epoch += 1
-            self.tick()
+            self.tick(_user_skip=closed)
 
     def end(self, reason='user_end'):
         if not self.finished:
+            if reason == 'user_end' and self.current is not None and self.current < len(self.plan['segments']):
+                painted = self.drawn == (self.current, self.epoch)
+                self.sink('target_closed', self.clock(), segment=self.current, epoch=self.epoch,
+                          outcome='user_end_after_paint' if painted else 'user_end_before_paint')
             self.finished = True
             self.sink('end', self.clock(), reason=reason)
 
