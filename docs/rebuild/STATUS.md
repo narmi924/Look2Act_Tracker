@@ -1,4 +1,4 @@
-# 重启进度：R3（待外部审阅、真实采集验证）
+# 重启进度：R3（待外部审阅；已有一次真实采集）
 
 当前目标：普通 Windows + RGB 摄像头上的眼控优先交互；保留键鼠急停。
 Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线。
@@ -49,8 +49,21 @@ Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线
   独立 settings 测试 **13 passed、14 warnings**；合计 **288 passed、0 failed、0 skipped**，
   2 项主动排除的测试及全库长任务仍未执行。R2 合成对照再次通过。
 - 远端 PR #24 为普通 OPEN PR，检查列表为空，不宣称 CI 通过。
-  修复后的真实采集、暂停/恢复/结束和该会话回放仍待用户重试。
+  修复后用户已完成一次真实 AB 采集；暂停/恢复/跳过等控件尚未逐项确认。
   此修复只验证采集入口的加载顺序，历史原生 access violation **仍未解决**。
+
+2026-09-23 真实采集反馈与本地离线核验：
+
+- 用户在 Windows/RGB 相机上运行 `collect --config configs/classic.yaml --protocol AB`；
+  日志确认相机、检测器、Classic 管道启动及正常停止。用户本次未报告 DLL 错误。
+- 检查 Git 忽略的最新本地会话，仅提取完成/完整性统计，未读取或上传原始观测值：
+  `complete=true`；AB 计划/绘制目标 30/30，结束原因为 `protocol_complete`。
+  2154 条生产观测，1533 次消费轮询，1525 条独立消费；`write_lost=0`，
+  `write_unconfirmed=0`。重新运行 `src.experiment.session.replay`：1533 条比较一致，
+  0 mismatch、0 integrity issue、`strictly_reproducible=true`。
+- 这证实一次真实采集文件的数值回放可重现，不代表视线精度或长时稳定性。
+  暂停/继续/跳过、开始前无相机/文件操作、R1/R2 交互人工验证仍待明确执行。
+  历史混合进程 access violation 根因仍未解决。
 
 沿用已授权 uv 隔离环境，未安装/升级依赖。`R1_PY` 同后方环境约定：
 
@@ -67,7 +80,7 @@ QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
   新 R3 测试 40 项，含真实数值 Classic 滤波越界/恢复、精确时钟边界、Qt offscreen 实际实验窗口闭环及诊断主入口打印间隔独立性。
   开发中测试矩阵列顺序写错、将 CPU 耗时也纳入确定性比较，各造成一次测试失败；分别按现有多项式基底和明确的耗时排除规则修正，未改算法。
 - 2 项未执行仍为真实摄像头 test_error_callback、真实检测器/模型 test_process_frame_with_mock_frame。
-  全库模型/训练/数据测试、真实相机/系统操作未执行；原生 access violation **仍未解决**。
+  全库模型/训练/数据测试、Codex 自动真实相机/系统操作未执行；原生 access violation **仍未解决**。
 - R1 分派期间失效/恢复和迟到线程资源清理、R2 四阶段与 A/B/C 合成对照继续通过。
   新合成录制：2 个目标、19 条生产观测、20 次消费、18 个独立消费 ID、1 次重复；
   源失败 1/19（被 latest 覆盖但记录保留），消费过期/长间隔/校准越界各 1 次；写入丢失/未确认均 0。
@@ -78,7 +91,7 @@ QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
 
 格式、三个入口和参数见 [EXPERIMENTS.md](EXPERIMENTS.md)。用户手动采集命令：
 `"$R1_PY" scripts/experiment.py collect --config configs/classic.yaml --protocol AB`。
-真实采集曾尝试但被上述 DLL 错误阻塞；修复后完整验证 **待执行**：安全环境下检查开始前不启相机、不写数据，A/B 自动目标及暂停/恢复/跳过，结束后运行 replay。
+真实采集已完成一次 AB 全协议且回放通过；其余人工核验 **待执行**：安全环境下检查开始前不启相机、不写数据，暂停/恢复/跳过等控件及异常退出场景。
 采集无需通过旧验证页面；无校准只记录可用阶段，Classic 不计算屏幕误差。不要在本次评估数据上拟合再报告效果。
 
 这支持眼角/虹膜/暗色质心/ROI/PnP 的后续数值特征研究及后处理回放，不支持重跑检测器、重裁眼图或外观网络训练。
