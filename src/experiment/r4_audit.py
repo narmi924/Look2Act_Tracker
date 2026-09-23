@@ -27,14 +27,19 @@ def _csv(path):
 
 
 def _spread(items, limit):
+    if type(limit) is not int or not 0 <= limit <= 32:
+        raise ValueError('image_limit must be an integer between 0 and 32 pairs per group')
+    if not items or limit == 0:
+        return []
+    if limit == 1:
+        return items[:1]
     if len(items) <= limit:
         return items
     return [items[int(i * (len(items) - 1) / (limit - 1))] for i in range(limit)]
 
 
 def audit_legacy(raw_dir, processed_dir, *, image_limit=32):
-    if not 0 <= image_limit <= 32:
-        raise ValueError('image_limit must be between 0 and 32 pairs per group')
+    _spread([], image_limit)  # validate even when a source has no images
     raw_dir, processed_dir = Path(raw_dir), Path(processed_dir)
     raw_files = sorted(raw_dir.rglob('labels.csv'))
     processed_files = sorted(processed_dir.rglob('labels.csv'))

@@ -15,7 +15,7 @@ from src.experiment.r4_features import extract_features, local_eye_point
 from src.experiment.r4_analysis import (build_rows, compare, fit_ridge, guarded_output,
                                         metrics, motion_diagnostics, pose_from_snapshot, predict, run_session,
                                         select_complete_ab)
-from src.experiment.r4_audit import audit_legacy, old_source_key
+from src.experiment.r4_audit import _spread, audit_legacy, old_source_key
 from src.experiment.recording import write_json
 from src.vision.head_pose import _MODEL_POINTS_3D, _REQUIRED_KEYS
 
@@ -119,6 +119,47 @@ def test_ridge_training_only_intercept_weight_rank_reproducibility():
     assert fit_ridge(imbalanced, 'C0')['intercept'] == pytest.approx([.5, .5])
 
 
+def test_ridge_normalized_weights_match_independent_reference():
+    groups = [
+        ([[.0, .0], [.2, .1], [.3, .4], [.4, .2]], [.2, .3]),
+        ([[.8, .3], [.9, .5]], [.7, .4]),
+        ([[.1, .9]], [.4, .8]),
+    ]
+    rows = []
+    for segment, (xs, target) in enumerate(groups):
+        for x in xs:
+            rows.append(_row(len(rows), segment, 'A_train', x, target))
+    model = fit_ridge(rows, 'F0')
+    weights = np.asarray([1 / (len(groups) * len(groups[r['segment']][0])) for r in rows])
+    X = np.asarray([r['features']['F0'] for r in rows])
+    Y = np.asarray([r['target_norm'] for r in rows])
+    mean = np.sum(weights[:, None] * X, axis=0)
+    std = np.sqrt(np.sum(weights[:, None] * (X - mean) ** 2, axis=0))
+    Z = (X - mean) / std
+    design = np.column_stack((np.ones(len(rows)), Z))
+    penalty = np.diag([0., .01, .01])  # reference intercept is unpenalized
+    reference = np.linalg.solve(design.T @ (weights[:, None] * design) + penalty,
+                                design.T @ (weights[:, None] * Y))
+    assert np.asarray(model['coef']) == pytest.approx(reference[1:], abs=1e-12)
+    assert model['intercept'] == pytest.approx(reference[0], abs=1e-12)
+    assert model['weight_sum'] == pytest.approx(1.)
+    assert model['presentations'] == 3
+    assert [entry['weight_sum'] for entry in model['presentation_weight_sums']] == pytest.approx([1/3] * 3)
+    assert model['lambda_'] == .01
+
+
+def test_regularization_definition_survives_replicated_presentations():
+    base = [_row(i, i // 3, 'A_train', [i / 7, (i % 3) / 4], [.2 + (i // 3) / 4, .3])
+            for i in range(6)]
+    replicated = base + [dict(copy.deepcopy(r), id=['fixture', 'tracker', i + 100],
+                              segment=r['segment'] + 2) for i, r in enumerate(base)]
+    first, second = fit_ridge(base, 'F0'), fit_ridge(replicated, 'F0')
+    assert first['weight_sum'] == pytest.approx(1.)
+    assert second['weight_sum'] == pytest.approx(1.)
+    assert np.asarray(first['coef']) == pytest.approx(np.asarray(second['coef']), abs=1e-12)
+    assert first['intercept'] == pytest.approx(second['intercept'], abs=1e-12)
+
+
 def test_metrics_count_outside_and_pair_support():
     rows = [_row(1, 0, 'B_yaw', [.1, .2], [.1, .2]),
             _row(2, 0, 'B_yaw', [.2, .2], [.1, .2]),
@@ -161,6 +202,84 @@ def test_split_and_pair_use_identical_train_and_test_ids():
            next(p['predicted_norm'] for p in predicted2 if p['feature'] == 'F0' and p['id'] == rows[9]['id'])
     assert next(p['predicted_norm'] for p in predicted1 if p['feature'] == 'F1' and p['id'] == rows[9]['id']) != \
            next(p['predicted_norm'] for p in predicted2 if p['feature'] == 'F1' and p['id'] == rows[9]['id'])
+
+
+def test_matched_b_target_pair_support_uses_same_ids_without_changing_split():
+    plan = make_plan((100, 80), 'AB')
+    rows = [_row(i, i, '', [i / 30, i / 40], [.2, .4]) for i in range(18)]
+    for row in rows:
+        row.update(label_status='measurement', producer_valid=True,
+                   target_id=plan['segments'][row['segment']]['target_id'])
+    _, own, paired, _ = compare(rows, plan, (100, 80))
+    subset = [r for r in rows if r['split'] == 'A_holdout' and r['target_id'] in
+              {s['target_id'] for s in plan['segments'] if s['protocol'] == 'B'}]
+    match = paired['F1_vs_F2']
+    assert len(subset) == 3
+    assert own['F1']['splits']['A_holdout_B_targets']['n'] == len(subset)
+    assert match['splits']['A_holdout_B_targets']['common_test_n'] == len(subset)
+    assert match['splits']['A_holdout_B_targets']['common_test_ids'] == [r['id'] for r in subset]
+    assert match['common_train_n'] == 9
+    assert match['common_train_ids'] == [r['id'] for r in rows[:9]]
+    assert match['splits']['A_holdout']['common_test_n'] == 9
+
+    missing = subset[0]
+    missing['features']['F2'] = None
+    _, own, paired, _ = compare(rows, plan, (100, 80))
+    match = paired['F1_vs_F2']
+    assert own['F1']['splits']['A_holdout_B_targets']['n'] == 3
+    assert own['F2']['splits']['A_holdout_B_targets']['n'] == 2
+    assert match['splits']['A_holdout_B_targets']['common_test_n'] == 2
+    assert match['splits']['A_holdout_B_targets']['common_test_ids'] == [r['id'] for r in subset[1:]]
+    assert match['common_train_n'] == 9
+    assert match['splits']['A_holdout']['common_test_n'] == 8
+    assert all(rows[i]['split'] == 'A_holdout' for i in range(9, 18))
+
+
+def test_spread_image_limit_boundaries_are_deterministic():
+    assert _spread([], 0) == []
+    assert _spread([], 1) == []
+    assert _spread([1, 2, 3], 0) == []
+    assert _spread([1, 2, 3], 1) == [1]
+    assert _spread([1, 2, 3], 5) == [1, 2, 3]
+    sampled = _spread(list(range(100)), 32)
+    assert len(sampled) == 32 and sampled[0] == 0 and sampled[-1] == 99
+    assert sampled == _spread(list(range(100)), 32)
+    for invalid in (-1, 33, 1.5, True):
+        with pytest.raises(ValueError):
+            _spread([1, 2, 3], invalid)
+
+
+def test_legacy_audit_image_limit_one(tmp_path):
+    raw, processed = tmp_path / 'raw', tmp_path / 'processed'
+    images = processed / 'train' / 'images'
+    images.mkdir(parents=True)
+    with (processed / 'train' / 'labels.csv').open('w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=['session_id', 'user_id', 'eye_img_path',
+                'right_eye_img_path', 'norm_target_x', 'norm_target_y'])
+        writer.writeheader()
+        for i in (1, 2):
+            session = f's{i}'
+            directory = raw / session
+            directory.mkdir(parents=True)
+            cv2.imwrite(str(directory / 'frame.jpg'), np.zeros((128, 640, 3), dtype=np.uint8))
+            with (directory / 'labels.csv').open('w', newline='') as source:
+                labels = csv.DictWriter(source, fieldnames=['session_id', 'frame_idx', 'user_id',
+                    'device_id', 'valid', 'img_path', 'timestamp_ms', 'screen_w', 'screen_h',
+                    'frame_w', 'frame_h', 'target_x', 'target_y'])
+                labels.writeheader()
+                labels.writerow(dict(session_id=session, frame_idx=i, user_id='u', device_id='d',
+                    valid=1, img_path='frame.jpg', timestamp_ms=10, screen_w=100, screen_h=80,
+                    frame_w=640, frame_h=128, target_x=20, target_y=40))
+            for side in ('L', 'R'):
+                cv2.imwrite(str(images / f'{session}_{i:06d}_{side}.jpg'),
+                            np.zeros((128, 128, 3), dtype=np.uint8))
+            writer.writerow(dict(session_id=session, user_id='u',
+                eye_img_path=f'images/{session}_{i:06d}_L.jpg',
+                right_eye_img_path=f'images/{session}_{i:06d}_R.jpg',
+                norm_target_x=.2, norm_target_y=.5))
+    result = audit_legacy(raw, processed, image_limit=1)
+    assert result['sampled_images']['raw_pairs'] == 1
+    assert result['sampled_images']['processed_pairs'] == 1
 
 
 def _event(kind, at, event_id, **payload):
@@ -254,7 +373,15 @@ def test_complete_tiny_run_does_not_modify_source(tmp_path):
     assert result['quality']['splits']['A_holdout'] == 9
     assert result['paired']['F1_vs_F2']['splits']['A_holdout']['common_test_n'] == 9
     assert {p: p.read_bytes() for p in source.iterdir()} == before
-    assert json.loads((output / 'manifest.json').read_text())['analysis_run'] is True
+    manifest = json.loads((output / 'manifest.json').read_text())
+    assert manifest['analysis_run'] is True
+    assert manifest['training_presentations'] == 9 and manifest['weight_sum'] == 1
+    assert manifest['ridge_lambda'] == .01 and 'sum_i w_i=1' in manifest['weight_definition']
+    assert len(json.loads((output / 'sample_manifest.json').read_text())) == 30
+    assert result['paired']['F1_vs_F2']['splits']['A_holdout_B_targets']['common_test_n'] == 3
+    support = json.loads((output / 'paired_support.json').read_text())
+    assert len(support['F1_vs_F2']['common_train_ids']) == 9
+    assert len(support['F1_vs_F2']['common_test_ids']['A_holdout_B_targets']) == 3
     with pytest.raises(FileExistsError):
         run_session(source, output, [], 'test-commit')
     shutil.copytree(source, tmp_path / 'another_eligible_source')

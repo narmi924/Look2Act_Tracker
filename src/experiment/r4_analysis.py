@@ -16,6 +16,9 @@ from src.vision.head_pose import HeadPoseEstimator, _MODEL_POINTS_3D, _REQUIRED_
 
 
 RIDGE_LAMBDA = 0.01
+WEIGHT_DEFINITION = 'w_i=1/(G*n_(segment,epoch)); each presentation has weight 1/G; sum_i w_i=1'
+RIDGE_OBJECTIVE = ('min_(B,b) sum_i w_i*||z_i B+b-y_i||_2^2 + lambda*||B||_F^2; '
+                   'z standardized on training support only; b unpenalized')
 MAX_CONTINUOUS_GAP_S = 0.25  # Segmentation only; not a feature or tuned parameter.
 MAX_REPROJECTION_RMSE_PX = 20.0  # Fixed validity guard for generic-model PnP.
 PAIRS = (('F0', 'F1'), ('F1', 'F2'), ('F2', 'F3'), ('F2', 'F2+H'), ('F3', 'F3+H'))
@@ -211,10 +214,8 @@ def fit_ridge(rows, name, lam=RIDGE_LAMBDA):
         X = np.empty((len(rows), 0))
     Y = np.asarray([r['target_norm'] for r in rows], dtype=float)
     groups = Counter((r['segment'], r['epoch']) for r in rows)
-    weights = np.asarray([1 / groups[r['segment'], r['epoch']] for r in rows])
-    # Each presentation has total weight 1; do not renormalize across presentations,
-    # which would silently change the fixed penalty strength.
-    weights = weights.astype(float)
+    presentations = len(groups)
+    weights = np.asarray([1 / (presentations * groups[r['segment'], r['epoch']]) for r in rows], dtype=float)
     if X.shape[1]:
         mean = np.average(X, axis=0, weights=weights)
         scale = np.sqrt(np.average((X - mean) ** 2, axis=0, weights=weights))
@@ -238,7 +239,11 @@ def fit_ridge(rows, name, lam=RIDGE_LAMBDA):
     intercept = ymean - zmean @ coef
     return dict(feature=name, mean=mean.tolist(), scale=scale.tolist(), zero_variance_columns=zero,
                 coef=coef.tolist(), intercept=intercept.tolist(), rank=rank, condition=condition,
-                n=len(rows), presentations=len(groups), lambda_=lam)
+                n=len(rows), presentations=presentations, weight_sum=float(weights.sum()),
+                presentation_weight_sums=[dict(segment=segment, epoch=epoch, n=count,
+                                               weight_sum=float(count / (presentations * count)))
+                                          for (segment, epoch), count in sorted(groups.items())],
+                weight_definition=WEIGHT_DEFINITION, objective=RIDGE_OBJECTIVE, lambda_=lam)
 
 
 def predict(model, rows):
@@ -271,11 +276,14 @@ def metrics(rows, predicted, size):
                                    for (segment, epoch), values in sorted(by_segment.items())])
 
 
-def _support(rows, name, split):
-    b_targets = {3, 4, 5}
-    return [r for r in rows if (r['split'] == split or
-            (split == 'A_holdout_B_targets' and r['split'] == 'A_holdout' and r['target_id'] in b_targets))
-            and r['features'][name] is not None]
+def _in_split(row, split, b_targets):
+    if split == 'A_holdout_B_targets':
+        return row['split'] == 'A_holdout' and row['target_id'] in b_targets
+    return row['split'] == split
+
+
+def _support(rows, name, split, b_targets):
+    return [r for r in rows if _in_split(r, split, b_targets) and r['features'][name] is not None]
 
 
 def motion_diagnostics(rows, predicted, size):
@@ -315,10 +323,11 @@ def motion_diagnostics(rows, predicted, size):
 def compare(rows, plan, size):
     for row in rows:
         row['split'] = split_name(row, plan)
+    b_targets = {segment['target_id'] for segment in plan['segments'] if segment['protocol'] == 'B'}
     splits = ('A_holdout', 'A_holdout_B_targets', 'B_natural', 'B_yaw', 'B_pitch')
     models, own, paired, predictions = {}, {}, {}, []
     for name in FEATURES:
-        train = _support(rows, name, 'A_train')
+        train = _support(rows, name, 'A_train', b_targets)
         if not train:
             own[name] = {'status': 'no_training_support'}
             continue
@@ -328,11 +337,10 @@ def compare(rows, plan, size):
                      'feature_dim': len(model['mean']), 'rank': model['rank'], 'condition': model['condition'],
                      'zero_variance_columns': model['zero_variance_columns'], 'splits': {}, 'motion': {}}
         for split in splits:
-            support = _support(rows, name, split)
+            support = _support(rows, name, split, b_targets)
             outputs = predict(model, support)
             own[name]['splits'][split] = metrics(support, outputs, size)
-            denominator = sum(r['split'] == split or (split == 'A_holdout_B_targets' and
-                              r['split'] == 'A_holdout' and r['target_id'] in (3, 4, 5)) for r in rows)
+            denominator = sum(_in_split(r, split, b_targets) for r in rows)
             own[name]['splits'][split]['eligible_measurements'] = denominator
             own[name]['splits'][split]['missing_feature'] = denominator - len(support)
             for row, output in zip(support, outputs):
@@ -343,17 +351,19 @@ def compare(rows, plan, size):
             [r for r in rows if r['split'] and r['split'].startswith('B_') and r['features'][name] is not None],
             predict(model, [r for r in rows if r['split'] and r['split'].startswith('B_') and r['features'][name] is not None]), size)
     for left, right in PAIRS:
-        train = [r for r in rows if r['split'] == 'A_train' and r['features'][left] is not None and r['features'][right] is not None]
+        train = [r for r in _support(rows, left, 'A_train', b_targets) if r['features'][right] is not None]
         key = left + '_vs_' + right
         if not train:
             paired[key] = {'status': 'no_common_training_support'}
             continue
         model_l, model_r = fit_ridge(train, left), fit_ridge(train, right)
-        paired[key] = {'common_train_n': len(train), 'common_train_presentations': model_l['presentations'], 'splits': {}}
+        paired[key] = {'common_train_n': len(train), 'common_train_ids': [r['id'] for r in train],
+                       'common_train_presentations': model_l['presentations'], 'splits': {}}
         for split in splits:
-            support = [r for r in rows if r['split'] == split and r['features'][left] is not None and r['features'][right] is not None]
+            support = [r for r in _support(rows, left, split, b_targets) if r['features'][right] is not None]
             ml, mr = metrics(support, predict(model_l, support), size), metrics(support, predict(model_r, support), size)
-            paired[key]['splits'][split] = dict(common_test_n=len(support), left=ml, right=mr,
+            paired[key]['splits'][split] = dict(common_test_n=len(support), common_test_ids=[r['id'] for r in support],
+                left=ml, right=mr,
                 mean_delta_right_minus_left_px=None if not support or ml['error_px'] is None or mr['error_px'] is None
                 else mr['error_px']['mean'] - ml['error_px']['mean'])
     return models, own, paired, predictions
@@ -421,28 +431,44 @@ def run_session(source, output, protected, code_commit):
         except (OSError, ValueError, KeyError, TypeError):
             inventory.append(dict(session_sha256=hash_file(metadata_path), status='unreadable'))
     output.mkdir(parents=True, exist_ok=False)
+    rows, counts = build_rows(meta, events)
+    if not rows:
+        raise ValueError('no producer observations')
+    for row in rows:
+        row['split'] = split_name(row, meta['plan'])
+    sample_manifest = [dict(id=row['id'], event_id=row['event_id'], source_time=row['source_time'],
+                            segment=row['segment'], epoch=row['epoch'], split=row['split'],
+                            label_status=row['label_status'], producer_valid=row['producer_valid'],
+                            available_features=[name for name in FEATURES if row['features'][name] is not None])
+                       for row in rows]
+    write_json(output / 'sample_manifest.json', sample_manifest)  # freeze actual sample IDs before fitting
+    train_presentations = len({(row['segment'], row['epoch']) for row in rows if row['split'] == 'A_train'})
     frozen = dict(analysis_run=True, source_session_sha256=hash_file(Path(source) / 'session.json'),
                   source_events_sha256=hash_file(Path(source) / 'events.jsonl'),
                   source_session_local=str(Path(source).resolve()), code_commit=code_commit,
                   analysis_code_sha256={name: hash_file(Path(__file__).with_name(name)) for name in
                                         ('r4_analysis.py', 'r4_features.py', 'r4_audit.py')},
                   selection='complete_real_classic_AB_30_painted', training='A_round_0',
+                  sample_manifest_sha256=hash_file(output / 'sample_manifest.json'),
+                  training_presentations=train_presentations,
                   holdouts=['A_round_1', 'B_natural', 'B_yaw', 'B_pitch'],
-                  ridge_lambda=RIDGE_LAMBDA, min_eye_width_px=2.0,
+                  ridge_lambda=RIDGE_LAMBDA, weight_sum=1.0,
+                  weight_definition=WEIGHT_DEFINITION, ridge_objective=RIDGE_OBJECTIVE,
+                  min_eye_width_px=2.0,
                   max_reprojection_rmse_px=MAX_REPROJECTION_RMSE_PX,
                   continuous_gap_s=MAX_CONTINUOUS_GAP_S,
                   screen_size=meta['screen_size'], schema_version=1)
     write_json(output / 'manifest.json', frozen)  # recorded before fitting
     write_json(output / 'selection_inventory.json', inventory)
-    rows, counts = build_rows(meta, events)
-    if not rows:
-        raise ValueError('no producer observations')
     models, own, paired, predictions = compare(rows, meta['plan'], meta['screen_size'])
     aggregate = dict(analysis_run=True, quality=quality(rows, counts, meta['plan']), own=own, paired=paired,
                      elapsed_s=time.perf_counter() - start)
     # Local-only files include sensitive numerical observations/identity mapping.
     write_json(output / 'rows.json', rows)
     write_json(output / 'models.json', models)
+    write_json(output / 'paired_support.json', {key: dict(common_train_ids=value.get('common_train_ids'),
+               common_test_ids={split: entry['common_test_ids'] for split, entry in value.get('splits', {}).items()})
+               for key, value in paired.items()})
     write_json(output / 'predictions.json', predictions)
     write_json(output / 'aggregate.json', aggregate)
     return aggregate
