@@ -291,6 +291,7 @@ class TrackingPage(QWidget):
             ("coordinate_transform", tx("坐标转换", "Coordinate Transform")),
             ("ray_plane_intersect", tx("射线求交", "Ray-Plane Intersect")),
             ("smoothing", tx("平滑滤波", "Smoothing")),
+            ("calibration", tx("校准计算", "Calibration")),
         ]
 
         timings_grid = QGridLayout()
@@ -302,7 +303,7 @@ class TrackingPage(QWidget):
             grid_col = (index % 2) * 2
             label = BodyLabel(f"{stage_name}:")
             label.setStyleSheet("font-size: 13px;")
-            value = BodyLabel("0.00 ms")
+            value = BodyLabel("—")
             value.setStyleSheet("font-size: 13px; color: #666; font-family: 'Consolas', monospace;")
             self.timing_labels[stage_key] = value
             timings_grid.addWidget(label, grid_row, grid_col)
@@ -556,7 +557,7 @@ class TrackingPage(QWidget):
         self.dwell_progress_label.setText("0%")
 
         for label in self.timing_labels.values():
-            label.setText("0.00 ms")
+            label.setText("—")
 
         self.face_status.setText(tx("未启动", "Not Started"))
         self.face_status.setStyleSheet("color: #888;")
@@ -729,7 +730,7 @@ class TrackingPage(QWidget):
         self.stop_btn.setEnabled(False)
         self.fps_value.setText("0.0")
         for label in self.timing_labels.values():
-            label.setText("0.00 ms")
+            label.setText("—")
         self.face_status.setText(tx("未启动", "Not Started"))
         self.face_status.setStyleSheet("color: #888;")
         self.gaze_status.setText(tx("未启动", "Not Started"))
@@ -774,6 +775,7 @@ class TrackingPage(QWidget):
         result = self.tracker.get_latest_result()
         state = self.observation_gate.consume(result)
         if state is ObservationState.INVALID:
+            self._update_timing_labels(None)
             self._interrupt_gaze()
             self.gaze_status.setText(tx("观测不可操作", "Observation unavailable"))
             self.error_label.setText(getattr(result, "error_message", None) or self.observation_gate.reason)
@@ -785,9 +787,6 @@ class TrackingPage(QWidget):
         observed_ms = result.observation.timestamp * 1000.0
 
         self.fps_value.setText(f"{result.fps:.1f}")
-
-        for stage_key, label in self.timing_labels.items():
-            label.setText(f"{result.timings.get(stage_key, 0.0):.2f} ms")
 
         if result.face_detected:
             self.face_status.setText(tx("检测到", "Detected"))
@@ -804,6 +803,7 @@ class TrackingPage(QWidget):
             size = (screen.geometry().width(), screen.geometry().height()) if screen else (0, 0)
             result = self.screen_mapper.process(
                 result, self.tracker_config or SystemConfig(), self.calibrator, size)
+            self._update_timing_labels(result)
             if result.screen_rejection is not None:
                 self.observation_gate.reject(result.screen_rejection)
                 self._interrupt_gaze()
@@ -869,6 +869,12 @@ class TrackingPage(QWidget):
 
         if self.diagnostics_enabled:
             self._update_diagnostics_label(result)
+
+    def _update_timing_labels(self, result) -> None:
+        for key, label in self.timing_labels.items():
+            values = (result.processing_timings if key in ('calibration', 'smoothing') else result.timings) if result else {}
+            value = values.get(key)
+            label.setText('—' if value is None else f'{value:.2f} ms')
 
     def _toggle_diagnostics(self) -> None:
         self.diagnostics_enabled = not self.diagnostics_enabled

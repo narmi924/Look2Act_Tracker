@@ -1,8 +1,151 @@
-# 重启进度：R2（待外部审阅、人工摄像头验证）
+# 重启进度：R3（待外部审阅；已有一次真实采集）
 
 当前目标：普通 Windows + RGB 摄像头上的眼控优先交互；保留键鼠急停。
 Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线。
 一次一个任务，PR 后停止，不自动合并。本轮不做精度、模型、训练、论文或新交互框架。
+
+## R3：最小实验采集与确定性数值回放
+
+- 已确认 R2 PR #23 合并；fetch 后基线为 `d3d42c4cfb545ea4cb244315dc7d39951b35f308`，
+  与已审阅 R2 内容一致。工作区原先干净，新分支 `codex/rebuild-r3-experiment-replay`。
+  R1/R2 人工摄像头验证仍未执行，未将其设为自动开发前置条件。
+- 新增独立 `scripts/experiment.py collect` 窗口；用户点击开始才启用一个后端/相机并保存。
+  A：3×3、2 s/目标、两轮 seed=924；B：三个目标，各 2/4/4/2 s 自然保持/左右/抬低头/保持。
+  自动按时间推进，可暂停/继续/跳过/结束，不显示预测反馈、不执行系统动作。
+- `pipeline.py` 实验开关内提取同帧已有眼角/眼睑、虹膜可用状态、ROI、Classic 暗色质心、PnP、
+  在线头姿和模型实际姿态输入；每条生产发布（含失败）在锁外入有界写队列，不拼接另一个 latest frame。
+  Classic 不新增在线姿态估计；原始数值单位/左右眼约定不变，不保存任何图像。
+- `src/experiment/` 提供版本 1 JSONL 记录、共用 Consumer、协议状态机、回放和基础摘要。
+  配置/计划/模型标识、校准参数及 SHA-256、相机/屏幕尺寸与近似 PnP 参数冻结到 session.json。
+  输出在 Git 忽略的 experiment_sessions；数值和校准参数也视为敏感，不上传、不提交。
+- 所有事件在 perf_counter 秒域；分别记录源 read 返回、发布、消费/处理、计划切换、paint 提交。
+  源时间关联实际目标历史；未画出的目标记 skipped，过渡 ±50 ms 记时间不确定，前 500 ms 记 settling。
+  两阈值都是工程初值。read/paint 时间不是曝光/像素亮起时间，没有硬件同步保证。
+- Consumer 保存空/重复/无效事件、四阶段和范围、分派检查时刻及锁内状态。
+  回放使用精确记录的门控/重置时刻、虚拟时钟、实际 ObservationGate/ScreenMapper/R1 复核函数；
+  不复制期望输出，不绕过复核，不执行动作。离散状态精确，数值 atol=1e-8/rtol=1e-10，耗时不作确定性断言。
+- 队列默认 512 条，满队列计丢失首末 event ID/数量；磁盘异常、尾行损坏、未正常结束保留 incomplete。
+  回放报告缺口并清理状态，不跨缺口积累。每行 flush 支持完整前缀，不承诺断电持久性。
+- R2 诊断补齐：实际校准/平滑调用处测时，不覆盖源 timings；缺测 null/未执行状态，UI 显示“—”。
+  diagnose 使用同一 Consumer，约 33 ms 消费轮询独立于打印间隔；frames 改为轮询次数，CSV 每轮一行。
+  分析器缺单位/门控写 unknown，Classic raw 位移不标 px，不跨失效连接位移。
+
+### R3 本机验证
+
+2026-09-23 采集启动修复（PR #24 补充）：
+
+- 用户合成自检通过，但两次真实采集尝试均在相机打开后加载 MediaPipe
+  `_framework_bindings` 时 DLL 初始化失败，尚未完成真实录制。
+- 无相机独立进程复现：MediaPipe 单独加载成功；先导入 QtWidgets 即失败，
+  无需创建 QApplication。提前导入检测器模块后同一入口通过。
+  `scripts/experiment.py` 仅在 collect 分支、Qt 导入前加载检测器模块；
+  不创建检测器、不提前打开相机，不升级依赖。底层 DLL 冲突根因未进一步确定。
+- 新增 `tests/test_experiment_startup.py::test_collect_native_dependencies_before_qt`：
+  实际执行 main/Qt 窗口初始化，替换展示和禁止 VideoCapture，随后检查原延迟导入；
+  修复前实测 **1 failed**（同一 DLL 错误），修复后 **1 passed**。
+  `test_offline_commands_do_not_load_native_detector_or_qt` 禁止检测器/Qt 导入，
+  实际 selftest + replay 均通过。缺少 MediaPipe 的环境会明确跳过原生启动测试。
+- 下方主套件命令加入 `tests/test_experiment_startup.py` 后实测 **275 passed、2 deselected**；
+  独立 settings 测试 **13 passed、14 warnings**；合计 **288 passed、0 failed、0 skipped**，
+  2 项主动排除的测试及全库长任务仍未执行。R2 合成对照再次通过。
+- 远端 PR #24 为普通 OPEN PR，检查列表为空，不宣称 CI 通过。
+  修复后用户已完成一次真实 AB 采集；后续 A 协议控件验证见下。
+  此修复只验证采集入口的加载顺序，历史原生 access violation **仍未解决**。
+
+2026-09-23 真实采集反馈与本地离线核验：
+
+- 用户在 Windows/RGB 相机上运行 `collect --config configs/classic.yaml --protocol AB`；
+  日志确认相机、检测器、Classic 管道启动及正常停止。用户本次未报告 DLL 错误。
+- 检查 Git 忽略的最新本地会话，仅提取完成/完整性统计，未读取或上传原始观测值：
+  `complete=true`；AB 计划/绘制目标 30/30，结束原因为 `protocol_complete`。
+  2154 条生产观测，1533 次消费轮询，1525 条独立消费；`write_lost=0`，
+  `write_unconfirmed=0`。重新运行 `src.experiment.session.replay`：1533 条比较一致，
+  0 mismatch、0 integrity issue、`strictly_reproducible=true`。
+- 这证实一次真实采集文件的数值回放可重现，不代表视线精度或长时稳定性。
+  当时尚未验证暂停/继续/跳过；后续人工检查见下。开始前无文件写入、
+  R1/R2 交互人工验证仍待明确执行。
+  历史混合进程 access violation 根因仍未解决。
+
+2026-09-23 PR #24 审阅补修（基于 `efc582aff25addff1915f8da58161626d438c6cd`）：
+
+- `Protocol.skip/tick` 原先递增 epoch 后用新 epoch 检查旧目标，已绘制目标会被误记
+  `not_painted_before_deadline`。现在目标关闭记录 segment+epoch 和结果：正常绘制完成、
+  截止前未绘制、用户跳过已绘制/未绘制、手动提前结束。真正未绘制仍保留 skipped；
+  最后目标手动跳过以 `user_skip_complete` 结束。摘要 skipped 按 segment 去重，
+  user_skips/unpainted/outcome_counts 分别显示动作、缺画与关闭结果。
+- 恢复同一目标会重新发出 target_request；target_painted 保存对应 requested_at、原 planned_at、
+  实际 at。paint_delay_s 现在是请求到绘制提交的主机等待；计划偏差另列
+  paint_plan_deviation_s。旧 schema_version=1 会话没有 requested_at 时标 unavailable，
+  不用计划时刻伪造零等待。没有改动用户的原始 events.jsonl 或已有真实 AB 会话。
+- 诊断 CSV 从该轮源结果取 face_detected/fps；无结果/身份留空。分析器对已知布尔值
+  报 true/denominator/unknown_rows，实测 False 与 FPS=0 保留为零；缺列/全缺测为
+  unknown。终端与 JSON 使用同一统计；重复 poll 按行计，不声称独立相机帧检出率。
+- 本机先写失败回归：已绘制后 skip 实测多出 skipped；恢复后回归因缺 requested_at
+  失败；旧 CSV 缺 face 字段实测为 0.0；诊断投影缺 face_detected 字段。修复后通过。
+  审阅者独立环境的 15 项（13 通过、2 失败）是另一次记录，不与下述本机套件混计。
+- 本机新定向测试 `tests/test_experiment_protocol_regressions.py`（12 项）、
+  `tests/test_analyze_tracker_diagnostics.py` 中缺列/混合/全 False/真实零 FPS 回归，
+  及 `tests/test_experiment_replay.py::test_diagnostic_csv_preserves_observed_face_and_fps_but_empty_poll_is_missing`
+  均通过；诊断命令 JSON/终端一致性也通过。主相关套件 **293 passed、2 deselected**；
+  独立 settings **13 passed、14 第三方 warnings**，合计 **306 passed、0 failed、0 skipped、2 主动未执行**。
+  合成 selftest/replay 两个命令退出码均为 0，
+  **20/20 比较一致、0 mismatch、0 完整性问题、0 写丢失**。远端 CI 无检查结果；
+  未自动运行真实相机或系统动作。R3 控件实机结果见下，
+  历史原生 access violation 根因未解决。
+
+2026-09-23 用户协作的短时 R3 控件验证：
+
+- 在安全桌面运行 Classic A；用户确认点击“开始”前终端无相机打开日志、指示灯未亮。
+  开始后相机/检测器/管道初始化、黄色目标显示正常；暂停后目标消失并显示暂停；
+  继续后目标重新出现，跳过后切换目标，结束后未报告异常。
+- 只检查最新本地会话的事件类型、目标轮次和完成/回放计数；未输出、提交或上传眼部数值。
+  会话 complete=true，`write_lost=0`、`write_unconfirmed=0`，自动回放 **143/143 一致**，
+  0 mismatch、0 issue。事件有 1 次 pause/resume、2 次已绘制后的 skip；
+  两次对应 `user_skipped_after_paint`，均没有错误的 skipped 事件。
+  正常手动结束为 `user_end`，4 次 target_closed 中有 1 次自然完成、2 次已绘制跳过、
+  1 次已绘制后手动结束。
+- 记录到的暂停间隔约 1.43 s（没有达到原提示的 3 s），恢复请求到绘制提交约 2.1 ms；
+  恢复绘制后 100 ms 的目标标签是 settling。后两者是主机时间/软件状态，
+  不是物理显示延迟或用户注视真值。
+- 已验证一次普通启动、短暂停/继续、已绘制目标跳过及结束保存；
+  未绘制前跳过、长时间暂停、异常退出、断流，以及 R1/R2 眼控交互仍待人工验证。
+  单次采集未出现 DLL 错误，历史原生 access violation 根因仍未解决。
+
+沿用已授权 uv 隔离环境，未安装/升级依赖。`R1_PY` 同后方环境约定：
+
+```bash
+QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_experiment_protocol_regressions.py tests/test_experiment_startup.py tests/test_experiment_replay.py tests/test_screen_mapping.py tests/test_observation_safety.py tests/test_tracker_pipeline.py tests/test_classic_pipeline.py tests/test_classic_tracker.py tests/test_tracking_page_unit.py tests/test_calibration.py tests/test_calibration_flow_helpers.py tests/test_smoother.py tests/test_geometry.py tests/test_head_pose.py tests/test_analyze_tracker_diagnostics.py tests/test_config.py -k 'not test_error_callback and not test_process_frame_with_mock_frame' -q
+QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
+"$R1_PY" scripts/compare_screen_mapping.py
+"$R1_PY" scripts/experiment.py selftest --output experiment_sessions/synthetic-demo
+"$R1_PY" scripts/experiment.py replay experiment_sessions/synthetic-demo
+```
+
+- 基线短测试 233 passed、2 deselected。最终相关套件 **273 passed、2 deselected**；独立设置套件
+  **13 passed、14 条第三方弃用 warnings**，合计 **286 passed、0 failed、0 skipped、2 主动未执行**。
+  新 R3 测试 40 项，含真实数值 Classic 滤波越界/恢复、精确时钟边界、Qt offscreen 实际实验窗口闭环及诊断主入口打印间隔独立性。
+  开发中测试矩阵列顺序写错、将 CPU 耗时也纳入确定性比较，各造成一次测试失败；分别按现有多项式基底和明确的耗时排除规则修正，未改算法。
+- 2 项未执行仍为真实摄像头 test_error_callback、真实检测器/模型 test_process_frame_with_mock_frame。
+  全库模型/训练/数据测试、Codex 自动真实相机/系统操作未执行；原生 access violation **仍未解决**。
+- R1 分派期间失效/恢复和迟到线程资源清理、R2 四阶段与 A/B/C 合成对照继续通过。
+  新合成录制：2 个目标、19 条生产观测、20 次消费、18 个独立消费 ID、1 次重复；
+  源失败 1/19（被 latest 覆盖但记录保留），消费过期/长间隔/校准越界各 1 次；写入丢失/未确认均 0。
+  文件回放 **20/20 一致，0 mismatch，0 完整性问题**；不同速度一致、篡改输出可检出。
+- 远端 CI 与以上本机结果分开，不宣称 CI 通过；本轮没有建设 CI。
+
+### 使用、限制与后续边界
+
+格式、三个入口和参数见 [EXPERIMENTS.md](EXPERIMENTS.md)。用户手动采集命令：
+`"$R1_PY" scripts/experiment.py collect --config configs/classic.yaml --protocol AB`。
+真实采集已完成一次 AB 全协议且回放通过；另一次 A 协议验证了开始前相机未打开、
+短暂停/继续与已绘制目标跳过。其余人工核验 **待执行**：开始前无文件写入、
+未绘制前跳过、长时间暂停、异常退出与断流场景。
+采集无需通过旧验证页面；无校准只记录可用阶段，Classic 不计算屏幕误差。不要在本次评估数据上拟合再报告效果。
+
+这支持眼角/虹膜/暗色质心/ROI/PnP 的后续数值特征研究及后处理回放，不支持重跑检测器、重裁眼图或外观网络训练。
+instructed_target 不是真实注视真值；不声称精度/人体成功率改善。记录开销未做实机性能测量，回放索引在内存中，定位为短协议。
+相机驱动、Qt 阻塞、单屏/DPI、时间近似及历史原生崩溃风险仍在；完整数值重算不等于完整摄像头视频/调度复现。
+回退本 R3 提交会移除记录入口及遥测补充，不撤回 R1/R2 处理链。下一轮仅候选真实采集质量审查，不自动启动。
 
 ## R2：统一原始输入与屏幕处理顺序
 
