@@ -14,7 +14,30 @@
 
 ## 本机会话审计与只读试运行
 
-共发现 **11** 个会话目录：**5** 个真实、**6** 个合成。真实来源中两个短 A；三个 AB 中两个不完整且目标未绘制，唯一完成 30/30 的真实 Classic AB 已用于 R4。新增独立主复现会话 **0/2，缺 2 份**。`all_candidates.json`、`eligible_sessions.json`、`excluded_sessions.json` 及原因保存在本地 `experiment_sessions/r5_runs/audit-verified/`，未提交。旧 R4 来源只在 `final-r4-trial` 做显式指定的只读试运行；输入 session/events/summary/calibration 前后 SHA-256 一致。
+用户随后手动完成一份新的真实 Classic AB 录制。本机现有 **12** 个会话目录：**6** 个真实、**6** 个合成。真实来源中两个短 A；四个 AB 中两个不完整、一个已用于 R4、新的一份满足本轮资格。新增独立主复现会话 **1/2，仍缺 1 份**。`all_candidates.json`、`eligible_sessions.json`、`excluded_sessions.json` 及原因留在 Git 忽略的本地审计目录；新会话的只读分析在 `experiment_sessions/r5_runs/independent-one-verified/`，批量缺口结果在 `batch-after-one/`。新旧两次试运行的源 session/events/summary/calibration 前后 SHA-256 均不变。
+
+新独立会话（匿名 S01）实际绘制 30/30、源 producer 2155 条；有效 measurement 为 A_train **393**、A_holdout **393**、B_natural **261**、B_yaw **309**、B_pitch **312**。下表是这**一份新会话**的各方法自身支持集 mean，单位 px；尚不是多会话复现结论。
+
+| 方法 | A_holdout | B_natural | B_yaw | B_pitch |
+|---|---:|---:|---:|---:|
+| C0 | 339.3 | 258.8 | 255.8 | 255.8 |
+| F0 | 355.1 | 690.9 | 1144.7 | 1419.2 |
+| F1 | 347.9 | 751.8 | 1306.2 | 1516.9 |
+| F2 | 231.3 | 275.6 | 326.3 | 254.5 |
+| F3 | 192.1 | 283.0 | 392.4 | 311.6 |
+| H0 | 360.9 | 742.3 | 1319.4 | 1577.5 |
+| F2+H | 235.5 | 429.6 | 553.3 | 532.9 |
+| F3+H | 244.4 | 662.4 | 1020.4 | 1127.2 |
+
+共同训练与测试支持上的配对 mean 差（右项减左项；负数为右项改善）：
+
+| 配对 | A_holdout | B_natural | B_yaw | B_pitch |
+|---|---:|---:|---:|---:|
+| F2 − F1 | −116.6 | −476.3 | −979.9 | −1262.4 |
+| F2 − F0 | −123.8 | −415.3 | −818.4 | −1164.7 |
+| F3 − F2 | −39.2 | +7.4 | +66.1 | +57.2 |
+
+新会话的实际头动质检 `pass`，各片段 P95 的分组中位为：总角 natural/yaw/pitch **6.12/48.70/12.30°**；yaw-like natural/yaw **5.69/32.44°**；pitch-like natural/pitch **1.38/5.61°**。所有已测 B 连续片段都有足够有效姿态。它们是近似 PnP 的相对角，不是外部头动真值。
 
 下表是**旧 R4 来源的复算核对**，单位 px、各方法自身支持集 mean；不是 R5 独立复现结果，也不能并入多会话主表。数值与 R4 修正权重的聚合表一致。
 
@@ -41,22 +64,22 @@ B_yaw 达到预定增量；B_pitch 的总角门槛为 `19.63+3=22.63°`，实测
 
 ## 多会话汇总与结论
 
-主复现会话清单为空，故会话级均值/中位、逐会话胜负数和四个留出分组的独立对照均为 **unavailable**。F2 相对 F1、F2 相对 F0、F3 相对 F2 的 R5 状态均为 `unavailable_insufficient_independent_sessions`。不能判断 R4 的改善是否跨新会话复现，也不能判断新会话 B 头动是否达标；目前**不足以支持直接把 F2 接为在线实验候选**。主要阻碍是缺两份独立合格 AB 会话，而非已证实 F2 不稳定或 H0 无用。在线默认行为未变。
+主复现清单现有 S01 一份。它的 F2 在 A_holdout 与三个 B split 均优于 F1、F0；F3 只在 A_holdout 优于 F2，B 三组较差；本次 B 头动质检通过。但至少两份新独立主会话的预定条件尚未满足，不能计算有意义的会话级一致性、胜负分布或最终 go/no-go。F2 相对 F1、F2 相对 F0、F3 相对 F2 的 R5 判定仍为 `unavailable_insufficient_independent_sessions`，**不足以支持直接把 F2 接为在线实验候选**。主要阻碍是还缺一份独立合格 AB 会话；没有把单会话表现当作跨会话或跨用户结论。在线默认行为未变。
 
 ## 可执行命令与补采
 
-以下在仓库根目录的 Git Bash 运行。`audit` 列出无私人路径的 `C01` 等候选编号和排除原因，完整本地清单仅在忽略目录。`run --candidate C03` 是本次旧 R4 来源的显式只读核验示例；新增会话后重新 `audit` 并使用新列出的编号，或用 `--session "experiment_sessions/<实际会话目录>"`。每次运行会创建新目录；重复指定已有输出会拒绝覆盖。`run-all` 在主会话不足两份时仍写审计与缺口文件，并按设计以退出码 2 报告不足，绝不产生伪造结论。
+以下在仓库根目录的 Git Bash 运行。`audit` 列出无私人路径的 `C01` 等候选编号和排除原因，完整本地清单仅在忽略目录。当前 `run --candidate C01` 是新独立会话的显式只读分析；新增会话后重新 `audit` 并使用新列出的编号，或用 `--session "experiment_sessions/<实际会话目录>"`。每次运行会创建新目录；重复指定已有输出会拒绝覆盖。`run-all` 在主会话不足两份时仍写审计与缺口文件，并按设计以退出码 2 报告不足，绝不产生伪造结论。
 
 ```bash
 R1_PY="E:/TMP/look2act-r1-env/Scripts/python.exe"
 PYTHONUTF8=1 "$R1_PY" scripts/r5_replication.py audit
 PYTHONUTF8=1 "$R1_PY" scripts/r5_replication.py selftest
-PYTHONUTF8=1 "$R1_PY" scripts/r5_replication.py run --candidate C03
+PYTHONUTF8=1 "$R1_PY" scripts/r5_replication.py run --candidate C01
 PYTHONUTF8=1 "$R1_PY" scripts/r5_replication.py run-all
 PYTHONUTF8=1 "$R1_PY" scripts/r5_replication.py instructions
 ```
 
-需手动新采 **2 份**，每份各运行一次下列命令，点击开始后完成 30 个目标。A 两轮正常注视；B 自然保持、舒适范围内左右缓慢转头、抬头/低头都实际执行。每份重新启动录制，让程序生成不同的 `experiment_sessions/` 目录；不要复制、改名为同一会话或覆盖旧文件。重新校准不是本轮资格硬条件；如需使用已有校准，请按 R3 现有 `--calibration <文件> --calibration-backend classic` 显式加载并保留原文件。采集时保持可控光照与坐姿，在安全桌面操作，结束后原目录留在 `experiment_sessions/` 即会自动发现。
+仍需手动新采 **1 份**，再次运行下列命令，点击开始后完成 30 个目标。A 两轮正常注视；B 自然保持、舒适范围内左右缓慢转头、抬头/低头都实际执行。重新启动录制，让程序生成新的 `experiment_sessions/` 目录；不要复制或覆盖旧会话。重新校准不是本轮资格硬条件；如需使用已有校准，请按 R3 现有 `--calibration <文件> --calibration-backend classic` 显式加载并保留原文件。采集时保持可控光照与坐姿，在安全桌面操作，结束后原目录留在 `experiment_sessions/` 即会自动发现。
 
 ```bash
 "$R1_PY" scripts/experiment.py collect --config configs/classic.yaml --protocol AB
@@ -73,4 +96,4 @@ R3_SYNTH="experiment_sessions/r5_runs/r3-selftest-$(date +%s)"
 "$R1_PY" scripts/experiment.py replay "$R3_SYNTH"
 ```
 
-定向短套件 **83 passed、0 failed、0 skipped**。R5 合成自检通过；R3 合成录制/回放 **20/20 一致，0 mismatch、0 integrity issue、0 write_lost**。`run-all` 因独立会话 0/2 按设计退出码 2；未运行真实新会话采集、真实系统操作、旧数据集重处理、训练或长 GUI。真实补采与 B 动作质检待执行；R1/R2 全流程人工验收和 R3 未绘制前跳过/长暂停/异常退出亦未完成。历史原生 access violation 根因未解决。本机质检基于保存的近似 PnP，相机 read 主机时间不是曝光时间；目标指令不是独立测得的眼球真值。即使未来两份会话通过，也不能自动声称跨用户泛化或在线眼控改善。
+定向短套件 **83 passed、0 failed、0 skipped**。R5 合成自检通过；R3 合成录制/回放 **20/20 一致，0 mismatch、0 integrity issue、0 write_lost**。用户已手动完成一份真实 AB 采集；本机只读审计、单会话分析与批量运行确认该会话合格且源哈希未变。`run-all` 因独立会话 1/2 按设计退出码 2；另一份真实补采、真实系统操作、旧数据集重处理、训练与长 GUI 主动未执行。R1/R2 全流程人工验收和 R3 未绘制前跳过/长暂停/异常退出亦未完成。历史原生 access violation 根因未解决。本机质检基于保存的近似 PnP，相机 read 主机时间不是曝光时间；目标指令不是独立测得的眼球真值。即使未来两份会话通过，也不能自动声称跨用户泛化或在线眼控改善。

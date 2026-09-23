@@ -8,8 +8,8 @@ Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线
 
 - PR #25/R4 已合并；从 `origin/main` 的 `cea8e135d8e5d5271f69ab43788f48bf3590faf5` 建立 `codex/rebuild-r5-f2-replication`，开始时工作区干净。固定方法、会话审计、质检定义和本地运行结果见 [R5_F2_REPLICATION.md](R5_F2_REPLICATION.md)。
 - 已完成只读会话审计、R4 拟合复用、额外 F0–F2 共同支持配对、SO(3) 相对旋转质检、会话级聚合和预定判定。输出只进入 Git 忽略的 `experiment_sessions/r5_runs/`。每分组至少 80 个有效 measurement、R4 源快照覆盖至少 90%、B 每目标有 measurement；头动以 5 帧稳态基线、相对旋转向量和相对 natural 至少 3° 增量判断。这些是工程门槛，不是人体实验标定。
-- 本机 11 个会话目录中 5 个真实、6 个合成；3 个 AB 中两份不完整，唯一完整的 30/30 真实 Classic AB 来源已用于 R4。新增独立主复现会话 **0/2**，缺两份。旧 R4 来源仅做只读试运行，8 组结果重现修正 R4 的聚合值；它的 B pitch 总旋转 P95 中位低于预定 natural+3° 门槛，亦不计主结论。原 session/events/summary/calibration 前后 SHA-256 不变。**没有独立复现结果，F2 进入在线候选尚无 R5 支持结论**。
-- 本机自动测试与合成回放结果记录在 R5 报告；真实新会话尚待用户手动采集。历史原生 access violation 根因仍未解决；R1/R2 完整人工交互与 R3 未绘制前跳过、长暂停、异常退出等实机流程仍待验证。
+- 用户新增一份完整真实 Classic AB，会话目录现为 12 个（6 真实、6 合成）；四个真实 AB 中两个不完整、一个已用于 R4、新的一份满足预定资格。独立主复现会话 **1/2**，仍缺一份。新会话各分组 measurement 393/393/261/309/312，实际 B yaw/pitch 头动质检通过；单会话 F2 在 A 留出和三个 B 分组均优于 F1、F0，F3 仅在 A 留出更好。源 session/events/summary/calibration 前后 SHA-256 不变。旧 R4 来源仍不计主结论；**会话级复现与在线候选判定仍 unavailable**。
+- 本机自动测试与合成回放结果记录在 R5 报告；用户已完成一次新真实采集，另一份待采。历史原生 access violation 根因仍未解决；R1/R2 完整人工交互与 R3 未绘制前跳过、长暂停、异常退出等实机流程仍待验证。
 
 ## R4：旧数据审计与离线特征对照
 
