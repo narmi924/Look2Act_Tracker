@@ -32,6 +32,26 @@ Classic / Deep / deep_pog 都是现有基线，不预先确定永久产品路线
 
 ### R3 本机验证
 
+2026-09-23 采集启动修复（PR #24 补充）：
+
+- 用户合成自检通过，但两次真实采集尝试均在相机打开后加载 MediaPipe
+  `_framework_bindings` 时 DLL 初始化失败，尚未完成真实录制。
+- 无相机独立进程复现：MediaPipe 单独加载成功；先导入 QtWidgets 即失败，
+  无需创建 QApplication。提前导入检测器模块后同一入口通过。
+  `scripts/experiment.py` 仅在 collect 分支、Qt 导入前加载检测器模块；
+  不创建检测器、不提前打开相机，不升级依赖。底层 DLL 冲突根因未进一步确定。
+- 新增 `tests/test_experiment_startup.py::test_collect_native_dependencies_before_qt`：
+  实际执行 main/Qt 窗口初始化，替换展示和禁止 VideoCapture，随后检查原延迟导入；
+  修复前实测 **1 failed**（同一 DLL 错误），修复后 **1 passed**。
+  `test_offline_commands_do_not_load_native_detector_or_qt` 禁止检测器/Qt 导入，
+  实际 selftest + replay 均通过。缺少 MediaPipe 的环境会明确跳过原生启动测试。
+- 下方主套件命令加入 `tests/test_experiment_startup.py` 后实测 **275 passed、2 deselected**；
+  独立 settings 测试 **13 passed、14 warnings**；合计 **288 passed、0 failed、0 skipped**，
+  2 项主动排除的测试及全库长任务仍未执行。R2 合成对照再次通过。
+- 远端 PR #24 为普通 OPEN PR，检查列表为空，不宣称 CI 通过。
+  修复后的真实采集、暂停/恢复/结束和该会话回放仍待用户重试。
+  此修复只验证采集入口的加载顺序，历史原生 access violation **仍未解决**。
+
 沿用已授权 uv 隔离环境，未安装/升级依赖。`R1_PY` 同后方环境约定：
 
 ```bash
@@ -58,7 +78,7 @@ QT_QPA_PLATFORM=offscreen "$R1_PY" -m pytest tests/test_settings_page.py -q
 
 格式、三个入口和参数见 [EXPERIMENTS.md](EXPERIMENTS.md)。用户手动采集命令：
 `"$R1_PY" scripts/experiment.py collect --config configs/classic.yaml --protocol AB`。
-真实采集 **待执行**：安全环境下检查开始前不启相机、不写数据，A/B 自动目标及暂停/恢复/跳过，结束后运行 replay。
+真实采集曾尝试但被上述 DLL 错误阻塞；修复后完整验证 **待执行**：安全环境下检查开始前不启相机、不写数据，A/B 自动目标及暂停/恢复/跳过，结束后运行 replay。
 采集无需通过旧验证页面；无校准只记录可用阶段，Classic 不计算屏幕误差。不要在本次评估数据上拟合再报告效果。
 
 这支持眼角/虹膜/暗色质心/ROI/PnP 的后续数值特征研究及后处理回放，不支持重跑检测器、重裁眼图或外观网络训练。

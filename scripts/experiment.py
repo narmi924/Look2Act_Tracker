@@ -28,6 +28,11 @@ def main():
                          help='Required with --calibration: confirm its source backend')
     args = parser.parse_args()
     if args.command == 'collect':
+        # Windows: loading QtWidgets first can prevent MediaPipe's native DLL
+        # from initializing. Load the detector module before Qt, without
+        # constructing a detector or opening the camera. Keep replay independent.
+        import src.vision.face_detector
+
         from PyQt6.QtWidgets import QApplication
         from src.tracker.pipeline import SystemConfig
         from src.ui.experiment_window import ExperimentWindow
