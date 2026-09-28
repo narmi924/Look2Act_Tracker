@@ -53,6 +53,10 @@ def result_snapshot(result):
                               published_at=result.published_at, backend=result.backend,
                               valid=bool(result.valid), face_detected=bool(result.face_detected),
                               point_kind=result.point_kind, error_message=safe_reason(result.error_message),
+                              candidate_feature=result.candidate_feature,
+                              candidate_rejection=result.candidate_rejection,
+                              candidate_continuity=result.candidate_continuity,
+                              candidate_feature_ms=result.candidate_feature_ms,
                               raw_point=result.raw_point, raw_units=result.raw_units,
                               gaze_point=result.gaze_point, fps=result.fps,
                               timings=result.timings, numeric_snapshot=result.numeric_snapshot))

@@ -127,7 +127,8 @@ def pose_from_snapshot(snapshot, pnp_meta):
 
 def build_rows(meta, events):
     """Producer records only. Labels use the original source timestamp and paint history."""
-    if meta.get('schema_version') != 1 or meta.get('synthetic') or meta.get('analysis_run'):
+    if (meta.get('schema_version') != 1 or meta.get('synthetic') or meta.get('analysis_run')
+            or meta.get('session_type') is not None):
         raise ValueError('requires a real R3 schema-1 source session')
     plan = meta['plan']
     params = plan['parameters']

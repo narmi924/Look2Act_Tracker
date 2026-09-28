@@ -104,6 +104,10 @@ class TrackerResult:
     observation: Optional[Observation] = None
     point_kind: str = "observed"  # observed / held; identity is still mandatory
     numeric_snapshot: Optional[dict] = None  # experiment-only, no images
+    candidate_feature: Optional[tuple[float, float, float, float]] = None
+    candidate_rejection: Optional[str] = None
+    candidate_continuity: Optional[int] = None
+    candidate_feature_ms: Optional[float] = None
     published_at: Optional[float] = None
     processing_timings: dict = field(default_factory=dict)  # consumer ms, None means not executed
     processing_status: dict = field(default_factory=dict)
@@ -310,6 +314,9 @@ class TrackerPipeline:
         self._no_face_count = 0
         self._camera_disconnected = False
         self.record_sink = None  # nonblocking numerical event enqueue, opt-in
+        self.numeric_observation_enabled = False  # explicit shadow-only opt-in
+        self.observation_sink = None  # bounded, nonblocking producer handoff
+        self._candidate_continuity = 0
         self._frame_numeric = None
         
     def _notify_error(self, message: str) -> None:
@@ -579,7 +586,7 @@ class TrackerPipeline:
         observation = self._stamp(time.perf_counter() if captured_at is None else captured_at,
                                   time_source)
         previous = self._last_valid_result
-        self._frame_numeric = {} if self.record_sink is not None else None
+        self._frame_numeric = {} if self.record_sink is not None or self.numeric_observation_enabled else None
         try:
             result = self._process_frame(frame_bgr)
         except Exception as exc:
@@ -588,7 +595,24 @@ class TrackerPipeline:
                                    face_detected=False, backend=self.config.normalized_backend)
         self._last_valid_result = previous
         result.numeric_snapshot = copy.deepcopy(self._frame_numeric)
-        return self._finish_observation(result, observation)
+        result = self._finish_observation(result, observation)
+        if self.numeric_observation_enabled:
+            t_feature = time.perf_counter()
+            if result.valid:
+                try:
+                    from src.experiment.r4_features import extract_features
+
+                    features, reasons = extract_features(result.numeric_snapshot)
+                    feature = features['F2']
+                    result.candidate_feature = None if feature is None else tuple(feature)
+                    result.candidate_rejection = reasons['F2']
+                except Exception as exc:
+                    # An optional candidate must never take down Classic perception.
+                    result.candidate_rejection = 'candidate_extract_' + type(exc).__name__
+            else:
+                result.candidate_rejection = 'producer_invalid'
+            result.candidate_feature_ms = (time.perf_counter() - t_feature) * 1000
+        return result
 
     def _process_frame(self, frame_bgr: np.ndarray) -> TrackerResult:
         """处理单帧，返回注视点和各阶段耗时。
@@ -1179,15 +1203,24 @@ class TrackerPipeline:
         with self._lock:
             if not self._running:
                 return
+            if self.numeric_observation_enabled:
+                if not result.valid or result.candidate_feature is None:
+                    self._candidate_continuity += 1
+                result = replace(result, candidate_continuity=self._candidate_continuity,
+                                 candidate_rejection=result.candidate_rejection or
+                                 (None if result.candidate_feature is not None else 'candidate_unavailable'))
             result = replace(result, published_at=time.perf_counter())
             self._latest_result = result
             if frame is not None:
                 self._latest_frame = frame.copy()
             sink = self.record_sink
+            observation_sink = self.observation_sink
         # Numerical snapshot already belongs to this frame. No I/O/JSON in lock.
         if sink is not None:
             from src.experiment.snapshots import result_snapshot
             sink('producer', result.published_at, result=result_snapshot(result))
+        if observation_sink is not None:
+            observation_sink(result)
     
     def start(self) -> bool:
         """启动推理线程。
@@ -1214,6 +1247,7 @@ class TrackerPipeline:
             self.session_id = uuid.uuid4().hex
             self._sequence = 0
             self._continuity = 0
+            self._candidate_continuity = 0
             self._latest_result = None
             self._last_valid_result = None
             self._running = True
@@ -1285,6 +1319,10 @@ class TrackerPipeline:
                         worker_alive=self._thread is None or self._thread.is_alive(),
                         calibrating=self._calibration_mode, session=self.session_id,
                         continuity=self._continuity,
+                        candidate_continuity=self._candidate_continuity,
+                        latest_candidate_valid=(self._latest_result is not None and
+                                                self._latest_result.valid and
+                                                self._latest_result.candidate_feature is not None),
                         latest_valid=self._latest_result is not None and self._latest_result.valid,
                         latest_sequence=(self._latest_result.observation.sequence
                                          if self._latest_result and self._latest_result.observation else None))

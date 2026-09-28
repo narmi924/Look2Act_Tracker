@@ -185,6 +185,8 @@ def motion_quality(rows, rotations):
 
 def _source_reasons(meta, events, issues):
     reasons = list(issues)
+    if meta.get('session_type') is not None:
+        reasons.append('not_standard_r3_session')
     plan = meta.get('plan') or {}
     segments = plan.get('segments') or []
     if meta.get('synthetic') is not False:

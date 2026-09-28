@@ -128,6 +128,8 @@ def replay(directory, speed=0., wait=None):
     if speed < 0:
         raise ValueError('speed must be nonnegative')
     meta, events, issues = read_session(directory)
+    if meta.get('session_type') == 'f2_shadow_r6':
+        raise ValueError('R6 candidate fields require scripts/r6_shadow.py replay')
     clock = VirtualClock(meta['monotonic_origin_s'])
     consumer = Consumer(SystemConfig(**meta['config']), calibration_from_snapshot(meta['calibration']),
                         meta['screen_size'], clock)
