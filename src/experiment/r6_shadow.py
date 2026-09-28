@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import re
 import time
 import uuid
 
@@ -171,6 +172,14 @@ def save_mapping(path, mapping):
     write_json(path, mapping.to_dict())
 
 
+def calibration_mapping_filename(attempt_id, model_id):
+    """Keep every successful attempt in a distinct file in its session directory."""
+    if not all(isinstance(value, str) and re.fullmatch(r'[0-9a-f]{32}', value)
+               for value in (attempt_id, model_id)):
+        raise ValueError('invalid_mapping_identity')
+    return f'f2_mapping-{attempt_id}-{model_id}.json'
+
+
 def fit_personal(samples, context, code_commit='unknown'):
     """A first-round-only immutable fit; rows follow R4's weighted ridge contract."""
     counts = Counter(row['segment'] for row in samples)
@@ -291,11 +300,14 @@ class ShadowConsumer:
         if self.sink:
             self.sink('shadow_context', self.clock(), session=session, reason=reason, phase=phase)
 
-    def activate(self, model, source_attempt_id=None):
+    def activate(self, model, source_attempt_id=None, *, source_kind=None,
+                 attempt_number=None, mapping_file=None, source_file_name=None):
         self.model = model
         if self.sink:
             self.sink('model_active', self.clock(), mapping=model.to_dict(),
-                      source_attempt_id=source_attempt_id)
+                      mapping_id=model.model_id, source_kind=source_kind,
+                      source_attempt_id=source_attempt_id, attempt_number=attempt_number,
+                      mapping_file=mapping_file, source_file_name=source_file_name)
 
     def _check(self, obs, candidate_continuity, state):
         reason = dispatch_rejection(obs, self.gate.max_age, state, state['checked_at'])
@@ -399,24 +411,76 @@ class ShadowConsumer:
         return record
 
 
-def _verify_model_activation(meta, events, activation, producers):
-    """Re-fit the sealed calibration support; never trust recorded coefficients alone."""
+def _activation_source(meta, activation):
+    declared = activation.get('source_kind')
+    if declared in ('explicit_load', 'personal_calibration'):
+        return declared, False
+    if declared is not None:
+        return 'unknown', False
+    # Schema-1 sessions before per-activation provenance used session mode plus attempt ID.
+    if activation.get('source_attempt_id') is not None:
+        return 'personal_calibration', True
+    if meta.get('mode') == 'loaded_mapping_validation':
+        return 'explicit_load', True
+    return 'unknown', True
+
+
+def _verify_model_activation(meta, events, activation, producers, directory):
+    """Verify each activation's source; re-fit every sealed personal attempt."""
     issues = []
     saved = activation['mapping']
     context = meta.get('mapping_context')
     if context is not None and saved.get('context') != context:
         issues.append('mapping_context_mismatch')
-    mode = meta.get('mode')
+    if activation.get('mapping_id', saved.get('model_id')) != saved.get('model_id'):
+        issues.append('activation_mapping_id_mismatch')
+    source, legacy = _activation_source(meta, activation)
     attempt = activation.get('source_attempt_id')
-    if mode == 'loaded_mapping_validation':
-        return issues + (['loaded_mapping_has_calibration_source'] if attempt is not None else [])
-    if mode != 'new_personal_calibration':
-        return issues  # synthetic trace has no live calibration phase
+    if source == 'explicit_load':
+        if attempt is not None or activation.get('mapping_file') is not None:
+            issues.append('explicit_load_has_calibration_source')
+        if meta.get('mode') != 'loaded_mapping_validation' or any(
+                e['kind'] in ('calibration_attempt', 'model_active') and
+                e['event_id'] < activation['event_id'] for e in events):
+            issues.append('explicit_load_not_initial_activation')
+        if not legacy and (not isinstance(activation.get('source_file_name'), str) or
+                           Path(activation['source_file_name']).name != activation['source_file_name']):
+            issues.append('invalid_loaded_mapping_name')
+        return issues  # the recorded snapshot is also validated by mapping_from_dict
+    if source == 'unknown':
+        return issues if legacy and meta.get('synthetic') else issues + ['unknown_model_source']
+
+    attempts = [e for e in events if e['kind'] == 'calibration_attempt' and
+                e.get('attempt_id') == attempt and e['event_id'] < activation['event_id']]
     seals = [e for e in events if e['kind'] == 'calibration_sealed' and
              e.get('attempt_id') == attempt and e['event_id'] < activation['event_id']]
-    if not attempt or not seals:
+    if not attempt or not attempts or not seals:
         return issues + ['missing_sealed_calibration_attempt']
+    if len(attempts) != 1 or len(seals) != 1:
+        issues.append('ambiguous_calibration_attempt')
+    started = attempts[-1]
     seal = seals[-1]
+    if not legacy:
+        if (type(activation.get('attempt_number')) is not int or
+                activation['attempt_number'] != started.get('attempt_number') or
+                activation['attempt_number'] < 1):
+            issues.append('calibration_attempt_number_mismatch')
+        try:
+            expected_file = calibration_mapping_filename(attempt, saved['model_id'])
+        except (KeyError, ValueError):
+            expected_file = None
+            issues.append('invalid_calibration_mapping_identity')
+        filename = activation.get('mapping_file')
+        if filename != expected_file or not isinstance(filename, str):
+            issues.append('calibration_mapping_file_mismatch')
+        else:
+            try:
+                on_disk = json.loads((Path(directory) / filename).read_text(encoding='utf-8'))
+                if on_disk != saved:
+                    issues.append('saved_mapping_snapshot_mismatch')
+                mapping_from_dict(on_disk, saved['context'])
+            except (OSError, ValueError, KeyError, TypeError):
+                issues.append('missing_or_invalid_saved_mapping')
     sample_events = [e for e in events if e['kind'] == 'calibration_sample' and
                      e.get('attempt_id') == attempt and e['event_id'] < seal['event_id']]
     if len(sample_events) != seal.get('sample_count') or seal.get('queue_drops'):
@@ -498,7 +562,7 @@ def replay_shadow(directory):
             consumer.reset(event['session'], event['reason'], event['phase'])
         elif event['kind'] == 'model_active':
             try:
-                issues.extend(_verify_model_activation(meta, events, event, producers))
+                issues.extend(_verify_model_activation(meta, events, event, producers, directory))
                 consumer.activate(mapping_from_dict(event['mapping'], event['mapping']['context']))
             except (KeyError, TypeError, ValueError, IndexError) as exc:
                 issues.append('invalid_model_activation_' + type(exc).__name__)
@@ -581,9 +645,41 @@ def shadow_summary(directory):
         ('missing_', 'eye_width_', 'wrong_or_missing_')) for e in new)
     outside_new = sum(e['rejection_reason'] == 'out_of_bounds' for e in new)
     visible_new = sum(e['visible'] for e in new)
-    sealed = [e for e in events if e['kind'] == 'calibration_sealed']
+    attempts = [e for e in events if e['kind'] == 'calibration_attempt']
     activated = [e for e in events if e['kind'] == 'model_active']
-    started = [e for e in events if e['kind'] == 'start' and e.get('phase') == 'calibrating']
+    attempt_summaries = []
+    for ordinal, attempt in enumerate(attempts, 1):
+        identity = attempt.get('attempt_id')
+        own_samples = [e for e in samples if e.get('attempt_id') == identity]
+        seals = [e for e in events if e['kind'] == 'calibration_sealed' and
+                 e.get('attempt_id') == identity]
+        own_active = [e for e in activated if e.get('source_attempt_id') == identity]
+        starts = [e for e in events if e['kind'] == 'start' and e.get('attempt_id') == identity]
+        started_at = starts[0]['at'] if starts else attempt['at']
+        seal = seals[-1] if seals else None
+        activation = own_active[-1] if own_active else None
+        attempt_summaries.append(dict(
+            attempt_id=identity, attempt_number=attempt.get('attempt_number', ordinal),
+            sample_count=len(own_samples),
+            per_target_samples=dict(Counter(e['segment'] for e in own_samples)),
+            started_at=started_at, sealed_at=None if seal is None else seal['at'],
+            cutoff=None if seal is None else seal.get('cutoff'),
+            calibration_duration_s=None if seal is None else seal['at'] - started_at,
+            fitting_elapsed_s=None if seal is None or activation is None else
+                activation['at'] - seal['at'],
+            queue_drops=None if seal is None else seal.get('queue_drops'),
+            rejected=None if seal is None else seal.get('rejected'),
+            mapping_id=None if activation is None else activation['mapping']['model_id'],
+            mapping_file=None if activation is None else activation.get('mapping_file')))
+    activation_summaries = []
+    for event in activated:
+        source, inferred = _activation_source(meta, event)
+        activation_summaries.append(dict(
+            mapping_id=event['mapping']['model_id'], source_kind=source,
+            source_inferred_from_legacy_mode=inferred,
+            source_attempt_id=event.get('source_attempt_id'),
+            mapping_file=event.get('mapping_file'), activated_at=event['at']))
+    only_attempt = attempt_summaries[0] if len(attempt_summaries) == 1 else None
     def stats(values):
         values = [v for v in values if isinstance(v, (int, float)) and math.isfinite(v)]
         return None if not values else dict(n=len(values), median=float(np.median(values)),
@@ -594,9 +690,11 @@ def shadow_summary(directory):
     return dict(session_type=meta.get('session_type'), complete=meta.get('complete'),
                 integrity_issues=issues, producer_count=len(producers), consume_polls=len(consumed),
                 consumed_new=len(new), display_paints=len(shown),
-                calibration_samples=len(samples), per_target_samples=dict(Counter(e['segment'] for e in samples)),
-                calibration_duration_s=None if not started or not sealed else sealed[0]['at'] - started[0]['at'],
-                fitting_elapsed_s=None if not sealed or not activated else activated[0]['at'] - sealed[0]['at'],
+                calibration_samples=len(samples), calibration_samples_scope='all_attempts',
+                calibration_attempts=attempt_summaries, model_activations=activation_summaries,
+                per_target_samples=None if only_attempt is None else only_attempt['per_target_samples'],
+                calibration_duration_s=None if only_attempt is None else only_attempt['calibration_duration_s'],
+                fitting_elapsed_s=None if only_attempt is None else only_attempt['fitting_elapsed_s'],
                 candidate_new_denominator=len(new), valid_new=valid_new,
                 valid_new_rate=None if not new else valid_new / len(new),
                 missing_feature_new=missing_new,
@@ -613,6 +711,7 @@ def shadow_summary(directory):
                 read_return_to_paint_submit_s=stats(e.get('source_to_paint_s') for e in shown),
                 rejections=dict(Counter(e.get('rejection_reason') for e in consumed if e.get('rejection_reason'))),
                 calibration_queue_drops=meta.get('calibration_queue_drops'),
+                calibration_queue_drops_scope='last_attempt',
                 write_lost=meta.get('write_lost'), write_unconfirmed=meta.get('write_unconfirmed'),
                 timing_limit=meta.get('timing_limits'))
 

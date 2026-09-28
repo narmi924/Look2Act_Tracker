@@ -15,8 +15,9 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidg
 from src.experiment.protocol import Protocol, make_plan
 from src.experiment.recording import Recorder, write_json
 from src.experiment.r6_shadow import (CalibrationCollector, LATE_WAIT_S, ShadowConsumer,
-                                      fit_personal, load_mapping, mapping_context,
-                                      replay_shadow, save_mapping, shadow_summary)
+                                      calibration_mapping_filename, fit_personal, load_mapping,
+                                      mapping_context, mapping_from_dict, replay_shadow,
+                                      save_mapping, shadow_summary)
 from src.experiment.session import metadata, config_snapshot
 from src.tracker.pipeline import TrackerPipeline
 
@@ -61,6 +62,7 @@ class ShadowWindow(QWidget):
         self.fit_results = queue.Queue()
         self.context = None
         self.attempt_id = None
+        self.attempt_number = 0
         self.summary_path = None
 
         self.setWindowTitle('Look2Act F2 shadow（无系统操作）')
@@ -137,6 +139,8 @@ class ShadowWindow(QWidget):
             self.finish()
         self.fit_token += 1
         self.phase = 'prepare'
+        self.attempt_number = 0
+        self.summary_path = None
         try:
             size = (self.width(), self.height())
             full = make_plan(size, 'AB')
@@ -171,7 +175,8 @@ class ShadowWindow(QWidget):
             self.consumer = ShadowConsumer(self.config.max_observation_age_ms, self.clock, self._emit)
             if self.load_mapping_path:
                 model = load_mapping(self.load_mapping_path, self.context)
-                self.consumer.activate(model)
+                self.consumer.activate(model, source_kind='explicit_load',
+                                       source_file_name=Path(self.load_mapping_path).name)
                 self._begin_validation('explicit_loaded_mapping')
             else:
                 self._begin_calibration()
@@ -181,12 +186,18 @@ class ShadowWindow(QWidget):
             self._fail('无法开始：' + type(exc).__name__ + ' · ' + str(exc)[:80])
 
     def _begin_calibration(self):
+        # One reset path for first start, same-window restart, and manual recalibration.
         self.fit_token += 1
+        self.seal_cutoff = self.seal_deadline = None
+        self.samples_sealed = False
+        self.paused_from = None
+        self.attempt_number += 1
         self.phase = 'calibrating'
         self.target = self.candidate = None
         self.protocol_events = []
         self.attempt_id = uuid.uuid4().hex
-        self._emit('calibration_attempt', self.clock(), attempt_id=self.attempt_id)
+        self._emit('calibration_attempt', self.clock(), attempt_id=self.attempt_id,
+                   attempt_number=self.attempt_number)
         self.producer_queue = queue.Queue(maxsize=512)
         self.pending = []
         with self.drop_lock:
@@ -196,7 +207,6 @@ class ShadowWindow(QWidget):
         self.collector = CalibrationCollector(self.pipeline.session_id,
             self.config.max_observation_age_ms,
             lambda kind, at, **payload: self._emit(kind, at, attempt_id=attempt, **payload))
-        self.samples_sealed = False
         self.collector.bind_display((self.width(), self.height()))
         self.consumer.model = None  # never silently fall back to a previous mapping
         self.consumer.reset(self.pipeline.session_id, 'new_calibration', 'calibrating')
@@ -274,7 +284,7 @@ class ShadowWindow(QWidget):
         with self.drop_lock:
             dropped = self.queue_drops
         self._emit('calibration_sealed', self.clock(), cutoff=self.seal_cutoff,
-                   attempt_id=self.attempt_id,
+                   attempt_id=self.attempt_id, attempt_number=self.attempt_number,
                    sample_count=len(self.collector.samples), per_target=dict(Counter(
                        s['segment'] for s in self.collector.samples)), queue_drops=dropped,
                    rejected=dict(self.collector.rejections))
@@ -333,8 +343,18 @@ class ShadowWindow(QWidget):
                         self._fail('校准拟合失败：' + str(answer)[:100])
                     else:
                         try:
-                            save_mapping(self.recorder.directory / 'f2_mapping.json', answer)
-                            self.consumer.activate(answer, source_attempt_id=self.attempt_id)
+                            snapshot = answer.to_dict()
+                            mapping_from_dict(snapshot, self.context)
+                            filename = calibration_mapping_filename(self.attempt_id, answer.model_id)
+                            path = self.recorder.directory / filename
+                            save_mapping(path, answer)
+                            stored = load_mapping(path, self.context)
+                            if stored.to_dict() != snapshot:
+                                raise ValueError('saved_mapping_changed')
+                            self.consumer.activate(stored, source_attempt_id=self.attempt_id,
+                                                   source_kind='personal_calibration',
+                                                   attempt_number=self.attempt_number,
+                                                   mapping_file=filename)
                             self._begin_validation('new_mapping_activated')
                         except (OSError, ValueError) as exc:
                             self._fail('映射保存失败：' + type(exc).__name__)
@@ -384,16 +404,8 @@ class ShadowWindow(QWidget):
     def recalibrate(self):
         if self.pipeline is None or self.phase not in ('fitting', 'validation', 'free', 'paused', 'failed'):
             return
-        self.fit_token += 1
         if self.protocol and not self.protocol.finished:
             self.protocol.end('recalibration')
-        self.seal_cutoff = self.seal_deadline = None
-        self.pending.clear()
-        while not self.producer_queue.empty():
-            try:
-                self.producer_queue.get_nowait()
-            except queue.Empty:
-                break
         self._begin_calibration()
 
     def _fail(self, message):
