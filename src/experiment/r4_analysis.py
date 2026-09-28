@@ -320,7 +320,7 @@ def motion_diagnostics(rows, predicted, size):
             for split, records in by_motion.items()}
 
 
-def compare(rows, plan, size):
+def compare(rows, plan, size, pairs=PAIRS):
     for row in rows:
         row['split'] = split_name(row, plan)
     b_targets = {segment['target_id'] for segment in plan['segments'] if segment['protocol'] == 'B'}
@@ -350,7 +350,7 @@ def compare(rows, plan, size):
         own[name]['motion'] = motion_diagnostics(
             [r for r in rows if r['split'] and r['split'].startswith('B_') and r['features'][name] is not None],
             predict(model, [r for r in rows if r['split'] and r['split'].startswith('B_') and r['features'][name] is not None]), size)
-    for left, right in PAIRS:
+    for left, right in pairs:
         train = [r for r in _support(rows, left, 'A_train', b_targets) if r['features'][right] is not None]
         key = left + '_vs_' + right
         if not train:
@@ -395,7 +395,7 @@ def quality(rows, counts, plan):
                 pose_jumps_over_90_deg=sum(j > 90 for j in jumps), pose_ranges=pose_ranges)
 
 
-def run_session(source, output, protected, code_commit):
+def run_session(source, output, protected, code_commit, pairs=PAIRS):
     """Freeze selection and source hashes before any fit; write only to new output."""
     start = time.perf_counter()
     output = guarded_output(output, source, protected)
@@ -460,7 +460,7 @@ def run_session(source, output, protected, code_commit):
                   screen_size=meta['screen_size'], schema_version=1)
     write_json(output / 'manifest.json', frozen)  # recorded before fitting
     write_json(output / 'selection_inventory.json', inventory)
-    models, own, paired, predictions = compare(rows, meta['plan'], meta['screen_size'])
+    models, own, paired, predictions = compare(rows, meta['plan'], meta['screen_size'], pairs=pairs)
     aggregate = dict(analysis_run=True, quality=quality(rows, counts, meta['plan']), own=own, paired=paired,
                      elapsed_s=time.perf_counter() - start)
     # Local-only files include sensitive numerical observations/identity mapping.
