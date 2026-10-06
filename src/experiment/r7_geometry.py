@@ -464,7 +464,11 @@ def evaluate(rows, plane, size_px, protocol):
 
 
 def strip_private(result):
-    """Aggregate view: no sample IDs, predictions or fitted coefficients."""
+    """Aggregate view: no sample IDs, per-frame predictions or regression coefficients.
+
+    The two to six geometric measurement numbers (kappa, gain) stay: they are the physical
+    diagnostic the report is about, not a per-frame trace or an identity.
+    """
     out = {k: v for k, v in result.items() if k not in ('train_ids', 'predictions', 'fitted')}
     out['splits'] = {split: {k: v for k, v in entry.items() if k != 'ids'} for split, entry in result['splits'].items()}
     return out
@@ -490,11 +494,21 @@ def sensitivity(rows, events, pnp_meta, plane, size_px, rotation):
     return out
 
 
-def run_session(source, output, protected, code_commit):
+def rows_for(meta, events, allow_synthetic=False):
+    """R4 rows; a synthetic fixture passes only with the caller's explicit opt-in."""
+    if meta.get('synthetic'):
+        if not allow_synthetic or not meta.get('r7_synthetic_fixture'):
+            raise ValueError('synthetic session refused without explicit opt-in')
+        meta = {**meta, 'synthetic': False}
+    return build_rows(meta, events)
+
+
+def run_session(source, output, protected, code_commit, allow_synthetic=False):
+    """`allow_synthetic` is for the selftest and tests only; real runs never set it."""
     start = time.perf_counter()
     output = guarded_output(output, source, protected)
     meta, events, issues = read_session(source)
-    if (issues or not meta.get('complete') or meta.get('synthetic') or meta.get('backend') != 'classic'
+    if (issues or not meta.get('complete') or (meta.get('synthetic') and not allow_synthetic) or meta.get('backend') != 'classic'
             or meta.get('plan', {}).get('selection') != 'AB' or len(meta['plan']['segments']) != 30):
         raise ValueError('requires complete, real Classic AB with two A rounds and B')
     if {e['segment'] for e in events if e['kind'] == 'target_painted'} != set(range(30)):
@@ -505,11 +519,12 @@ def run_session(source, output, protected, code_commit):
     plane = screen_plane(scale, size_px)
     pnp_meta = meta.get('pnp') or {}
     camera = camera_matrix(pnp_meta)
-    rows, counts = build_rows(meta, events)
+    rows, counts = rows_for(meta, events, allow_synthetic)
     for row in rows:
         row['split'] = split_name(row, meta['plan'])
     output.mkdir(parents=True, exist_ok=False)
-    manifest = dict(analysis_run=True, r7_geometry=True, source_session_sha256=before['session.json'],
+    manifest = dict(analysis_run=True, r7_geometry=True, synthetic_source=bool(meta.get('synthetic')),
+                    source_session_sha256=before['session.json'],
                     source_events_sha256=before['events.jsonl'], source_session_local=str(Path(source).resolve()),
                     code_commit=code_commit, analysis_code_sha256=hash_file(Path(__file__)),
                     screen_size=size_px, mm_per_logical_px=scale, screen_scale_source=scale_source,
@@ -641,7 +656,7 @@ def write_synthetic_session(path, *, kappa=(0.02, -0.035), noise_px=0.0, mm_per_
     camera = np.array([[frame_size[0], 0., frame_size[0] / 2], [0., frame_size[0], frame_size[1] / 2], [0., 0., 1.]])
     pnp_meta = dict(keys=list(_REQUIRED_KEYS), model_points_mm=_MODEL_POINTS_3D.tolist(),
                     camera_matrix=camera.tolist(), dist_coeffs=[[0.], [0.], [0.], [0.]])
-    meta = dict(schema_version=1, experiment_id='r7-fixture-' + str(seed), complete=True, synthetic=False,
+    meta = dict(schema_version=1, experiment_id='r7-fixture-' + str(seed), complete=True, synthetic=True,
                 r7_synthetic_fixture=True, backend='classic', screen_size=list(screen), plan=plan, pnp=pnp_meta,
                 screen_scale=dict(physical_dpi_reported=25.4 / mm_per_px), camera_actual=list(frame_size))
     plane = screen_plane(mm_per_px, screen)

@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 
 from scripts.r7_geometry import _output
-from src.experiment.r4_analysis import build_rows, hash_file, split_name
+from src.experiment.r4_analysis import hash_file, split_name
 from src.experiment.r7_geometry import (EYEBALL_RADIUS_MM, HEAD_FLIP, MODEL_PARAMETERS, MODELS, ROTATION_SOURCES,
                                         camera_matrix, decomposition, evaluate, fit_geo, frame_geometry, geo_predict,
                                         mm_per_logical_px, pnp_yaw_consistency, project, ray_sphere_direction,
-                                        run_session, screen_plane, summarize_sessions, synthetic_snapshot, tangent,
+                                        rows_for, run_session, screen_plane, summarize_sessions, synthetic_snapshot, tangent,
                                         write_synthetic_session)
 from src.experiment.recording import read_session, write_json
 from src.vision.head_pose import _MODEL_POINTS_3D, _REQUIRED_KEYS
@@ -103,7 +103,7 @@ def _rows(tmp_path, name='fixture', **kwargs):
     meta, events = write_synthetic_session(source, kappa=KAPPA, **kwargs)
     meta, events, issues = read_session(source)
     assert not issues
-    rows, _ = build_rows(meta, events)
+    rows, _ = rows_for(meta, events, allow_synthetic=True)
     for row in rows:
         row['split'] = split_name(row, meta['plan'])
     from src.experiment.r7_geometry import attach_geometry
@@ -183,18 +183,20 @@ def test_run_session_is_read_only_and_keeps_private_data_local(tmp_path):
     source, meta, events, _ = _rows(tmp_path)
     hashes = {name: hash_file(source / name) for name in ('session.json', 'events.jsonl')}
     with pytest.raises(ValueError):
-        run_session(source, source / 'inside', [], 'test')
+        run_session(source, tmp_path / 'refused', [], 'test')  # synthetic fixture needs the explicit opt-in
     with pytest.raises(ValueError):
-        run_session(source, tmp_path / 'out', [tmp_path], 'test')
-    aggregate = run_session(source, tmp_path / 'out', [tmp_path / 'protected'], 'test')
+        run_session(source, source / 'inside', [], 'test', allow_synthetic=True)
+    with pytest.raises(ValueError):
+        run_session(source, tmp_path / 'out', [tmp_path], 'test', allow_synthetic=True)
+    aggregate = run_session(source, tmp_path / 'out', [tmp_path / 'protected'], 'test', allow_synthetic=True)
     assert hashes == {name: hash_file(source / name) for name in ('session.json', 'events.jsonl')}
     with pytest.raises(FileExistsError):
-        run_session(source, tmp_path / 'out', [], 'test')
+        run_session(source, tmp_path / 'out', [], 'test', allow_synthetic=True)
     text = (tmp_path / 'out' / 'aggregate.json').read_text(encoding='utf-8')
     assert '"ids"' not in text and '"predictions"' not in text and '"train_ids"' not in text
     assert aggregate['analysis_run'] and set(aggregate['rotation']) == set(ROTATION_SOURCES)
     manifest = json.loads((tmp_path / 'out' / 'manifest.json').read_text(encoding='utf-8'))
-    assert manifest['analysis_run'] and manifest['fixed']['primary_rotation'] == 'pnp6'
+    assert manifest['analysis_run'] and manifest['fixed']['primary_rotation'] == 'pnp6' and manifest['synthetic_source'] is True
     local = json.loads((tmp_path / 'out' / 'local_predictions.json').read_text(encoding='utf-8'))
     assert local['pnp6']['P1_static_train']['predictions']
     main = aggregate['rotation']['pnp6']['protocols']['P1_static_train']
@@ -206,10 +208,12 @@ def test_run_session_is_read_only_and_keeps_private_data_local(tmp_path):
 
 def test_run_session_refuses_non_real_sources(tmp_path):
     source, meta, events, _ = _rows(tmp_path)
-    meta['synthetic'] = True
+    with pytest.raises(ValueError):
+        run_session(source, tmp_path / 'out', [], 'test')  # synthetic without opt-in
+    meta.pop('r7_synthetic_fixture')
     write_json(source / 'session.json', meta)
     with pytest.raises(ValueError):
-        run_session(source, tmp_path / 'out', [], 'test')
+        run_session(source, tmp_path / 'out2', [], 'test', allow_synthetic=True)  # synthetic but not our fixture
 
 
 def test_screen_scale_prefers_reported_dpi_then_config():

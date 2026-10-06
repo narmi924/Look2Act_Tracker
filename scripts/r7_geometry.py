@@ -46,7 +46,7 @@ def _selftest():
         for noise in (0.0, 0.3):
             source = Path(tmp) / f'fixture-{noise}'
             write_synthetic_session(source, noise_px=noise)
-            aggregate = run_session(source, Path(tmp) / f'out-{noise}', PROTECTED, 'selftest')
+            aggregate = run_session(source, Path(tmp) / f'out-{noise}', PROTECTED, 'selftest', allow_synthetic=True)
             main = aggregate['rotation']['pnp6']['protocols'][MAIN_PROTOCOL]
             geo = main['splits']['B_yaw']['models']['GEO']['metrics']['error_px']['mean']
             f2 = main['splits']['B_yaw']['models']['F2']['metrics']['error_px']['mean']
