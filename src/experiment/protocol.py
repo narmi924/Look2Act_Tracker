@@ -9,6 +9,9 @@ DEFAULTS = dict(seed=924, dwell_s=2., settling_s=.5, transition_guard_s=.05,
 
 
 def make_plan(size, selection='AB', parameters=None):
+    if selection == 'R8':
+        from src.experiment.r8_protocol import make_r8_plan
+        return make_r8_plan(size, parameters)
     if parameters and set(parameters) - set(DEFAULTS):
         raise ValueError('unknown protocol parameters')
     params = {**DEFAULTS, **(parameters or {})}
@@ -112,6 +115,21 @@ class Protocol:
                       planned_at=self.started + self.shift + segment['planned_offset_s'],
                       requested_at=self.requested_at)
             self.drawn = key
+
+    def phase(self):
+        """Seconds into the current segment on the protocol's own shifted clock; None when inactive."""
+        if self.started is None or self.paused_at is not None or self.finished or self.current is None:
+            return None
+        if self.current >= len(self.plan['segments']):
+            return None
+        return self.clock() - self.started - self.shift - self.plan['segments'][self.current]['planned_offset_s']
+
+    def moved(self, kind, **payload):
+        """Record where a moving stimulus was actually painted (host paint submission time)."""
+        if self.paused_at is not None or self.finished or self.current is None or self.drawn != (self.current, self.epoch):
+            return False
+        self.sink(kind, self.clock(), segment=self.current, epoch=self.epoch, **payload)
+        return True
 
     def pause(self):
         if not self.finished and self.started is not None and self.paused_at is None:

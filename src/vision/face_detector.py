@@ -19,6 +19,8 @@ import numpy as np
 from mediapipe.python.solutions import face_mesh as mp_face_mesh
 import cv2
 
+from src.vision.landmarks import landmarks_array
+
 
 @dataclass
 class FaceDetectionResult:
@@ -43,6 +45,8 @@ class FaceDetectionResult:
     left_eye_origin: Optional[tuple[int, int]] = None
     right_eye_origin: Optional[tuple[int, int]] = None
     frame_size: Optional[tuple[int, int]] = None
+    # 全部 MediaPipe 关键点 (N, 3)，仅在 keep_all_landmarks=True 时填充：x px、y px、z*w。
+    landmarks_all: Optional[np.ndarray] = None
 
 
 # MediaPipe 468 点中对应传统 68 点的近似映射索引
@@ -141,6 +145,7 @@ class FaceDetector:
         refine_landmarks: bool = False,
     ):
         self.eye_crop_size = eye_crop_size
+        self.keep_all_landmarks = False  # 实验录制显式开启；默认不额外分配
         self._mesh = mp_face_mesh.FaceMesh(
             static_image_mode=False,
             max_num_faces=max_num_faces,
@@ -282,6 +287,7 @@ class FaceDetector:
             left_eye_origin=left_origin,
             right_eye_origin=right_origin,
             frame_size=(w, h),
+            landmarks_all=landmarks_array(best_lms, w, h) if self.keep_all_landmarks else None,
         )
 
     def _extract_eye_roi(
