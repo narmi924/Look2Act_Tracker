@@ -47,6 +47,8 @@ class FrameWriter:
         self.lock = threading.Lock()
         self.closed = False
         self.submitted = self.dropped = self.skipped_no_landmarks = self.written = self.landmark_records = 0
+        self.skipped_shape_mismatch = self.unwritten_at_close = 0
+        self.record_shape = None  # fixed by the first accepted frame; later frames must match
         self.error = None
         self.done = threading.Event()
         self.thread = threading.Thread(target=self._run, name='r8-frame-writer', daemon=True)
@@ -63,6 +65,12 @@ class FrameWriter:
             self.submitted += 1
             if landmarks is None:
                 self.skipped_no_landmarks += 1
+                return False
+            shape = tuple(np.shape(landmarks))
+            if self.record_shape is None:
+                self.record_shape = shape
+            elif shape != self.record_shape:
+                self.skipped_shape_mismatch += 1
                 return False
         boxes = eye_boxes(np.asarray(landmarks), (frame.shape[1], frame.shape[0]))
         if boxes is None:
@@ -118,16 +126,19 @@ class FrameWriter:
             self.closed = True
         self.done.set()
         self.thread.join(timeout=10.)
+        self.unwritten_at_close = self.queue.qsize()  # only non-zero if a producer was still submitting
         stats = self.stats()
         (self.directory / 'landmarks_meta.json').write_text(json.dumps(dict(
-            dtype='float32', record_shape=[478, 3], order='x_px,y_px,z_times_frame_width',
+            dtype='float32', record_shape=list(self.record_shape or (478, 3)), order='x_px,y_px,z_times_frame_width',
             records=self.landmark_records, source='MediaPipe FaceMesh refine_landmarks landmarks, same frame as events'),
             indent=2), encoding='utf-8')
         return stats
 
     def stats(self):
         return dict(submitted=self.submitted, written=self.written, dropped=self.dropped,
-                    skipped_no_landmarks=self.skipped_no_landmarks, landmark_records=self.landmark_records,
+                    skipped_no_landmarks=self.skipped_no_landmarks, skipped_shape_mismatch=self.skipped_shape_mismatch,
+                    unwritten_at_close=self.unwritten_at_close, landmark_records=self.landmark_records,
+                    record_shape=None if self.record_shape is None else list(self.record_shape),
                     writer_error=self.error, writer_still_alive=self.thread.is_alive(),
                     crop_box='corner midpoint, %.1fw x %.1fw, clipped' % (CROP_WIDTH_FACTOR, CROP_HEIGHT_FACTOR),
                     image_format='png_bgr_native_resolution')
@@ -145,11 +156,17 @@ def read_frames_index(directory):
 
 
 def load_landmarks(directory):
-    """All landmark records as (n, 478, 3) float32; empty array when the file is missing."""
-    path = Path(directory) / 'landmarks.f32'
+    """All landmark records as (n, points, 3) float32 using the recorded shape; empty when missing."""
+    directory = Path(directory)
+    shape = (478, 3)
+    meta_path = directory / 'landmarks_meta.json'
+    if meta_path.is_file():
+        shape = tuple(int(v) for v in json.loads(meta_path.read_text(encoding='utf-8')).get('record_shape', shape))
+    path = directory / 'landmarks.f32'
     if not path.is_file():
-        return np.zeros((0, 478, 3), dtype=LANDMARK_DTYPE)
+        return np.zeros((0, *shape), dtype=LANDMARK_DTYPE)
     data = np.fromfile(path, dtype=LANDMARK_DTYPE)
-    if data.size % (478 * 3):
-        raise ValueError('landmarks.f32 is not a whole number of 478x3 records')
-    return data.reshape(-1, 478, 3)
+    size = int(np.prod(shape))
+    if size <= 0 or data.size % size:
+        raise ValueError(f'landmarks.f32 is not a whole number of {shape} records')
+    return data.reshape(-1, *shape)

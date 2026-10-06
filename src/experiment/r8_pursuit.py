@@ -181,14 +181,18 @@ def integrity(meta, events, rows, directory):
     for event in events:
         if event['kind'] in ('target_moved', 'markers_moved', 'target_painted', 'producer'):
             by_kind[event['kind']] += 1
-    producers_with_images = len({tuple(r['observation']) for r in index})
     valid_ids = {tuple(r['id']) for r in rows if r['valid']}
+    frames = meta.get('frames') or {}
+    landmark_index_consistent = landmarks.shape[0] == len(index) and all(
+        r.get('landmark_record') == i for i, r in enumerate(index))
+    artifacts_ok = bool(missing_png == 0 and landmark_index_consistent and frames.get('writer_error') is None
+                        and not frames.get('writer_still_alive') and not frames.get('unwritten_at_close'))
     return dict(session_type=meta.get('session_type'), complete=bool(meta.get('complete')), write_lost=meta.get('write_lost'),
                 frames=meta.get('frames'), events=dict(by_kind), producers=len(rows), valid_producers=len(valid_ids),
                 with_f2=sum(1 for r in rows if r['F2']), image_records=len(index), missing_png=missing_png,
                 valid_producers_with_images=len(valid_ids & {tuple(r['observation']) for r in index}),
                 landmark_records=int(landmarks.shape[0]),
-                landmark_index_consistent=landmarks.shape[0] == len(index),
+                landmark_index_consistent=landmark_index_consistent, artifacts_ok=artifacts_ok,
                 segments=dict(planned=len(meta['plan']['segments']),
                               painted=len({e['segment'] for e in events if e['kind'] == 'target_painted'}),
                               by_stimulus=dict(Counter(s['stimulus'] for s in meta['plan']['segments']))))
@@ -211,8 +215,8 @@ def check(directory):
 
 
 def brief(report):
-    lines = [f"session {report['session']}  complete={report['integrity']['complete']}  issues={report['issues']}"]
     i = report['integrity']
+    lines = [f"session {report['session']}  complete={i['complete']}  issues={report['issues']}  artifacts_ok={i['artifacts_ok']}"]
     lines.append(f"producers {i['producers']} (valid {i['valid_producers']}, F2 {i['with_f2']}), images {i['image_records']} "
                  f"(missing png {i['missing_png']}), landmarks {i['landmark_records']}, painted {i['segments']['painted']}/{i['segments']['planned']}")
     if i.get('frames'):

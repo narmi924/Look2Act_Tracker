@@ -52,11 +52,15 @@ class R8RecordWindow(ExperimentWindow):
 
     def finish(self, checked=False, *, complete=True):
         if self.pipeline is not None:
+            # Stop the producer first so no capture-thread submit can race the writer's shutdown.
             self.pipeline.frame_sink = None
+            self.pipeline.stop()
+            if self.pipeline._thread is not None and self.pipeline._thread.is_alive():
+                complete = False
         if self.frames is not None and self.recorder is not None and not self.recorder.closed:
             stats = self.frames.close()
             self.recorder.metadata['frames'] = stats
-            if stats['writer_error'] or stats['writer_still_alive']:
+            if stats['writer_error'] or stats['writer_still_alive'] or stats['unwritten_at_close']:
                 complete = False
         super().finish(checked, complete=complete)
 

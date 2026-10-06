@@ -375,7 +375,8 @@ class TrackerPipeline:
                     eye_crop_size=self.config.eye_crop_size,
                     min_detection_confidence=self.config.min_detection_confidence,
                     min_tracking_confidence=self.config.min_tracking_confidence,
-                    refine_landmarks=self.config.normalized_backend == "classic",
+                    # Full-landmark recording needs the 478-point refined mesh on every backend.
+                    refine_landmarks=self.config.normalized_backend == "classic" or bool(self.collect_full_landmarks),
                 )
                 self.face_detector.keep_all_landmarks = bool(self.collect_full_landmarks)
                 _print("人脸检测器已初始化")

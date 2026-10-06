@@ -127,8 +127,12 @@ def test_frame_writer_writes_crops_landmarks_and_index(tmp_path):
     assert writer.submit(SimpleNamespace(observation=SimpleNamespace(session='s', sequence=4, timestamp=14.), published_at=14.5, valid=False),
                          frame, None) is False
     assert writer.submit(SimpleNamespace(observation=None), frame, _landmarks()) is False
+    short = _landmarks()[:468]  # unrefined mesh must not be mixed into a 478-point stream
+    assert writer.submit(SimpleNamespace(observation=SimpleNamespace(session='s', sequence=5, timestamp=15.), published_at=15.5, valid=True),
+                         frame, short) is False
     stats = writer.close()
-    assert stats['written'] == 3 and stats['submitted'] == 4 and stats['skipped_no_landmarks'] == 1 and stats['dropped'] == 0
+    assert stats['written'] == 3 and stats['submitted'] == 5 and stats['skipped_no_landmarks'] == 1 and stats['dropped'] == 0
+    assert stats['skipped_shape_mismatch'] == 1 and stats['unwritten_at_close'] == 0 and stats['record_shape'] == [478, 3]
     assert stats['writer_error'] is None and not stats['writer_still_alive']
     index = read_frames_index(tmp_path / 'session')
     assert [r['observation'] for r in index] == [['s', 1], ['s', 2], ['s', 3]]
@@ -163,6 +167,8 @@ def test_pipeline_frame_sink_receives_same_frame_and_landmarks():
     pipeline._publish_result(result, frame)
     assert len(seen) == 1
     assert pipeline.collect_full_landmarks is False  # default stays off
+    deep = TrackerPipeline('', SystemConfig(tracker_backend='deep'))
+    assert deep.collect_full_landmarks is False  # refine_landmarks is forced on only once this is set by R8
 
 
 class FakePipeline:
@@ -224,8 +230,9 @@ def test_window_records_moving_stimuli_and_frames_offscreen(qapp, tmp_path, monk
     moved = next(e for e in events if e['kind'] == 'markers_moved')
     assert len(moved['positions']) in (4, 6) and 0 <= moved['instructed'] < len(moved['positions'])
     assert meta['session_type'] == SESSION_TYPE and meta['frames']['written'] == 1 and meta['complete'] is True
+    assert meta['frames']['unwritten_at_close'] == 0 and meta['frames']['record_shape'] == [478, 3]
     assert (directory / 'frames.jsonl').is_file() and read_frames_index(directory)[0]['observation'] == ['fake-session', 7]
-    assert window.pipeline.frame_sink is None
+    assert window.pipeline.frame_sink is None and window.pipeline._running is False
     window.close()
 
 
@@ -242,6 +249,10 @@ def test_synthetic_session_check_reports_feasibility(tmp_path):
     calibration = report['calibration']['lag_150ms']['train']
     assert calibration['pursuit_paths']['n'] > 500 and calibration['pursuit_paths']['holdout_mean_px'] < 60  # 0.3 px pupil noise is ~38 px here
     assert calibration['fixation_round0']['holdout_mean_px'] < 60
-    assert (source / 'r8_check.json').is_file()
+    assert (source / 'r8_check.json').is_file() and integrity['artifacts_ok']
+    first_png = next(source.glob('frames/*.png'))
+    first_png.unlink()
+    damaged = check(source)['integrity']
+    assert damaged['missing_png'] == 1 and damaged['artifacts_ok'] is False and damaged['complete']
     with pytest.raises((ValueError, OSError)):
         check(tmp_path)  # not a session

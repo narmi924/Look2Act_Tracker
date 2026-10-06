@@ -43,7 +43,9 @@ def main():
         report = run_check(Path(args.session))
         print(brief(report))
         print('written r8_check.json next to the session; stimuli are instructions, not gaze truth')
-        return 0 if report['integrity']['complete'] and not report['issues'] else 1
+        integrity = report['integrity']
+        # Exit 0 only when the record is complete AND its images/landmarks are all present and consistent.
+        return 0 if integrity['complete'] and not report['issues'] and integrity['artifacts_ok'] else 1
     with tempfile.TemporaryDirectory() as tmp:
         source = Path(tmp) / 'r8-synthetic'
         write_synthetic_r8_session(source)
@@ -52,6 +54,7 @@ def main():
         accuracy = report['choice']['lag_150ms']['accuracy']
         assert accuracy is not None and accuracy >= .9, accuracy
         assert report['integrity']['landmark_index_consistent'] and report['integrity']['missing_png'] == 0
+        assert report['integrity']['artifacts_ok']
         print('R8 synthetic selftest: passed')
     return 0
 
