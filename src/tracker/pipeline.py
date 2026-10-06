@@ -315,6 +315,11 @@ class TrackerPipeline:
         self._camera_disconnected = False
         self.record_sink = None  # nonblocking numerical event enqueue, opt-in
         self.numeric_observation_enabled = False  # explicit shadow-only opt-in
+        # R8 recording opt-ins: full landmark array per frame and a same-frame image sink.
+        # Both stay off unless an experiment window sets them; nothing here reaches JSON events.
+        self.collect_full_landmarks = False
+        self.frame_sink = None
+        self._frame_landmarks = None
         self.observation_sink = None  # bounded, nonblocking producer handoff
         self._candidate_continuity = 0
         self._frame_numeric = None
@@ -370,8 +375,10 @@ class TrackerPipeline:
                     eye_crop_size=self.config.eye_crop_size,
                     min_detection_confidence=self.config.min_detection_confidence,
                     min_tracking_confidence=self.config.min_tracking_confidence,
-                    refine_landmarks=self.config.normalized_backend == "classic",
+                    # Full-landmark recording needs the 478-point refined mesh on every backend.
+                    refine_landmarks=self.config.normalized_backend == "classic" or bool(self.collect_full_landmarks),
                 )
+                self.face_detector.keep_all_landmarks = bool(self.collect_full_landmarks)
                 _print("人脸检测器已初始化")
             except Exception as e:
                 if not getattr(sys, "frozen", False):
@@ -587,6 +594,7 @@ class TrackerPipeline:
                                   time_source)
         previous = self._last_valid_result
         self._frame_numeric = {} if self.record_sink is not None or self.numeric_observation_enabled else None
+        self._frame_landmarks = None
         try:
             result = self._process_frame(frame_bgr)
         except Exception as exc:
@@ -637,7 +645,8 @@ class TrackerPipeline:
         if self._frame_numeric is not None:
             from src.experiment.snapshots import face_snapshot
             self._frame_numeric.update(face_snapshot(face_result))
-        
+        self._frame_landmarks = getattr(face_result, 'landmarks_all', None)
+
         if not face_result.detected:
             self._no_face_count += 1
 
@@ -1215,12 +1224,15 @@ class TrackerPipeline:
                 self._latest_frame = frame.copy()
             sink = self.record_sink
             observation_sink = self.observation_sink
+            frame_sink = self.frame_sink
         # Numerical snapshot already belongs to this frame. No I/O/JSON in lock.
         if sink is not None:
             from src.experiment.snapshots import result_snapshot
             sink('producer', result.published_at, result=result_snapshot(result))
         if observation_sink is not None:
             observation_sink(result)
+        if frame_sink is not None and frame is not None:
+            frame_sink(result, frame, self._frame_landmarks)  # same frame as the numeric snapshot
     
     def start(self) -> bool:
         """启动推理线程。
